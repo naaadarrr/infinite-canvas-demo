@@ -1,0 +1,30 @@
+{
+  "name": "@tc/infinite-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Infinite canvas library based on React Flow",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:core\" \"pnpm dev:widget\" \"pnpm dev:demo\"",
+    "dev:server": "pnpm --filter @tc/infinite-server dev",
+    "dev:all": "concurrently \"pnpm dev:server\" \"pnpm dev\"",
+    "dev:core": "pnpm --filter @tc/infinite-core dev",
+    "dev:widget": "pnpm --filter @tc/infinite-widget dev",
+    "dev:demo": "pnpm --filter demo dev",
+    "build": "pnpm --filter @tc/infinite-core build && pnpm --filter @tc/infinite-widget build",
+    "build:core": "pnpm --filter @tc/infinite-core build",
+    "build:widget": "pnpm --filter @tc/infinite-widget build",
+    "build:demo": "pnpm --filter demo build",
+    "deploy:server": "pnpm --filter @tc/infinite-server deploy",
+    "clean": "pnpm -r exec rm -rf dist node_modules .next",
+    "dev:init": "pnpm install && pnpm build:core && pnpm build:widget"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "tsup": "^8.0.1",
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}

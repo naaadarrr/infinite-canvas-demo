@@ -1,0 +1,39 @@
+// INSERT_YOUR_CODE
+.turbo
+node_modules
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.history
+.vscode
+.idea
+.DS_Store
+pnpm-lock.yaml
+.next
+test/*
+apps/demo/out/*
+worker-debug.log
+.wrangler
+.env.build
+version.json
+out
+*test*
+*example*
+
+# 构建时生成的版本信息文件
+apps/demo/.env.build
+apps/demo/public/version.json
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+!.edgeone/project.json
+.tef_dist/*
+
+# 文档
+
+worker-debug.log
+.cursor/*
+
+*dist*

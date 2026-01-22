@@ -1,89 +1,250 @@
-# infinte-canvas
+# @tc/infinite - 无限画布库
 
-无限画布基础组件
+基于 React Flow 构建的可嵌入无限画布库，支持图片、视频、文本节点的展示和交互。
 
-## Getting started
+## 特性
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+- 🖼️ **图片节点** - 支持图片展示和预览
+- 🎬 **视频节点** - 支持视频在节点中预览播放
+- 🎵 **音频节点** - 支持音频文件播放和控制
+- 📝 **文本节点** - 支持富文本内容展示
+- 🔄 **视口控制** - 支持平移、缩放操作
+- 📦 **节点管理** - 支持拖动、缩放、层级堆叠
+- 📐 **智能布局** - 4列网格自动布局
+- 🎨 **可定制** - 灵活的配置选项，包括背景颜色
+- 📊 **数据解析** - 自动解析原始数据格式
+- 🤝 **多人协同** - 基于 WebSocket 的实时协作编辑
+- 🔒 **节点锁定** - 防止多人同时编辑冲突
+- 👥 **Presence** - 实时显示其他用户的光标和状态
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+## 项目结构
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.tabcut-inc.com/frontend/infinte-canvas.git
-git branch -M main
-git push -uf origin main
+/
+├── packages/
+│   ├── core/          # 核心逻辑和类型定义（不依赖 React）
+│   ├── widget/        # React 组件层（基于 @xyflow/react）
+│   └── server/        # Cloudflare Worker 后端（协同编辑）
+└── apps/
+    └── demo/          # Next.js 15 演示应用
 ```
 
-## Integrate with your tools
+## 快速开始
 
-- [ ] [Set up project integrations](https://gitlab.tabcut-inc.com/frontend/infinte-canvas/-/settings/integrations)
+### 安装依赖
 
-## Collaborate with your team
+```bash
+pnpm install
+```
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### 构建包
 
-## Test and Deploy
+```bash
+# 构建所有包
+pnpm build
 
-Use the built-in continuous integration in GitLab.
+# 或分别构建
+pnpm --filter @tc/infinite-core build
+pnpm --filter @tc/infinite-widget build
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+### 运行演示
 
-***
+```bash
+# 仅运行前端
+pnpm dev
 
-# Editing this README
+# 同时运行前后端（包含协同编辑功能）
+pnpm dev:all
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!).  Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+访问 http://localhost:3000 查看演示。
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### 启用协同编辑功能
 
-## Name
-Choose a self-explaining name for your project.
+如需测试多人实时协作，请参考 [协同功能设置指南](./COLLABORATION_SETUP.md)。
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+## 使用示例
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+### 基础使用
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+```tsx
+import { InfiniteCanvas, NodeType } from '@tc/infinite-widget';
+import '@xyflow/react/dist/style.css';
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+function App() {
+  const nodes = [
+    {
+      id: '1',
+      type: NodeType.IMAGE,
+      position: { x: 100, y: 100 },
+      size: { width: 300, height: 200 },
+      url: 'https://example.com/image.jpg',
+    },
+    {
+      id: '2',
+      type: NodeType.AUDIO,
+      position: { x: 500, y: 100 },
+      size: { width: 300, height: 120 },
+      url: 'https://example.com/audio.mp3',
+      title: '示例音频',
+    },
+  ];
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <InfiniteCanvas
+        nodes={nodes}
+        backgroundColor="#f5f5f5"
+        config={{
+          minZoom: 0.1,
+          maxZoom: 4,
+          defaultZoom: 1,
+        }}
+      />
+    </div>
+  );
+}
+```
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### 使用数据解析（推荐）
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```tsx
+import { InfiniteCanvas } from '@tc/infinite-widget';
+import { parseRawData, RawDataItem } from '@tc/infinite-core';
+import '@xyflow/react/dist/style.css';
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+function App() {
+  // 原始数据格式
+  const rawData: RawDataItem[] = [
+    {
+      status: 'success',
+      mediaType: 'IMAGE',
+      result: { originImage: { url: 'https://example.com/image1.jpg' } },
+    },
+    {
+      status: 'success',
+      mediaType: 'VIDEO',
+      result: { originVideo: { filePath: 'https://example.com/video1.mp4' } },
+    },
+    {
+      status: 'success',
+      mediaType: 'AUDIO',
+      result: { originAudio: { filePath: 'https://example.com/audio1.mp3' } },
+      title: '背景音乐',
+    },
+    {
+      status: 'failed', // 这个不会被渲染
+      mediaType: 'IMAGE',
+      result: { originImage: { url: 'https://example.com/failed.jpg' } },
+    },
+  ];
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+  // 自动解析为 4 列网格布局
+  const nodes = parseRawData(rawData, {
+    columns: 4,
+    nodeWidth: 300,
+    nodeHeight: 200,
+    gap: 50,
+    startX: 100,
+    startY: 100,
+  });
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+  return (
+    <div style={{ width: '100vw', height: '100vh' }}>
+      <InfiniteCanvas
+        nodes={nodes}
+        backgroundColor="#e8f4f8"
+        config={{ defaultZoom: 0.8 }}
+      />
+    </div>
+  );
+}
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+## API 文档
+
+### InfiniteCanvas 组件
+
+| 属性 | 类型 | 描述 |
+|------|------|------|
+| `nodes` | `CanvasNodeData[]` | 节点数据数组 |
+| `edges` | `Edge[]` | 边数据数组（可选） |
+| `config` | `CanvasConfig` | 画布配置（可选） |
+| `onNodesChange` | `(nodes: CanvasNodeData[]) => void` | 节点变化回调 |
+| `onEdgesChange` | `(edges: Edge[]) => void` | 边变化回调 |
+
+### 节点类型
+
+- `NodeType.IMAGE` - 图片节点
+- `NodeType.VIDEO` - 视频节点
+- `NodeType.AUDIO` - 音频节点
+- `NodeType.TEXT` - 文本节点
+
+### 数据解析
+
+`parseRawData` 函数可以自动将原始数据转换为画布节点：
+
+- 只渲染 `status: "success"` 的数据项
+- 支持 `IMAGE`/`image`、`VIDEO`、`AUDIO` 三种媒体类型
+- 自动 4 列网格布局，无需手动计算位置
+- 可配置列数、节点尺寸、间距等参数
+
+## 开发
+
+### 命令
+
+```bash
+# 安装依赖
+pnpm install
+
+# 构建核心包
+pnpm build:core
+
+# 构建组件包
+pnpm build:widget
+
+# 运行前端演示
+pnpm dev
+
+# 运行后端服务
+pnpm dev:server
+
+# 同时运行前后端
+pnpm dev:all
+
+# 部署后端到 Cloudflare
+pnpm deploy:server
+
+# 清理所有构建产物
+pnpm clean
+```
+
+## 协同编辑
+
+本项目支持基于 Cloudflare Workers + Durable Objects 的多人实时协作：
+
+### 快速体验
+
+1. 参考 [协同功能设置指南](./COLLABORATION_SETUP.md) 配置后端
+2. 使用 `useCollaboration` Hook 集成到你的应用
+3. 查看 [集成示例](./packages/widget/COLLABORATION_EXAMPLE.md)
+
+### 功能特性
+
+- ✅ **实时同步**：节点位置、状态实时广播
+- ✅ **节点锁定**：拖拽时自动锁定，防止冲突
+- ✅ **Presence**：显示其他用户的光标和选择状态
+- ✅ **自动快照**：定期保存到 R2，支持冷启动恢复
+- ✅ **断线重连**：自动重连并增量同步
+
+### 架构
+
+```
+前端 (React + WebSocket) ←→ Worker ←→ Durable Object ←→ D1/R2
+```
+
+详细设计请参考 [需求文档](./infinite-canvas-requirements.md)。
 
 ## License
 For open source projects, say how it is licensed.

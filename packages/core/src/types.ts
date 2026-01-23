@@ -70,6 +70,11 @@ export interface AudioNodeData extends BaseNodeData {
 }
 
 /**
+ * 文本对齐方式
+ */
+export type TextAlign = 'left' | 'center' | 'right';
+
+/**
  * 文本节点数据
  */
 export interface TextNodeData extends BaseNodeData {
@@ -77,8 +82,11 @@ export interface TextNodeData extends BaseNodeData {
   content: string;
   fontSize?: number;
   fontFamily?: string;
+  fontWeight?: 'normal' | 'bold';
+  textAlign?: TextAlign;
   color?: string;
   backgroundColor?: string;
+  scale?: number;
 }
 
 /**

@@ -95,6 +95,12 @@ export interface InfiniteCanvasProps {
   config?: CanvasConfig;
   onNodesChange?: (nodes: CanvasNodeData[]) => void;
   onEdgesChange?: (edges: Edge[]) => void;
+  onNodeDragStart?: (nodeId: string, position: { x: number; y: number }) => void;
+  onNodeDrag?: (nodeId: string, position: { x: number; y: number }) => void;
+  onNodeDragEnd?: (nodeId: string, position: { x: number; y: number }) => void;
+  onNodeContextMenu?: (event: React.MouseEvent, node: Node<CanvasNodeData>) => void;
+  onPaneMouseMove?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
+  onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
   onPaneClick?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
   paneCursor?: string;
   className?: string;
@@ -108,6 +114,12 @@ export function InfiniteCanvas({
   config = {},
   onNodesChange: onNodesChangeCallback,
   onEdgesChange: onEdgesChangeCallback,
+  onNodeDragStart,
+  onNodeDrag,
+  onNodeDragEnd,
+  onNodeContextMenu,
+  onPaneMouseMove,
+  onViewportChange,
   onPaneClick,
   paneCursor,
   className,
@@ -119,12 +131,18 @@ export function InfiniteCanvas({
   const isInitialMount = React.useRef(true);
   const [snapLines, setSnapLines] = React.useState<SnapLines>(null);
   const [viewport, setViewport] = React.useState({ x: 0, y: 0, zoom: 1 });
-  const [reactFlowInstance, setReactFlowInstance] = React.useState<ReactFlowInstance | null>(null);
+  const reactFlowInstanceRef = React.useRef<ReactFlowInstance<Node<CanvasNodeData>, Edge> | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const fitViewAppliedRef = React.useRef(false);
+  const lastViewportNotifiedRef = React.useRef(viewport);
 
   // 使用 ref 追踪是否已初始化，避免重复设置
   const initializedRef = React.useRef(false);
-  const initialNodesIdRef = React.useRef<string>('');
+  const initialNodesSignatureRef = React.useRef<string>('');
+  const defaultViewport = useMemo(
+    () => ({ x: 0, y: 0, zoom: config.defaultZoom || 1 }),
+    [config.defaultZoom]
+  );
 
   const emitNodesChange = useCallback(
     (nextNodes: Node<CanvasNodeData>[]) => {
@@ -164,25 +182,52 @@ export function InfiniteCanvas({
 
   const handleNodeDataUpdate = useCallback(
     (id: string, dataPatch: CanvasNodeDataPatch) => {
+      // 检查是否是删除操作
+      if ((dataPatch as any)._delete) {
+        setNodes((prevNodes) => {
+          const filteredNodes = prevNodes.filter((node) => node.id !== id);
+          emitNodesChange(filteredNodes);
+          return filteredNodes;
+        });
+        return;
+      }
+
       setNodes((prevNodes) => {
-        const updatedNodes = prevNodes.map((node) =>
-          node.id === id
-            ? {
-                ...node,
-                data: {
-                  ...node.data,
-                  ...dataPatch,
-                  type: node.data.type,
-                } as CanvasNodeData,
-              }
-            : node
-        );
-        const syncedNodes = updatedNodes.map(syncNodeDataSize);
-        emitNodesChange(syncedNodes);
-        return syncedNodes;
+        const updatedNodes = prevNodes.map((node) => {
+          if (node.id !== id) {
+            return node;
+          }
+          const newData = {
+            ...node.data,
+            ...dataPatch,
+            type: node.data.type,
+          } as CanvasNodeData;
+          
+          const updatedNode: Node<CanvasNodeData> = {
+            ...node,
+            data: newData,
+          };
+          // 如果 patch 包含 size，同步更新 node 的 width/height
+          if (dataPatch.size) {
+            updatedNode.width = newData.size.width;
+            updatedNode.height = newData.size.height;
+          }
+          // 如果 patch 包含 position，同步更新 node 的 position
+          if (dataPatch.position) {
+            const pos = dataPatch.position as { x: number; y: number };
+            updatedNode.position = {
+              x: pos.x,
+              y: pos.y,
+            };
+          }
+          return updatedNode;
+        });
+        // 不需要再调用 syncNodeDataSize，因为我们已经同步了尺寸
+        emitNodesChange(updatedNodes);
+        return updatedNodes;
       });
     },
-    [emitNodesChange, syncNodeDataSize]
+    [emitNodesChange]
   );
 
   const updatePaneCursor = useCallback(() => {
@@ -195,45 +240,68 @@ export function InfiniteCanvas({
 
   React.useEffect(() => {
     updatePaneCursor();
-  }, [updatePaneCursor, reactFlowInstance]);
+  }, [updatePaneCursor]);
+
+  React.useEffect(() => {
+    if (!onViewportChange) {
+      return;
+    }
+    const last = lastViewportNotifiedRef.current;
+    if (last.x === viewport.x && last.y === viewport.y && last.zoom === viewport.zoom) {
+      return;
+    }
+    lastViewportNotifiedRef.current = viewport;
+    onViewportChange(viewport);
+  }, [onViewportChange, viewport]);
   
   // 仅在初始化或节点列表实质性变化时设置节点
   React.useEffect(() => {
     // 计算节点 ID 列表的哈希，用于检测实质性变化
-    const nodeIds = initialNodes.map(n => n.id).sort().join(',');
-    
-    // 如果节点 ID 列表没有变化，跳过更新
-    if (initializedRef.current && nodeIds === initialNodesIdRef.current) {
+    const nodeSignature = initialNodes
+      .map((node) => JSON.stringify(node))
+      .sort()
+      .join('|');
+
+    // 如果节点签名没有变化，跳过更新
+    if (initializedRef.current && nodeSignature === initialNodesSignatureRef.current) {
       return;
     }
     
-    initialNodesIdRef.current = nodeIds;
+    initialNodesSignatureRef.current = nodeSignature;
     initializedRef.current = true;
     
-    setNodes((prevNodes) => {
-      const prevNodeMap = new Map(prevNodes.map((n) => [n.id, n]));
-      
-      const flowNodes: Node<CanvasNodeData>[] = initialNodes.map((node) => {
-        const prevNode = prevNodeMap.get(node.id);
-        return {
-          id: node.id,
-          type: node.type,
-          position: node.position,
-          data: {
-            ...node,
-            onNodeDataChange: handleNodeDataUpdate,
-          } as CanvasNodeData,
-          zIndex: node.zIndex,
-          selected: prevNode?.selected ?? false,
-          dragging: prevNode?.dragging ?? false,
-          width: node.size.width,
-          height: node.size.height,
-        } as Node<CanvasNodeData>;
-      });
-      
-      return flowNodes;
+    const prevNodeMap = new Map(nodes.map((n) => [n.id, n]));
+    
+    const flowNodes: Node<CanvasNodeData>[] = initialNodes.map((node) => {
+      const prevNode = prevNodeMap.get(node.id);
+      return {
+        id: node.id,
+        type: node.type,
+        position: node.position,
+        data: {
+          ...node,
+          onNodeDataChange: handleNodeDataUpdate,
+        } as CanvasNodeData,
+        zIndex: node.zIndex,
+        selected: prevNode?.selected ?? false,
+        dragging: prevNode?.dragging ?? false,
+        width: node.size.width,
+        height: node.size.height,
+      } as Node<CanvasNodeData>;
     });
-  }, [initialNodes, handleNodeDataUpdate]);
+    
+    setNodes(flowNodes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialNodes]);
+
+  React.useEffect(() => {
+    const instance = reactFlowInstanceRef.current;
+    if (!instance || fitViewAppliedRef.current || nodes.length === 0) {
+      return;
+    }
+    instance.fitView({ padding: 0.2, duration: 0 });
+    fitViewAppliedRef.current = true;
+  }, [nodes.length]);
 
   // 节点类型映射
   const nodeTypes = useMemo(
@@ -355,32 +423,71 @@ export function InfiniteCanvas({
       className={className}
       style={{ width: '100%', height: '100%', backgroundColor, position: 'relative', ...style }}
     >
-      <ReactFlow
+      <ReactFlow<Node<CanvasNodeData>, Edge>
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={handleNodesChange}
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
-        onNodeDragStop={() => setSnapLines(null)}
-        onMove={(_, nextViewport) => setViewport(nextViewport)}
-        onInit={setReactFlowInstance}
+        onNodeDragStart={(_, node) => {
+          onNodeDragStart?.(node.id, node.position);
+        }}
+        onNodeDrag={(_, node) => {
+          onNodeDrag?.(node.id, node.position);
+        }}
+        onNodeDragStop={(_, node) => {
+          setSnapLines(null);
+          onNodeDragEnd?.(node.id, node.position);
+        }}
+        onNodeContextMenu={(event, node) => {
+          if (!onNodeContextMenu) {
+            return;
+          }
+          onNodeContextMenu(event, node);
+        }}
+        onMoveEnd={(_, nextViewport) => {
+          setViewport((prevViewport) => {
+            if (
+              prevViewport.x === nextViewport.x &&
+              prevViewport.y === nextViewport.y &&
+              prevViewport.zoom === nextViewport.zoom
+            ) {
+              return prevViewport;
+            }
+            return nextViewport;
+          });
+        }}
+        onInit={(instance) => {
+          reactFlowInstanceRef.current = instance;
+        }}
         onPaneMouseEnter={updatePaneCursor}
-        onPaneMouseMove={updatePaneCursor}
+        onPaneMouseMove={(event) => {
+          updatePaneCursor();
+          if (!onPaneMouseMove) {
+            return;
+          }
+          const point = { x: event.clientX, y: event.clientY };
+          if (reactFlowInstanceRef.current?.screenToFlowPosition) {
+            onPaneMouseMove(reactFlowInstanceRef.current.screenToFlowPosition(point), event);
+            return;
+          }
+          onPaneMouseMove(point, event);
+        }}
         onPaneClick={(event) => {
           if (!onPaneClick) {
             return;
           }
           const point = { x: event.clientX, y: event.clientY };
-          if (reactFlowInstance?.screenToFlowPosition) {
-            onPaneClick(reactFlowInstance.screenToFlowPosition(point), event);
+          if (reactFlowInstanceRef.current?.screenToFlowPosition) {
+            onPaneClick(reactFlowInstanceRef.current.screenToFlowPosition(point), event);
             return;
           }
           onPaneClick(point, event);
         }}
         minZoom={config.minZoom || 0.1}
         maxZoom={config.maxZoom || 4}
-        defaultViewport={{ x: 0, y: 0, zoom: config.defaultZoom || 1 }}
+        defaultViewport={defaultViewport}
         snapToGrid={config.snapToGrid || false}
         snapGrid={config.gridSize ? [config.gridSize, config.gridSize] : undefined}
         fitView={false}

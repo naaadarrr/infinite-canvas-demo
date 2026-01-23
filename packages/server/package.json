@@ -1,0 +1,28 @@
+{
+  "name": "@tc/infinite-server",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Cloudflare Worker backend for infinite canvas collaboration",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev --persist-to .wrangler/state",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "d1:create": "wrangler d1 create canvas_db",
+    "d1:init": "./scripts/init-db.sh",
+    "d1:migrate": "wrangler d1 migrations apply canvas_db --local",
+    "d1:migrate:prod": "wrangler d1 migrations apply canvas_db",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cloudflare/workers-types": "^4.20241231.0",
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "wrangler": "^3.95.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

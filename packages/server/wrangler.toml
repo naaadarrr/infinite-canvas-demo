@@ -1,0 +1,31 @@
+name = "infinite-canvas-server"
+main = "src/index.ts"
+compatibility_date = "2024-12-31"
+
+# Durable Object 绑定
+durable_objects.bindings = [
+  { name = "CANVAS_ROOM", class_name = "CanvasRoom" }
+]
+
+# Durable Object 迁移
+[[migrations]]
+tag = "v1"
+new_classes = ["CanvasRoom"]
+
+# D1 数据库绑定（运行 wrangler d1 create 后填写 database_id）
+[[d1_databases]]
+binding = "DB"
+database_name = "canvas_db"
+database_id = "" # 运行 pnpm d1:create 后填写
+
+# R2 对象存储绑定（需先在 Cloudflare 控制台创建 bucket）
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "canvas-snapshots"
+preview_bucket_name = "canvas-snapshots"
+
+# 环境变量
+[vars]
+TOKEN_SECRET = "dev-secret-change-in-production"
+SNAPSHOT_INTERVAL = "30000"  # 每 30 秒快照一次（毫秒）
+SNAPSHOT_OP_THRESHOLD = "50"  # 每 50 个操作快照一次

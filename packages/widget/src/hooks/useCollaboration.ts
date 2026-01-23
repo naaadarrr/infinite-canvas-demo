@@ -5,12 +5,22 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+declare const process:
+  | {
+      env?: Record<string, string | undefined>;
+    }
+  | undefined;
+
 // 消息类型
 export enum MessageType {
   JOIN = 'join',
+  LEAVE = 'leave',
   SYNC_STATE = 'sync_state',
+  PING = 'ping',
+  PONG = 'pong',
   CREATE_NODE = 'create_node',
   UPDATE_NODE = 'update_node',
+  UPDATE_NODES = 'update_nodes',
   DELETE_NODE = 'delete_node',
   DRAG_START = 'drag_start',
   DRAG_MOVE = 'drag_move',
@@ -18,6 +28,7 @@ export enum MessageType {
   UPDATE_PRESENCE = 'update_presence',
   NODE_CREATED = 'node_created',
   NODE_UPDATED = 'node_updated',
+  NODES_UPDATED = 'nodes_updated',
   NODE_DELETED = 'node_deleted',
   NODE_LOCKED = 'node_locked',
   NODE_UNLOCKED = 'node_unlocked',
@@ -34,6 +45,7 @@ export interface UserPresence {
   userId: string;
   userName?: string;
   cursor?: Position;
+  cursorSpace?: 'flow' | 'screen';
   viewport?: {
     x: number;
     y: number;
@@ -62,11 +74,22 @@ export interface SyncStateMessage {
   lockedNodes: Record<string, string>;
 }
 
+export interface PingMessage {
+  type: MessageType.PING;
+  ts: number;
+}
+
 export interface NodeUpdatedMessage {
   type: MessageType.NODE_UPDATED;
   seq: number;
   nodeId: string;
   updates: Partial<CanvasNodeData>;
+}
+
+export interface NodesUpdatedMessage {
+  type: MessageType.NODES_UPDATED;
+  seq: number;
+  updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>;
 }
 
 export interface NodeCreatedMessage {
@@ -107,8 +130,10 @@ export interface ErrorMessage {
 
 export type ServerMessage =
   | SyncStateMessage
+  | PingMessage
   | NodeCreatedMessage
   | NodeUpdatedMessage
+  | NodesUpdatedMessage
   | NodeDeletedMessage
   | NodeLockedMessage
   | NodeUnlockedMessage
@@ -134,13 +159,15 @@ export interface CollaborationState {
   lockedNodes: Map<string, string>;
   
   // 发送消息的方法
-  createNode: (nodeData: Partial<CanvasNodeData>) => void;
+  createNode: (nodeData: Partial<CanvasNodeData>, tempId?: string) => void;
   updateNode: (nodeId: string, updates: Partial<CanvasNodeData>) => void;
+  updateNodes: (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => void;
   deleteNode: (nodeId: string) => void;
   dragStart: (nodeId: string, position: Position) => void;
   dragMove: (nodeId: string, position: Position) => void;
   dragEnd: (nodeId: string, position: Position) => void;
   updatePresence: (presence: Partial<UserPresence>) => void;
+  leave: () => void;
 }
 
 // 节流函数
@@ -148,7 +175,7 @@ function throttle<T extends (...args: any[]) => void>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
+  let timeout: ReturnType<typeof setTimeout> | null = null;
   let lastArgs: Parameters<T> | null = null;
 
   return (...args: Parameters<T>) => {
@@ -177,8 +204,8 @@ export function useCollaboration(
     canvasId,
     userId,
     userName,
-    wsUrl = process.env.NEXT_PUBLIC_WS_BASE || 'ws://127.0.0.1:8787',
-    token = process.env.NEXT_PUBLIC_USER_TOKEN || `user_${userId}`,
+    wsUrl = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_WS_BASE) || 'ws://127.0.0.1:8787',
+    token = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_USER_TOKEN) || `user_${userId}`,
     autoReconnect = true,
     reconnectInterval = 3000,
   } = config;
@@ -189,8 +216,9 @@ export function useCollaboration(
   const [lockedNodes, setLockedNodes] = useState<Map<string, string>>(new Map());
 
   const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSeqRef = useRef(0);
+  const reconnectBlockedRef = useRef(false);
 
   // 发送消息
   const send = useCallback((message: any) => {
@@ -217,6 +245,15 @@ export function useCollaboration(
         presence,
       });
     }, 100) // ~10 fps
+  ).current;
+
+  const throttledUpdateNodes = useRef(
+    throttle((updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => {
+      send({
+        type: MessageType.UPDATE_NODES,
+        updates,
+      });
+    }, 33) // ~30 fps
   ).current;
 
   // 连接 WebSocket
@@ -255,6 +292,9 @@ export function useCollaboration(
 
         // 处理特殊消息
         switch (message.type) {
+          case MessageType.PING:
+            send({ type: MessageType.PONG });
+            break;
           case MessageType.SYNC_STATE:
             setPresences(new Map(Object.entries(message.presences)));
             setLockedNodes(new Map(Object.entries(message.lockedNodes)));
@@ -288,8 +328,13 @@ export function useCollaboration(
             });
             break;
 
-          case MessageType.ERROR:
-            console.error('[Collaboration] Server error:', message.error);
+        case MessageType.ERROR:
+            if (message.code === 'ROOM_FULL') {
+              reconnectBlockedRef.current = true;
+              ws.close(4000, 'Room full');
+            } else {
+              console.error('[Collaboration] Server error:', message.error);
+            }
             break;
         }
 
@@ -306,7 +351,7 @@ export function useCollaboration(
       wsRef.current = null;
 
       // 自动重连
-      if (autoReconnect) {
+      if (autoReconnect && !reconnectBlockedRef.current) {
         reconnectTimeoutRef.current = setTimeout(() => {
           console.log('[Collaboration] Reconnecting...');
           connect();
@@ -338,10 +383,10 @@ export function useCollaboration(
 
   // API 方法
   const createNode = useCallback(
-    (nodeData: Partial<CanvasNodeData>) => {
+    (nodeData: Partial<CanvasNodeData>, tempId?: string) => {
       send({
         type: MessageType.CREATE_NODE,
-        tempId: `temp_${Date.now()}`,
+        tempId: tempId ?? `temp_${Date.now()}`,
         nodeData,
       });
     },
@@ -357,6 +402,16 @@ export function useCollaboration(
       });
     },
     [send]
+  );
+
+  const updateNodes = useCallback(
+    (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => {
+      if (updates.length === 0) {
+        return;
+      }
+      throttledUpdateNodes(updates);
+    },
+    [throttledUpdateNodes]
   );
 
   const deleteNode = useCallback(
@@ -405,6 +460,10 @@ export function useCollaboration(
     [throttledUpdatePresence]
   );
 
+  const leave = useCallback(() => {
+    send({ type: MessageType.LEAVE });
+  }, [send]);
+
   return {
     connected,
     seq,
@@ -412,10 +471,12 @@ export function useCollaboration(
     lockedNodes,
     createNode,
     updateNode,
+    updateNodes,
     deleteNode,
     dragStart,
     dragMove,
     dragEnd,
     updatePresence,
+    leave,
   };
 }

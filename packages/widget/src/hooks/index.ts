@@ -4,5 +4,4 @@ export type {
   CollaborationState,
   ServerMessage,
   UserPresence,
-  CanvasNodeData,
 } from './useCollaboration';

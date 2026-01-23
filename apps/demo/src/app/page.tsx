@@ -25,6 +25,7 @@ export default function Home() {
 
   const [backgroundColor, setBackgroundColor] = useState('#f5f5f5');
   const [activeTool, setActiveTool] = useState<'select' | 'text'>('select');
+  const [toolMode, setToolMode] = useState<'pan' | 'edit'>('pan');
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -235,6 +236,28 @@ export default function Home() {
     }
   }, [collab, userColor, userId]);
   useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === 'h') {
+        setToolMode('pan');
+        setActiveTool('select');
+      }
+      if (key === 'v') {
+        setToolMode('edit');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+  useEffect(() => {
     if (!collabEnabled) {
       return;
     }
@@ -257,7 +280,7 @@ export default function Home() {
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
-      if (activeTool !== 'text') {
+      if (toolMode !== 'edit' || activeTool !== 'text') {
         return;
       }
       const tempId = `temp_${generateId()}`;
@@ -483,13 +506,16 @@ export default function Home() {
   const handleNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: { id: string }) => {
       event.preventDefault();
+      if (toolMode !== 'edit') {
+        return;
+      }
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
         nodeId: node.id,
       });
     },
-    []
+    [toolMode]
   );
 
   const sortNodesByLayer = useCallback((list: CanvasNodeData[]) => {
@@ -776,11 +802,17 @@ export default function Home() {
             background: '#fff',
             border: '1px solid #e5e7eb',
             boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
+            height: 150,
           }}
         >
           <button
             type="button"
-            onClick={() => setActiveTool(activeTool === 'text' ? 'select' : 'text')}
+            onClick={() => {
+              if (toolMode === 'pan') {
+                setToolMode('edit');
+              }
+              setActiveTool(activeTool === 'text' ? 'select' : 'text');
+            }}
             title="添加文本"
             style={{
               width: 36,
@@ -791,10 +823,31 @@ export default function Home() {
               color: activeTool === 'text' ? '#fff' : '#111',
               fontSize: 16,
               fontWeight: 700,
+              cursor: toolMode === 'pan' ? 'not-allowed' : 'pointer',
+              opacity: toolMode === 'pan' ? 0.5 : 1,
+            }}
+            disabled={toolMode === 'pan'}
+          >
+            T
+          </button>
+          <div style={{ flex: 1 }} />
+          <button
+            type="button"
+            onClick={() => setToolMode((prev) => (prev === 'pan' ? 'edit' : 'pan'))}
+            title={toolMode === 'pan' ? '移动 (H)' : '选择 (V)'}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              border: toolMode === 'pan' ? '1px solid #e5e7eb' : '1px solid #e5e7eb',
+              background: toolMode === 'pan' ? '#fff' : '#fff',
+              color: toolMode === 'pan' ? '#fff' : '#111',
+              fontSize: 16,
+              fontWeight: 700,
               cursor: 'pointer',
             }}
           >
-            T
+            {toolMode === 'pan' ? '✋' : '↖'}
           </button>
         </div>
         <div style={{ width: '100%', height: '100%' }}>
@@ -809,7 +862,11 @@ export default function Home() {
             onNodeContextMenu={handleNodeContextMenu}
             onPaneMouseMove={handlePaneMouseMove}
             onViewportChange={handleViewportChange}
-            paneCursor={activeTool === 'text' ? 'text' : undefined}
+            paneCursor={toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
+            nodesDraggable={toolMode === 'edit'}
+            elementsSelectable={toolMode === 'edit'}
+            selectionOnDrag={toolMode === 'edit'}
+            panOnDrag={toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
             config={{
               minZoom: 0.1,
               maxZoom: 4,

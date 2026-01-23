@@ -103,6 +103,10 @@ export interface InfiniteCanvasProps {
   onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
   onPaneClick?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
   paneCursor?: string;
+  nodesDraggable?: boolean;
+  elementsSelectable?: boolean;
+  selectionOnDrag?: boolean;
+  panOnDrag?: number[];
   className?: string;
   style?: React.CSSProperties;
   backgroundColor?: string;
@@ -122,6 +126,10 @@ export function InfiniteCanvas({
   onViewportChange,
   onPaneClick,
   paneCursor,
+  nodesDraggable = true,
+  elementsSelectable = true,
+  selectionOnDrag = true,
+  panOnDrag = [1, 2],
   className,
   style,
   backgroundColor = '#f5f5f5',
@@ -491,15 +499,15 @@ export function InfiniteCanvas({
         snapToGrid={config.snapToGrid || false}
         snapGrid={config.gridSize ? [config.gridSize, config.gridSize] : undefined}
         fitView={false}
-        nodesDraggable={true}
+        nodesDraggable={nodesDraggable}
         nodesConnectable={false}
-        elementsSelectable={true}
+        elementsSelectable={elementsSelectable}
         nodeDragThreshold={1}
         selectNodesOnDrag={false}
-        selectionOnDrag={true}
+        selectionOnDrag={selectionOnDrag}
         selectionMode={SelectionMode.Full}
         elevateNodesOnSelect={false}
-        panOnDrag={[1, 2]}
+        panOnDrag={panOnDrag}
         panOnScroll={true}
         zoomOnScroll={false}
         zoomOnPinch={true}

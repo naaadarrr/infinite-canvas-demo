@@ -498,6 +498,7 @@ export function InfiniteCanvas({
         selectNodesOnDrag={false}
         selectionOnDrag={true}
         selectionMode={SelectionMode.Full}
+        elevateNodesOnSelect={false}
         panOnDrag={[1, 2]}
         panOnScroll={true}
         zoomOnScroll={false}

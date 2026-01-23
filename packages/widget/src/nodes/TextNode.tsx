@@ -1,5 +1,5 @@
 import React from 'react';
-import { NodeProps } from '@xyflow/react';
+import { NodeProps, useStore } from '@xyflow/react';
 import type { TextNodeData, TextAlign } from '@tc/infinite-core';
 
 // 工具栏组件
@@ -7,21 +7,40 @@ interface TextToolbarProps {
   fontSize: number;
   fontWeight: 'normal' | 'bold';
   textAlign: TextAlign;
+  backgroundColor: string | undefined;
+  backgroundOpacity: number;
+  zoom: number;
   onFontSizeChange: (size: number) => void;
   onFontWeightChange: (weight: 'normal' | 'bold') => void;
   onTextAlignChange: (align: TextAlign) => void;
+  onBackgroundColorChange: (color: string | undefined) => void;
+  onBackgroundOpacityChange: (opacity: number) => void;
 }
 
 function TextToolbar({
   fontSize,
   fontWeight,
   textAlign,
+  backgroundColor,
+  backgroundOpacity,
+  zoom,
   onFontSizeChange,
   onFontWeightChange,
   onTextAlignChange,
+  onBackgroundColorChange,
+  onBackgroundOpacityChange,
 }: TextToolbarProps) {
   const [showFontSizeDropdown, setShowFontSizeDropdown] = React.useState(false);
   const fontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96, 128];
+  const backgroundOptions: Array<{ value: string | undefined; label: string; swatch: string }> = [
+    { value: undefined, label: '透明', swatch: 'transparent' },
+    { value: '#ffffff', label: '白色', swatch: '#ffffff' },
+    { value: '#000000', label: '黑色', swatch: '#000000' },
+    { value: '#f5f5f5', label: '灰色', swatch: '#f5f5f5' },
+    { value: '#fef3c7', label: '淡黄', swatch: '#fef3c7' },
+    { value: '#e0f2fe', label: '淡蓝', swatch: '#e0f2fe' },
+    { value: '#dcfce7', label: '淡绿', swatch: '#dcfce7' },
+  ];
 
   return (
     <div
@@ -30,7 +49,8 @@ function TextToolbar({
         position: 'absolute',
         bottom: '100%',
         left: '50%',
-        transform: 'translateX(-50%)',
+        transform: `translateX(-50%) scale(${1 / zoom})`,
+        transformOrigin: 'bottom center',
         marginBottom: 8,
         display: 'flex',
         alignItems: 'center',
@@ -43,7 +63,7 @@ function TextToolbar({
         zIndex: 100,
       }}
       onPointerDown={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.preventDefault()}
+      onMouseDown={(e) => e.stopPropagation()}
     >
       {/* 字体大小下拉框 */}
       <div style={{ position: 'relative' }}>
@@ -179,6 +199,73 @@ function TextToolbar({
       {/* 分隔线 */}
       <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
 
+      {/* 背景色按钮组 */}
+      <div style={{ display: 'flex', gap: 4 }}>
+        {backgroundOptions.map((option) => {
+          const isActive = (backgroundColor ?? undefined) === option.value;
+          return (
+            <button
+              key={option.label}
+              onClick={() => onBackgroundColorChange(option.value)}
+              title={option.label}
+              style={{
+                width: 20,
+                height: 20,
+                borderRadius: 4,
+                border: isActive ? '2px solid #3b82f6' : '1px solid #e0e0e0',
+                padding: 0,
+                backgroundColor: option.swatch,
+                cursor: 'pointer',
+                position: 'relative',
+              }}
+            >
+              {option.value === undefined && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: 3,
+                    background:
+                      'linear-gradient(135deg, transparent 45%, #ef4444 45%, #ef4444 55%, transparent 55%)',
+                  }}
+                />
+              )}
+              {option.value === '#000000' && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    inset: 2,
+                    borderRadius: 2,
+                    border: '1px solid rgba(255,255,255,0.4)',
+                  }}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 分隔线 */}
+      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
+
+      {/* 背景透明度 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          value={Math.round(backgroundOpacity * 100)}
+          onChange={(event) => onBackgroundOpacityChange(Number(event.target.value) / 100)}
+          style={{ width: 90 }}
+        />
+        <span style={{ fontSize: 12, color: '#666', minWidth: 36, textAlign: 'right' }}>
+          {Math.round(backgroundOpacity * 100)}%
+        </span>
+      </div>
+
+      {/* 分隔线 */}
+      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
+
       {/* 加粗按钮 */}
       <button
         onClick={() => onFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
@@ -232,8 +319,26 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const fontSize = nodeData.fontSize ?? 16;
   const fontWeight = nodeData.fontWeight ?? 'normal';
   const textAlign = nodeData.textAlign ?? 'left';
+  const backgroundOpacity = Math.max(0, Math.min(1, nodeData.backgroundOpacity ?? 1));
   const lineHeight = 1.4;
   const paddingSize = 12;
+  const lineHeightPx = Math.round(fontSize * lineHeight);
+  const zoom = useStore((state) => state.transform[2] ?? 1);
+  const resolvedBackgroundColor = React.useMemo(() => {
+    if (!nodeData.backgroundColor || nodeData.backgroundColor === 'transparent') {
+      return 'transparent';
+    }
+    const hex = nodeData.backgroundColor.replace('#', '');
+    const normalized = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+    const value = Number.parseInt(normalized, 16);
+    if (Number.isNaN(value) || normalized.length !== 6) {
+      return nodeData.backgroundColor;
+    }
+    const r = (value >> 16) & 255;
+    const g = (value >> 8) & 255;
+    const b = value & 255;
+    return `rgba(${r}, ${g}, ${b}, ${backgroundOpacity})`;
+  }, [backgroundOpacity, nodeData.backgroundColor]);
 
   React.useEffect(() => {
     setContent(nodeData.content || '');
@@ -259,7 +364,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     
     // 获取文本渲染区域的实际高度
     const scrollHeight = textDisplay.scrollHeight;
-    const minContentHeight = Math.ceil(fontSize * lineHeight);
+    const minContentHeight = lineHeightPx;
     const contentHeight = Math.max(scrollHeight, minContentHeight);
     const nextHeight = contentHeight + paddingSize * 2;
     
@@ -270,7 +375,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     nodeData.onNodeDataChange?.(nodeData.id, {
       size: { ...nodeData.size, height: Math.ceil(nextHeight) },
     });
-  }, [content, fontSize, lineHeight, nodeData.id, nodeData.size.height, nodeData.onNodeDataChange, paddingSize, nodeData.size]);
+  }, [content, lineHeightPx, nodeData.id, nodeData.size.height, nodeData.onNodeDataChange, paddingSize, nodeData.size]);
 
   const handleContentChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextValue = event.target.value;
@@ -304,6 +409,14 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
 
   const handleTextAlignChange = (newAlign: TextAlign) => {
     nodeData.onNodeDataChange?.(nodeData.id, { textAlign: newAlign });
+  };
+
+  const handleBackgroundColorChange = (newColor: string | undefined) => {
+    nodeData.onNodeDataChange?.(nodeData.id, { backgroundColor: newColor });
+  };
+
+  const handleBackgroundOpacityChange = (newOpacity: number) => {
+    nodeData.onNodeDataChange?.(nodeData.id, { backgroundOpacity: newOpacity });
   };
 
   const handleScaleStart = (
@@ -341,7 +454,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       const currentDist = Math.hypot(moveEvent.clientX - anchorX, moveEvent.clientY - anchorY);
       const scaleFactor = currentDist / startDist;
       
-      const newFontSize = Math.max(8, Math.min(128, startFontSize * scaleFactor));
+      const newFontSize = Math.max(8, Math.min(1024, startFontSize * scaleFactor));
       const newWidth = Math.max(80, startWidth * scaleFactor);
       const newHeight = Math.max(30, startHeight * scaleFactor);
       
@@ -467,7 +580,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         padding: `${paddingSize}px`,
         boxSizing: 'border-box',
         border: showHighlight ? '2px solid #3b82f6' : '2px solid transparent',
-        backgroundColor: nodeData.backgroundColor || 'transparent',
+        backgroundColor: resolvedBackgroundColor,
       }}
     >
       {/* 顶部工具栏 - 仅在编辑模式下显示 */}
@@ -476,9 +589,14 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           fontSize={fontSize}
           fontWeight={fontWeight}
           textAlign={textAlign}
+          backgroundColor={nodeData.backgroundColor}
+          backgroundOpacity={backgroundOpacity}
+          zoom={zoom || 1}
           onFontSizeChange={handleFontSizeChange}
           onFontWeightChange={handleFontWeightChange}
           onTextAlignChange={handleTextAlignChange}
+          onBackgroundColorChange={handleBackgroundColorChange}
+          onBackgroundOpacityChange={handleBackgroundOpacityChange}
         />
       )}
 
@@ -545,7 +663,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         ref={textDisplayRef}
         style={{
           width: '100%',
-          minHeight: `${Math.ceil(fontSize * lineHeight)}px`,
+          minHeight: `${lineHeightPx}px`,
           fontSize: fontSize,
           fontFamily: nodeData.fontFamily || 'sans-serif',
           fontWeight: fontWeight,
@@ -553,8 +671,9 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           textAlign: textAlign,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          lineHeight: lineHeight,
+          lineHeight: `${lineHeightPx}px`,
           userSelect: isEditing ? 'none' : 'text',
+          opacity: isEditing ? 0 : 1,
           pointerEvents: isEditing ? 'none' : 'auto',
         }}
       >
@@ -588,7 +707,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             outline: 'none',
             resize: 'none',
             background: 'transparent',
-            lineHeight: lineHeight,
+            lineHeight: `${lineHeightPx}px`,
             padding: 0,
             margin: 0,
             caretColor: nodeData.color || '#000',

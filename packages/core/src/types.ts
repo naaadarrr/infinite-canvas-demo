@@ -86,6 +86,7 @@ export interface TextNodeData extends BaseNodeData {
   textAlign?: TextAlign;
   color?: string;
   backgroundColor?: string;
+  backgroundOpacity?: number;
   scale?: number;
 }
 

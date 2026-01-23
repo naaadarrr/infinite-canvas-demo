@@ -49,6 +49,7 @@ export default function Home() {
   const presencesRef = useRef<Map<string, { userName?: string }>>(new Map());
   const knownUsersRef = useRef<Set<string>>(new Set());
   const connectedRef = useRef(false);
+  const wasConnectedRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const userColor = useMemo(() => {
     const palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0f766e'];
@@ -229,6 +230,16 @@ export default function Home() {
       collab.updatePresence({ userName: userId, color: userColor });
     }
   }, [collab, userColor, userId]);
+  useEffect(() => {
+    if (wasConnectedRef.current && !collab.connected) {
+      setContextMenu(null);
+      setNodes([]);
+      idMapRef.current.clear();
+      knownUsersRef.current.clear();
+      pushToast('已离开房间', 'error');
+    }
+    wasConnectedRef.current = collab.connected;
+  }, [collab.connected, pushToast]);
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
@@ -456,6 +467,91 @@ export default function Home() {
       });
     },
     []
+  );
+
+  const sortNodesByLayer = useCallback((list: CanvasNodeData[]) => {
+    const indexMap = new Map(list.map((node, index) => [node.id, index]));
+    return [...list].sort((a, b) => {
+      const aZ = typeof a.zIndex === 'number' ? a.zIndex : 0;
+      const bZ = typeof b.zIndex === 'number' ? b.zIndex : 0;
+      if (aZ !== bZ) {
+        return aZ - bZ;
+      }
+      return (indexMap.get(a.id) ?? 0) - (indexMap.get(b.id) ?? 0);
+    });
+  }, []);
+
+  const getLayerInfo = useCallback(
+    (nodeId: string) => {
+      const ordered = sortNodesByLayer(nodesRef.current);
+      const index = ordered.findIndex((node) => node.id === nodeId);
+      if (index === -1) {
+        return { isTop: false, isBottom: false };
+      }
+      return {
+        isTop: index === ordered.length - 1,
+        isBottom: index === 0,
+      };
+    },
+    [sortNodesByLayer]
+  );
+
+  const applyLayerAction = useCallback(
+    (nodeId: string, action: 'forward' | 'backward' | 'front' | 'back') => {
+      let pendingUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+      setNodes((prevNodes) => {
+        if (prevNodes.length < 2) {
+          return prevNodes;
+        }
+        const ordered = sortNodesByLayer(prevNodes);
+        const index = ordered.findIndex((node) => node.id === nodeId);
+        if (index === -1) {
+          return prevNodes;
+        }
+        const nextOrder = [...ordered];
+        if (action === 'forward') {
+          if (index === ordered.length - 1) {
+            return prevNodes;
+          }
+          [nextOrder[index], nextOrder[index + 1]] = [nextOrder[index + 1], nextOrder[index]];
+        } else if (action === 'backward') {
+          if (index === 0) {
+            return prevNodes;
+          }
+          [nextOrder[index], nextOrder[index - 1]] = [nextOrder[index - 1], nextOrder[index]];
+        } else if (action === 'front') {
+          if (index === ordered.length - 1) {
+            return prevNodes;
+          }
+          const [node] = nextOrder.splice(index, 1);
+          nextOrder.push(node);
+        } else if (action === 'back') {
+          if (index === 0) {
+            return prevNodes;
+          }
+          const [node] = nextOrder.splice(index, 1);
+          nextOrder.unshift(node);
+        }
+        const zIndexMap = new Map(nextOrder.map((node, idx) => [node.id, idx]));
+        const nextNodes = prevNodes.map((node) => {
+          const nextZIndex = zIndexMap.get(node.id);
+          if (nextZIndex === undefined || nextZIndex === node.zIndex) {
+            return node;
+          }
+          pendingUpdates.push({
+            nodeId: idMapRef.current.get(node.id) ?? node.id,
+            updates: { zIndex: nextZIndex },
+          });
+          return { ...node, zIndex: nextZIndex };
+        });
+        return nextNodes;
+      });
+      if (pendingUpdates.length > 0) {
+        collab.updateNodes(pendingUpdates);
+      }
+      setContextMenu(null);
+    },
+    [collab, sortNodesByLayer]
   );
 
   const handleCloneNode = useCallback(() => {
@@ -715,21 +811,103 @@ export default function Home() {
             }}
             onClick={(event) => event.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={handleCloneNode}
-              style={{
-                width: '100%',
-                textAlign: 'left',
-                padding: '8px 10px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                fontSize: 13,
-              }}
-            >
-              复制节点
-            </button>
+            {(() => {
+              const layerInfo = getLayerInfo(contextMenu.nodeId);
+              return (
+                <>
+                  <button
+                    type="button"
+                    disabled={layerInfo.isTop}
+                    onClick={() => applyLayerAction(contextMenu.nodeId, 'forward')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: layerInfo.isTop ? '#9ca3af' : '#111',
+                    }}
+                  >
+                    上一层
+                  </button>
+                  <button
+                    type="button"
+                    disabled={layerInfo.isBottom}
+                    onClick={() => applyLayerAction(contextMenu.nodeId, 'backward')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                    }}
+                  >
+                    下一层
+                  </button>
+                  <button
+                    type="button"
+                    disabled={layerInfo.isTop}
+                    onClick={() => applyLayerAction(contextMenu.nodeId, 'front')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: layerInfo.isTop ? '#9ca3af' : '#111',
+                    }}
+                  >
+                    最顶层
+                  </button>
+                  <button
+                    type="button"
+                    disabled={layerInfo.isBottom}
+                    onClick={() => applyLayerAction(contextMenu.nodeId, 'back')}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
+                      fontSize: 13,
+                      color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                    }}
+                  >
+                    最底层
+                  </button>
+                  <div
+                    style={{
+                      height: 1,
+                      background: '#e5e7eb',
+                      margin: '6px 4px',
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCloneNode}
+                    style={{
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '8px 10px',
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      fontSize: 13,
+                    }}
+                  >
+                    复制节点
+                  </button>
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

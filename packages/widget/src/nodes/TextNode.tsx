@@ -290,6 +290,7 @@ function TextToolbar({
 export function TextNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as TextNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<TextNodeData, 'type'>>) => void;
+    autoEdit?: boolean;
   };
   const sizeLabel = `${nodeData.size.width} x ${nodeData.size.height}`;
   const showHighlight = selected || dragging;
@@ -298,6 +299,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
   const textDisplayRef = React.useRef<HTMLDivElement | null>(null);
+  const autoEditProcessedRef = React.useRef(false);
   const scaleStateRef = React.useRef<{
     anchorX: number;
     anchorY: number;
@@ -339,10 +341,40 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     const b = value & 255;
     return `rgba(${r}, ${g}, ${b}, ${backgroundOpacity})`;
   }, [backgroundOpacity, nodeData.backgroundColor]);
+  const resolvedTextColor = React.useMemo(() => {
+    const raw = (nodeData.backgroundColor || '').toLowerCase();
+    if (!raw) {
+      return nodeData.color || '#000';
+    }
+    const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
+    const hex = normalized.length === 3 ? normalized.split('').map((c) => c + c).join('') : normalized;
+    if (hex === '000000') {
+      return '#ffffff';
+    }
+    return nodeData.color || '#000';
+  }, [nodeData.backgroundColor, nodeData.color]);
 
   React.useEffect(() => {
     setContent(nodeData.content || '');
   }, [nodeData.content]);
+
+  // 自动进入编辑模式(针对新创建的文本节点)
+  React.useEffect(() => {
+    if (nodeData.autoEdit && selected && !isEditing && !autoEditProcessedRef.current) {
+      autoEditProcessedRef.current = true;
+      setIsEditing(true);
+      // 清除 autoEdit 标记
+      nodeData.onNodeDataChange?.(nodeData.id, { autoEdit: undefined } as any);
+      // 聚焦到textarea
+      setTimeout(() => {
+        textareaRef.current?.focus();
+        // 全选文本(如果有内容)
+        if (textareaRef.current && content) {
+          textareaRef.current.select();
+        }
+      }, 50);
+    }
+  }, [nodeData.autoEdit, selected, isEditing, nodeData, content]);
 
   // 当选中且点击时进入编辑模式
   const handleContainerClick = React.useCallback(() => {
@@ -583,8 +615,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         backgroundColor: resolvedBackgroundColor,
       }}
     >
-      {/* 顶部工具栏 - 仅在编辑模式下显示 */}
-      {isEditing && (
+      {/* 顶部工具栏 - 在编辑模式或选中时显示 */}
+      {(isEditing || selected) && (
         <TextToolbar
           fontSize={fontSize}
           fontWeight={fontWeight}
@@ -667,7 +699,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           fontSize: fontSize,
           fontFamily: nodeData.fontFamily || 'sans-serif',
           fontWeight: fontWeight,
-          color: nodeData.color || '#000',
+          color: resolvedTextColor,
           textAlign: textAlign,
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
@@ -698,7 +730,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             fontSize: fontSize,
             fontFamily: nodeData.fontFamily || 'sans-serif',
             fontWeight: fontWeight,
-            color: nodeData.color || '#000',
+            color: resolvedTextColor,
             textAlign: textAlign,
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
@@ -710,7 +742,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             lineHeight: `${lineHeightPx}px`,
             padding: 0,
             margin: 0,
-            caretColor: nodeData.color || '#000',
+            caretColor: resolvedTextColor,
           }}
           value={content}
           onChange={handleContentChange}

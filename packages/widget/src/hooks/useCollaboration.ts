@@ -149,6 +149,7 @@ export interface CollaborationConfig {
   token?: string;
   autoReconnect?: boolean;
   reconnectInterval?: number;
+  enabled?: boolean;
 }
 
 // Hook 返回值
@@ -208,6 +209,7 @@ export function useCollaboration(
     token = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_USER_TOKEN) || `user_${userId}`,
     autoReconnect = true,
     reconnectInterval = 3000,
+    enabled = true,
   } = config;
 
   const [connected, setConnected] = useState(false);
@@ -258,6 +260,9 @@ export function useCollaboration(
 
   // 连接 WebSocket
   const connect = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -351,7 +356,7 @@ export function useCollaboration(
       wsRef.current = null;
 
       // 自动重连
-      if (autoReconnect && !reconnectBlockedRef.current) {
+      if (enabled && autoReconnect && !reconnectBlockedRef.current) {
         reconnectTimeoutRef.current = setTimeout(() => {
           console.log('[Collaboration] Reconnecting...');
           connect();
@@ -364,10 +369,25 @@ export function useCollaboration(
     };
 
     wsRef.current = ws;
-  }, [canvasId, userId, userName, wsUrl, token, autoReconnect, reconnectInterval, onMessage]);
+  }, [canvasId, userId, userName, wsUrl, token, autoReconnect, reconnectInterval, enabled, onMessage]);
 
   // 初始化连接
   useEffect(() => {
+    if (!enabled) {
+      setConnected(false);
+      setPresences(new Map());
+      setLockedNodes(new Map());
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      return;
+    }
+
     connect();
 
     return () => {
@@ -379,7 +399,7 @@ export function useCollaboration(
         wsRef.current = null;
       }
     };
-  }, [connect]);
+  }, [connect, enabled]);
 
   // API 方法
   const createNode = useCallback(

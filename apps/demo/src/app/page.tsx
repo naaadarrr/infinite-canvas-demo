@@ -35,15 +35,18 @@ export default function Home() {
     Array<{ id: string; message: string; variant: 'info' | 'error' }>
   >([]);
   const userId = useMemo(() => `user_${Math.random().toString(36).slice(2, 8)}`, []);
-  const canvasId = useMemo(() => {
+  const canvasIdParam = useMemo(() => {
     if (typeof window === 'undefined') {
-      return 'demo';
+      return null;
     }
     const params = new URLSearchParams(window.location.search);
-    return params.get('canvasId') ?? 'demo';
+    return params.get('canvasId');
   }, []);
+  const collabEnabled = Boolean(canvasIdParam);
+  const canvasId = canvasIdParam ?? 'local';
   const collabRef = useRef<CollaborationState | null>(null);
   const seededRef = useRef(false);
+  const localSeededRef = useRef(false);
   const nodesRef = useRef<CanvasNodeData[]>([]);
   const idMapRef = useRef<Map<string, string>>(new Map());
   const presencesRef = useRef<Map<string, { userName?: string }>>(new Map());
@@ -206,6 +209,7 @@ export default function Home() {
       canvasId,
       userId,
       userName: userId,
+      enabled: collabEnabled,
     },
     handleMessage
   );
@@ -231,6 +235,9 @@ export default function Home() {
     }
   }, [collab, userColor, userId]);
   useEffect(() => {
+    if (!collabEnabled) {
+      return;
+    }
     if (wasConnectedRef.current && !collab.connected) {
       setContextMenu(null);
       setNodes([]);
@@ -239,7 +246,14 @@ export default function Home() {
       pushToast('已离开房间', 'error');
     }
     wasConnectedRef.current = collab.connected;
-  }, [collab.connected, pushToast]);
+  }, [collab.connected, collabEnabled, pushToast]);
+  useEffect(() => {
+    if (collabEnabled || localSeededRef.current) {
+      return;
+    }
+    setNodes(seedNodes);
+    localSeededRef.current = true;
+  }, [collabEnabled, seedNodes]);
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
@@ -247,33 +261,42 @@ export default function Home() {
         return;
       }
       const tempId = `temp_${generateId()}`;
-      const defaultContent = 'Untitle Text';
+      const defaultContent = '';
       const defaultFontSize = 24;
       const paddingSize = 12;
+      const borderSize = 2;
       const lineHeight = 1.4;
       
-      // 计算文本宽度
+      // 计算文本宽度(使用占位符文本)
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      let textWidth = 200;
+      const placeholderText = '输入文字...';
+      let textWidth = 100;
       if (context) {
         context.font = `${defaultFontSize}px sans-serif`;
-        textWidth = context.measureText(defaultContent).width;
+        textWidth = context.measureText(placeholderText).width;
       }
       
       // 计算单行高度
       const singleLineHeight = Math.ceil(defaultFontSize * lineHeight) + paddingSize * 2;
       
+      // 文本框有 padding 和 border，所以要让文本内容的起始位置对齐鼠标点击位置
+      // 文本内容位置 = 文本框左上角 + border + padding
+      // 因此文本框位置 = 点击位置 - border - padding
       const newNode: CanvasNodeData = {
         id: tempId,
         type: NodeType.TEXT,
-        position,
-        size: { width: Math.max(80, Math.ceil(textWidth + paddingSize * 2 + 16)), height: singleLineHeight },
+        position: {
+          x: position.x - paddingSize - borderSize,
+          y: position.y - paddingSize - borderSize,
+        },
+        size: { width: Math.max(100, Math.ceil(textWidth + paddingSize * 2 + 16)), height: singleLineHeight },
         content: defaultContent,
         fontSize: defaultFontSize,
         color: '#111',
         backgroundColor: 'transparent',
-      };
+        autoEdit: true, // 标记为自动进入编辑模式
+      } as CanvasNodeData;
       setNodes((prevNodes) => [...prevNodes, newNode]);
       collab.createNode(newNode, tempId);
       setActiveTool('select');

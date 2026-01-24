@@ -1,5 +1,62 @@
 # 更新日志
 
+## v0.0.3 - 2026-01-24
+
+### 🐛 重要修复
+
+1. **WebSocket 连接稳定性修复**
+   - 修复 WebSocket 错误处理不完善的问题
+   - 添加详细的错误日志(包括 URL、readyState、canvasId)
+   - 添加 try-catch 保护 WebSocket 创建过程
+   - 改进 onclose 日志,显示关闭代码和原因
+
+2. **修复 React Hooks 循环依赖**
+   - **关键修复**: PING/PONG 消息处理不再使用 `send` 函数
+   - 避免了 `connect` → `onMessage` → `send` 的循环依赖
+   - 修复了错误堆栈指向错误位置的问题
+   - 在 JOIN 消息发送时添加 try-catch 保护
+
+3. **改进连接状态管理**
+   - 断线时不再清空节点数据,等待重连后恢复
+   - 断线提示从"已离开房间"改为"连接断开,正在重连..."
+   - 区分"主动离开"和"断线重连"两种场景
+   - 连接成功时不显示多余的 toast
+
+4. **修复 sync_state 处理逻辑**
+   - 初始化 `knownUsers` 时正确排除当前用户
+   - 只在房间为空且未 seeded 时才调用 `seedCanvas`
+   - 添加详细的日志输出(节点数、用户数)
+   - 避免重复的"进入房间"/"离开房间"提示
+
+5. **改进用户进出提示**
+   - 避免在断线重连时显示大量"离开房间"提示
+   - 只在真正的用户进出时才显示提示
+   - presence_update 消息处理逻辑更清晰
+
+### 🔧 技术改进
+
+- 改进 WebSocket readyState 检查
+- 添加连接状态日志便于调试
+- 优化重连策略和状态管理
+- 添加更多边界条件检查
+
+### 📚 文档
+
+- 新增 [WEBSOCKET_FIX.md](./WEBSOCKET_FIX.md) - 详细的问题分析和修复说明
+- 新增 [QUICK_FIX.md](./QUICK_FIX.md) - 快速修复指南
+- 新增 [test-websocket.html](./test-websocket.html) - 独立的 WebSocket 连接测试工具
+
+### 🔍 问题诊断
+
+如果遇到连接问题,请使用新增的测试工具:
+```bash
+open test-websocket.html
+```
+
+或查看浏览器控制台,现在会显示详细的连接日志。
+
+---
+
 ## v0.0.2 - 2026-01-21
 
 ### ✨ 新功能

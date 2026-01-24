@@ -296,6 +296,10 @@ export function InfiniteCanvas({
         dragging: prevNode?.dragging ?? false,
         width: node.size.width,
         height: node.size.height,
+        measured: prevNode?.measured ?? {
+          width: node.size.width,
+          height: node.size.height,
+        },
       } as Node<CanvasNodeData>;
     });
     

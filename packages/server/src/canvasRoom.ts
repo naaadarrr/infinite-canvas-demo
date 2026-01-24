@@ -30,7 +30,7 @@ import type {
   NodesUpdatedMessage,
   Position,
 } from './types';
-import { loadLatestSnapshot, createAndSaveSnapshot } from './snapshot';
+import { loadLatestSnapshot } from './snapshot';
 
 export class CanvasRoom implements DurableObject {
   private state: DurableObjectState;
@@ -44,12 +44,18 @@ export class CanvasRoom implements DurableObject {
   private lockedNodes: Map<string, string> = new Map(); // nodeId -> userId
   private connections: Map<WebSocket, ConnectionInfo> = new Map();
   
-  // 快照配置
+  // DO Storage 持久化配置
+  private isDirty: boolean = false;
+  private flushTimer?: number;
+  private flushInterval: number = 2000; // 2 秒持久化
+  private stateLoaded: boolean = false; // 防止重复加载
+  private readonly CURRENT_STATE_VERSION = 1; // 状态版本控制
+  private lastStateSource: 'do_storage' | 'legacy_migration' | 'empty' | 'memory' | 'unknown' = 'unknown';
+  
+  // 旧快照配置(已废弃,保留用于迁移)
   private lastSnapshotSeq: number = 0;
   private lastSnapshotTime: number = Date.now();
-  private snapshotInterval: number = 30000; // 30 秒
-  private snapshotOpThreshold: number = 50; // 50 个操作
-  private maxRoomUsers: number = 10;// 开放到10个人
+  private maxRoomUsers: number = 10;
   private heartbeatInterval: number = 30000; // 30 秒
   private heartbeatMissLimit: number = 3;
   
@@ -62,12 +68,6 @@ export class CanvasRoom implements DurableObject {
     this.env = env;
     
     // 从环境变量读取配置
-    if (env.SNAPSHOT_INTERVAL) {
-      this.snapshotInterval = parseInt(env.SNAPSHOT_INTERVAL, 10);
-    }
-    if (env.SNAPSHOT_OP_THRESHOLD) {
-      this.snapshotOpThreshold = parseInt(env.SNAPSHOT_OP_THRESHOLD, 10);
-    }
     if (env.MAX_ROOM_USERS) {
       const max = parseInt(env.MAX_ROOM_USERS, 10);
       if (!Number.isNaN(max) && max > 0) {
@@ -146,6 +146,9 @@ export class CanvasRoom implements DurableObject {
     // 初始化画布状态（如果是首次连接）
     if (!this.canvasId) {
       await this.initialize(canvasId);
+    } else {
+      this.lastStateSource = 'memory';
+      console.log(`[CanvasRoom] Canvas ${canvasId} already initialized, serving state from memory`);
     }
 
     const pair = new WebSocketPair();
@@ -194,27 +197,82 @@ export class CanvasRoom implements DurableObject {
    * 初始化画布状态
    */
   private async initialize(canvasId: string): Promise<void> {
+    if (this.stateLoaded) {
+      return; // 防止重复加载
+    }
+    
     this.canvasId = canvasId;
     console.log(`[CanvasRoom] Initializing canvas ${canvasId}`);
 
-    // 尝试从快照恢复
     try {
-      const snapshot = await loadLatestSnapshot(this.env, canvasId);
-      
-      if (snapshot) {
-        this.seq = snapshot.seq;
-        this.lastSnapshotSeq = snapshot.seq;
-        this.nodes = new Map(snapshot.nodes.map(node => [node.id, node]));
-        console.log(`[CanvasRoom] Restored from snapshot: ${snapshot.nodes.length} nodes, seq ${this.seq}`);
+      // 1. 首先尝试从 DO Storage 加载状态
+      const storedData = await this.state.storage.get<{
+        version?: number;
+        seq: number;
+        nodes: CanvasNodeData[];
+        canvasId: string;
+        [key: string]: any;
+      }>('state');
+
+      if (storedData && storedData.seq !== undefined && storedData.nodes) {
+        // DO Storage 有数据,直接使用
+        const version = storedData.version || 1; // 向后兼容,默认版本 1
+        
+        if (version === this.CURRENT_STATE_VERSION) {
+          this.lastStateSource = 'do_storage';
+          this.seq = storedData.seq;
+          this.nodes = new Map(storedData.nodes.map(node => [node.id, node]));
+          console.log(
+            `[CanvasRoom] Restored from DO storage v${version}: ${storedData.nodes.length} nodes, seq ${this.seq}`
+          );
+        } else {
+          this.lastStateSource = 'do_storage';
+          console.warn(
+            `[CanvasRoom] State version mismatch: stored=${version}, current=${this.CURRENT_STATE_VERSION}`
+          );
+          // 未来可以添加版本迁移逻辑
+          // 现在先加载,假设向后兼容
+          this.seq = storedData.seq;
+          this.nodes = new Map(storedData.nodes.map(node => [node.id, node]));
+        }
       } else {
-        console.log(`[CanvasRoom] No snapshot found, starting fresh`);
+        // 2. DO Storage 为空,尝试从 R2+D1 迁移(仅一次)
+        console.log(`[CanvasRoom] DO storage empty, attempting legacy migration...`);
+        
+        const snapshot = await loadLatestSnapshot(this.env, canvasId);
+        
+        if (snapshot) {
+          this.lastStateSource = 'legacy_migration';
+          this.seq = snapshot.seq;
+          this.nodes = new Map(snapshot.nodes.map(node => [node.id, node]));
+          console.log(`[CanvasRoom] Migrated from R2+D1: ${snapshot.nodes.length} nodes, seq ${this.seq}`);
+          
+          // 立即写入 DO Storage,完成迁移
+          await this.state.blockConcurrencyWhile(async () => {
+            await this.state.storage.put('state', {
+              version: this.CURRENT_STATE_VERSION,
+              seq: this.seq,
+              nodes: Array.from(this.nodes.values()),
+              canvasId: this.canvasId,
+              migratedAt: Date.now(),
+              migratedFrom: 'R2_D1',
+            });
+          });
+          console.log(`[CanvasRoom] Migration completed, data now in DO storage v${this.CURRENT_STATE_VERSION}`);
+        } else {
+          this.lastStateSource = 'empty';
+          console.log(`[CanvasRoom] No legacy data found, starting fresh`);
+        }
       }
+      
+      this.stateLoaded = true;
     } catch (error) {
-      console.error(`[CanvasRoom] Error loading snapshot:`, error);
+      this.lastStateSource = 'unknown';
+      console.error(`[CanvasRoom] Error loading state:`, error);
     }
 
-    // 启动定期快照
-    this.startPeriodicSnapshot();
+    // 启动定期持久化(防止重复启动)
+    this.startFlushTimer();
   }
 
   /**
@@ -250,7 +308,9 @@ export class CanvasRoom implements DurableObject {
       lastUpdate: Date.now(),
     });
 
-    console.log(`[CanvasRoom] User ${userId} joined canvas ${this.canvasId}`);
+    console.log(
+      `[CanvasRoom] User ${userId} joined canvas ${this.canvasId} (state source: ${this.lastStateSource})`
+    );
 
     // 发送完整状态同步
     const syncMessage: SyncStateMessage = {
@@ -344,6 +404,7 @@ export class CanvasRoom implements DurableObject {
     };
 
     this.broadcast(response);
+    this.markDirty();
     await this.checkSnapshot();
   }
 
@@ -368,6 +429,7 @@ export class CanvasRoom implements DurableObject {
     };
 
     this.broadcast(response);
+    this.markDirty();
     await this.checkSnapshot();
   }
 
@@ -382,6 +444,16 @@ export class CanvasRoom implements DurableObject {
       return;
     }
 
+    // 新增: 如果节点被锁定且不是锁定者,拒绝更新
+    if (this.lockedNodes.has(nodeId) && this.lockedNodes.get(nodeId) !== userId) {
+      console.warn(`[CanvasRoom] User ${userId} tried to update locked node ${nodeId}`);
+      const conn = Array.from(this.connections.entries()).find(([_, info]) => info.userId === userId);
+      if (conn) {
+        this.sendError(conn[0], `Node ${nodeId} is locked by another user`, 'NODE_LOCKED');
+      }
+      return;
+    }
+
     // 合并更新
     Object.assign(node, updates);
     this.seq++;
@@ -391,9 +463,11 @@ export class CanvasRoom implements DurableObject {
       seq: this.seq,
       nodeId,
       updates,
+      userId, // 保留 userId,让客户端可以过滤
     };
 
     this.broadcast(response);
+    this.markDirty();
     await this.checkSnapshot();
   }
 
@@ -433,6 +507,7 @@ export class CanvasRoom implements DurableObject {
     };
 
     this.broadcast(response);
+    this.markDirty();
     await this.checkSnapshot();
   }
 
@@ -485,6 +560,8 @@ export class CanvasRoom implements DurableObject {
       presence.draggingNode = nodeId;
       this.broadcastPresenceUpdate(userId, presence);
     }
+    
+    this.markDirty();
   }
 
   /**
@@ -515,6 +592,8 @@ export class CanvasRoom implements DurableObject {
       updates: { position },
       userId, // 添加 userId，让客户端知道是谁在拖动
     });
+    
+    this.markDirty();
   }
 
   /**
@@ -560,6 +639,7 @@ export class CanvasRoom implements DurableObject {
       this.broadcastPresenceUpdate(userId, presence);
     }
 
+    this.markDirty();
     await this.checkSnapshot();
   }
 
@@ -635,8 +715,9 @@ export class CanvasRoom implements DurableObject {
 
     // 如果没有连接了，可以考虑保存快照并清理
     if (this.connections.size === 0) {
-      console.log(`[CanvasRoom] No more connections, saving final snapshot`);
-      this.saveSnapshotNow().catch(console.error);
+      console.log(`[CanvasRoom] No more connections, flushing final state`);
+      this.flushToStorage('final').catch(console.error); // 立即持久化
+      this.stopFlushTimer(); // 停止定时器
       this.stopHeartbeat();
     }
   }
@@ -745,65 +826,103 @@ export class CanvasRoom implements DurableObject {
   }
 
   /**
-   * 检查是否需要保存快照
+   * 标记状态已变更,需要持久化
    */
-  private async checkSnapshot(): Promise<void> {
-    const opsSinceSnapshot = this.seq - this.lastSnapshotSeq;
-    const timeSinceSnapshot = Date.now() - this.lastSnapshotTime;
-
-    if (
-      opsSinceSnapshot >= this.snapshotOpThreshold ||
-      timeSinceSnapshot >= this.snapshotInterval
-    ) {
-      await this.saveSnapshotNow();
-    }
+  private markDirty(): void {
+    this.isDirty = true;
   }
 
   /**
-   * 立即保存快照
+   * 将脏状态持久化到 DO Storage
+   * 使用 blockConcurrencyWhile 确保写入原子性
    */
-  private async saveSnapshotNow(): Promise<void> {
-    if (!this.canvasId) return;
+  private async flushToStorage(reason: 'scheduled' | 'final' | 'manual' = 'scheduled'): Promise<void> {
+    if (!this.isDirty || !this.canvasId) {
+      return;
+    }
 
     try {
-      console.log(`[CanvasRoom] Saving snapshot for canvas ${this.canvasId} at seq ${this.seq}`);
-      
-      await createAndSaveSnapshot(
-        this.env,
-        this.canvasId,
-        this.seq,
-        Array.from(this.nodes.values())
+      console.log(
+        `[CanvasRoom] Flushing state (${reason}) for canvas ${this.canvasId} v${this.CURRENT_STATE_VERSION} at seq ${this.seq}`
       );
+      
+      // 使用 blockConcurrencyWhile 保证原子性写入
+      await this.state.blockConcurrencyWhile(async () => {
+        await this.state.storage.put('state', {
+          version: this.CURRENT_STATE_VERSION,
+          seq: this.seq,
+          nodes: Array.from(this.nodes.values()),
+          canvasId: this.canvasId,
+          lastFlushedAt: Date.now(),
+        });
+      });
 
-      this.lastSnapshotSeq = this.seq;
-      this.lastSnapshotTime = Date.now();
+      this.isDirty = false;
+      console.log(
+        `[CanvasRoom] Flush completed successfully for canvas ${this.canvasId} v${this.CURRENT_STATE_VERSION} at seq ${this.seq}`
+      );
     } catch (error) {
-      console.error(`[CanvasRoom] Error saving snapshot:`, error);
+      console.error(`[CanvasRoom] Error flushing state:`, error);
+      // 保持 isDirty = true,下次定时器会重试
     }
   }
 
   /**
-   * 启动定期快照
+   * 启动定期持久化定时器
+   * 防止重复启动 - 关键安全修复
+   */
+  private startFlushTimer(): void {
+    // 防止创建多个定时器
+    if (this.flushTimer) {
+      console.log(`[CanvasRoom] Flush timer already running, skipping`);
+      return;
+    }
+
+    console.log(`[CanvasRoom] Starting flush timer (${this.flushInterval}ms interval)`);
+    
+    this.flushTimer = setInterval(async () => {
+      await this.flushToStorage('scheduled');
+    }, this.flushInterval) as unknown as number;
+  }
+
+  /**
+   * 停止定期持久化定时器
+   */
+  private stopFlushTimer(): void {
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = undefined;
+      console.log(`[CanvasRoom] Flush timer stopped`);
+    }
+  }
+
+  /**
+   * 检查是否需要保存快照 (已废弃,保留用于兼容)
+   */
+  private async checkSnapshot(): Promise<void> {
+    // 已废弃: 现在使用 DO Storage + markDirty + flushToStorage
+    // 保留空实现以防其他地方调用
+  }
+
+  /**
+   * 立即保存快照 (已废弃,保留用于兼容)
+   */
+  private async saveSnapshotNow(): Promise<void> {
+    // 已废弃: 现在使用 flushToStorage
+    // 保留空实现以防其他地方调用
+  }
+
+  /**
+   * 启动定期快照 (已废弃)
    */
   private startPeriodicSnapshot(): void {
-    // 使用 alarm API 进行定期快照
-    this.state.storage.setAlarm(Date.now() + this.snapshotInterval);
+    // 已废弃: 现在使用 startFlushTimer
   }
 
   /**
-   * Alarm 处理（定期触发）
+   * Alarm 处理 (已废弃)
    */
   async alarm(): Promise<void> {
-    console.log(`[CanvasRoom] Alarm triggered for canvas ${this.canvasId}`);
-    
-    // 如果有更新，保存快照
-    if (this.seq > this.lastSnapshotSeq) {
-      await this.saveSnapshotNow();
-    }
-
-    // 设置下一次 alarm
-    if (this.connections.size > 0) {
-      this.state.storage.setAlarm(Date.now() + this.snapshotInterval);
-    }
+    // 已废弃: 现在使用定期 flush 机制
   }
 }

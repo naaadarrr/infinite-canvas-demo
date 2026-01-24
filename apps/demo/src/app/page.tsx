@@ -467,11 +467,22 @@ export default function Home() {
   const handleNodeDrag = useCallback(
     (nodeId: string, position: { x: number; y: number }, selectedNodeIds?: string[]) => {
       
-      // 如果有选中的节点列表，将它们都标记为拖动状态并批量发送位置更新
+      // 批量拖动
       if (selectedNodeIds && selectedNodeIds.length > 1) {
-        selectedNodeIds.forEach(id => draggingNodesRef.current.add(id));
+        // 首次批量拖动时,为所有节点发送 DRAG_START 以锁定
+        selectedNodeIds.forEach(id => {
+          if (!draggingNodesRef.current.has(id)) {
+            draggingNodesRef.current.add(id);
+            const mappedId = idMapRef.current.get(id) ?? id;
+            const node = nodesRef.current.find(n => n.id === id);
+            if (node) {
+              // 发送 DRAG_START 锁定节点
+              collab.dragStart(mappedId, node.position);
+            }
+          }
+        });
         
-        // 获取所有选中节点的当前位置
+        // 批量发送位置更新
         const currentNodes = nodesRef.current;
         const updates = selectedNodeIds.map(id => {
           const node = currentNodes.find(n => n.id === id);
@@ -504,29 +515,14 @@ export default function Home() {
       // 清除所有拖动标记
       draggingNodesRef.current.clear();
       
-      const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
-      collab.dragEnd(mappedId, position);
-      
-      // 如果有多个节点被拖动，发送批量更新
-      if (draggingNodeIds.length > 1) {
-        const currentNodes = nodesRef.current;
-        const updates = draggingNodeIds
-          .map((id) => {
-            const node = currentNodes.find((n) => n.id === id);
-            if (!node) return null;
-            return {
-              nodeId: idMapRef.current.get(id) ?? id,
-              updates: { position: node.position },
-            };
-          })
-          .filter((update): update is { nodeId: string; updates: { position: { x: number; y: number } } } => 
-            update !== null
-          );
-        
-        if (updates.length > 0) {
-          collab.updateNodes(updates);
+      // 为每个节点发送 DRAG_END 以解锁
+      draggingNodeIds.forEach(id => {
+        const mappedId = idMapRef.current.get(id) ?? id;
+        const node = nodesRef.current.find(n => n.id === id);
+        if (node) {
+          collab.dragEnd(mappedId, node.position);
         }
-      }
+      });
     },
     [collab]
   );
@@ -890,6 +886,60 @@ export default function Home() {
                   >
                     {presence.userName || id}
                   </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {/* 锁定节点指示器层 */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            pointerEvents: 'none',
+            transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+            transformOrigin: '0 0',
+            zIndex: 10, // 在画布上方,光标下方
+          }}
+        >
+          {Array.from(collab.lockedNodes.entries()).map(([nodeId, lockUserId]) => {
+            const node = nodes.find(n => n.id === nodeId);
+            const lockUser = collab.presences.get(lockUserId);
+            if (!node || lockUserId === userId) return null; // 不显示自己锁定的节点
+            
+            const lockColor = lockUser?.color || '#ef4444';
+            const lockName = lockUser?.userName || lockUserId;
+            
+            return (
+              <div
+                key={nodeId}
+                style={{
+                  position: 'absolute',
+                  left: node.position.x,
+                  top: node.position.y,
+                  width: node.size.width,
+                  height: node.size.height,
+                  border: `3px solid ${lockColor}`,
+                  borderRadius: 8,
+                  boxShadow: `0 0 0 1px rgba(255,255,255,0.5), 0 0 12px ${lockColor}`,
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: -28,
+                    left: 0,
+                    padding: '4px 8px',
+                    borderRadius: 6,
+                    background: lockColor,
+                    color: '#fff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  🔒 {lockName} 正在编辑
                 </div>
               </div>
             );

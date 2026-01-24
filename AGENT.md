@@ -11,6 +11,19 @@
 
 库可发布、可供业务嵌入，并带有 demo 示例。
 
+## Collaboration rules
+- All node dragging uses per-node ownership
+- Local drag is authoritative
+- Remote patches are ignored while dragging
+- DO is authoritative and persistent
+- DO state is stored in Durable Object Storage (not R2+D1)
+- DO state must be loaded from storage on init
+- DO must flush dirty state periodically (every 2 seconds)
+- Never write storage per patch
+- Use blockConcurrencyWhile for atomic writes
+- State includes version number for forward compatibility
+- Legacy R2+D1 data is migrated once on first DO init
+
 ## Monorepo 结构（pnpm workspace）
 
 /
@@ -605,6 +618,115 @@ Next.js 15 应用，用于调试和展示。
         "pinnedOriginalSortWeight": null
     }
 ]
+
+## Durable Object 持久化机制 (2026-01 更新)
+
+### 架构变更
+- **废弃**: R2 + D1 快照系统 (snapshot.ts 保留但不再调用写入函数)
+- **当前**: Durable Object Storage 内置存储 + Dirty Flush 机制
+
+### 持久化策略
+
+#### 写入时机
+1. **定时持久化**: 每 2 秒检查 `isDirty`,如果为 true 则调用 `flushToStorage()`
+2. **优雅关闭**: 最后一个 WebSocket 连接断开时立即 flush
+3. **迁移时刻**: 从 R2+D1 迁移数据后立即写入 DO Storage
+
+#### 读取时机
+1. DO 首次初始化 (首个 WebSocket 连接)
+2. DO 从空闲/驱逐状态恢复
+3. **一次性迁移**: DO Storage 为空时从 R2+D1 读取(仅一次)
+
+#### 存储格式 (DO Storage)
+```typescript
+{
+  version: 1,                  // 状态版本号 (向前兼容)
+  seq: number,                 // 操作序列号
+  nodes: CanvasNodeData[],     // 节点数组
+  canvasId: string,            // 画布 ID
+  lastFlushedAt: number,       // 最后持久化时间戳
+  migratedAt?: number,         // (可选) 迁移时间戳
+  migratedFrom?: string,       // (可选) 'R2_D1'
+}
+```
+
+### 关键实现
+
+#### CanvasRoom (packages/server/src/canvasRoom.ts)
+
+**字段**:
+```typescript
+private isDirty: boolean = false;
+private flushTimer?: number;
+private flushInterval: number = 2000; // 2 秒
+private stateLoaded: boolean = false; // 防止重复加载
+private readonly CURRENT_STATE_VERSION = 1;
+```
+
+**核心方法**:
+
+1. **initialize()**: 从 DO Storage 或 R2+D1 (仅一次) 加载状态
+2. **markDirty()**: 标记状态已变更,在所有 handler 中调用
+3. **flushToStorage()**: 包裹在 `state.blockConcurrencyWhile()` 中,原子性写入
+4. **startFlushTimer()**: 防止重复启动定时器 (关键安全修复)
+5. **stopFlushTimer()**: 停止定时器
+
+**状态变更点** (调用 `markDirty()`):
+- handleCreateNode
+- handleDeleteNode
+- handleUpdateNode
+- handleUpdateNodes
+- handleDragStart
+- handleDragMove
+- handleDragEnd
+
+### 迁移路径
+
+#### 阶段 1: 数据迁移 (自动)
+- 新 DO 实例初始化时,如果 DO Storage 为空
+- 自动从 R2+D1 读取最新快照
+- 立即写入 DO Storage 并标记 `migratedFrom: 'R2_D1'`
+- 后续启动不再读取 R2+D1
+
+#### 阶段 2: 旧代码保留 (1-2 周)
+- `snapshot.ts` 保留但不调用写入函数
+- 作为回滚备份
+
+#### 阶段 3: 清理 (稳定后)
+- 删除 `snapshot.ts` 写入函数
+- 保留 `loadLatestSnapshot` 用于历史数据恢复
+
+### 安全保证
+
+1. **原子性写入**: 使用 `state.blockConcurrencyWhile()` 防止并发冲突
+2. **防重复启动**: `startFlushTimer()` 检查 `this.flushTimer` 避免多个定时器
+3. **版本控制**: 包含 `version: 1` 支持未来格式变更
+4. **向后兼容**: 读取时如果 version 缺失默认为 1
+
+### 日志示例
+
+**初次迁移**:
+```
+[CanvasRoom] Initializing canvas abc123
+[CanvasRoom] DO storage empty, attempting legacy migration...
+[Snapshot] Loading snapshot for canvas abc123
+[CanvasRoom] Migrated from R2+D1: 25 nodes, seq 142
+[CanvasRoom] Migration completed, data now in DO storage v1
+[CanvasRoom] Starting flush timer (2000ms interval)
+```
+
+**后续启动**:
+```
+[CanvasRoom] Initializing canvas abc123
+[CanvasRoom] Restored from DO storage v1: 25 nodes, seq 145
+[CanvasRoom] Starting flush timer (2000ms interval)
+```
+
+**定期持久化**:
+```
+[CanvasRoom] Flushing state for canvas abc123 at seq 148
+[CanvasRoom] Flush completed successfully
+```
 
 ## 构建命令
 

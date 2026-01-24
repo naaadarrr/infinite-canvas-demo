@@ -1,0 +1,2 @@
+{"id":"cmd_room1_001","source":"external.crm","type":"upsert_nodes","payload":{"nodes":[{"externalId":"5baeea6c9ea742f7a35a137aab9199999","type":"image","data":{"url":"/analyzed_video_task_object_replace_llm_df317ff873344f0aaac13659b6514ae2_inline_image_0.jpeg","raw":{"taskId":"5baeea6c9ea742f7a35a137aab9199999","status":"success","mediaType":"image","result":{"originImage":{"url":"/analyzed_video_task_object_replace_llm_df317ff873344f0aaac13659b6514ae2_inline_image_0.jpeg"}}}},"updatedAt":1730000000}]}}
+

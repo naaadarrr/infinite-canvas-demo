@@ -302,6 +302,11 @@ export interface Env {
   SNAPSHOT_INTERVAL?: string;
   SNAPSHOT_OP_THRESHOLD?: string;
   MAX_ROOM_USERS?: string;
+  EXTERNAL_API_KEYS?: string;
+  EXTERNAL_API_TIME_WINDOW_SEC?: string;
+  EXTERNAL_API_RATE_LIMIT_COUNT?: string;
+  EXTERNAL_API_RATE_LIMIT_WINDOW_SEC?: string;
+  EXTERNAL_API_NONCE_TTL_SEC?: string;
 }
 
 // ============ Durable Object 状态类型 ============
@@ -323,4 +328,24 @@ export interface ConnectionInfo {
   joinedAt: number;
   lastPongAt: number;
   missedHeartbeats: number;
+}
+
+// ============ External Command API 类型 ============
+
+export type ExternalCommandType = 'append_nodes' | 'upsert_nodes' | 'delete_nodes';
+
+export interface ExternalNode {
+  externalId: string;
+  type: string;
+  data: Record<string, unknown>;
+  updatedAt: number;
+}
+
+export interface ExternalCommandEnvelope {
+  id: string;
+  source: string;
+  type: ExternalCommandType;
+  payload: {
+    nodes: ExternalNode[];
+  };
 }

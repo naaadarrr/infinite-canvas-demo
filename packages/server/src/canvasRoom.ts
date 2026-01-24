@@ -6,11 +6,13 @@
 import type {
   Env,
   CanvasNodeData,
+  ExternalCommandEnvelope,
+  ExternalNode,
+  Size,
   UserPresence,
   ConnectionInfo,
   ClientMessage,
   ServerMessage,
-  MessageType,
   JoinMessage,
   LeaveMessage,
   CreateNodeMessage,
@@ -30,7 +32,9 @@ import type {
   NodesUpdatedMessage,
   Position,
 } from './types';
+import { MessageType, NodeType } from './types';
 import { loadLatestSnapshot } from './snapshot';
+import { parseExternalCommand } from './utils/externalCommands';
 
 export class CanvasRoom implements DurableObject {
   private state: DurableObjectState;
@@ -43,6 +47,9 @@ export class CanvasRoom implements DurableObject {
   private presences: Map<string, UserPresence> = new Map();
   private lockedNodes: Map<string, string> = new Map(); // nodeId -> userId
   private connections: Map<WebSocket, ConnectionInfo> = new Map();
+  private processedCommandIds: Map<string, number> = new Map();
+  private externalTombstones: Map<string, number> = new Map();
+  private autoLayoutIndex: number = 0;
   
   // DO Storage 持久化配置
   private isDirty: boolean = false;
@@ -51,6 +58,16 @@ export class CanvasRoom implements DurableObject {
   private stateLoaded: boolean = false; // 防止重复加载
   private readonly CURRENT_STATE_VERSION = 1; // 状态版本控制
   private lastStateSource: 'do_storage' | 'legacy_migration' | 'empty' | 'memory' | 'unknown' = 'unknown';
+  private readonly commandIdTtlMs: number = 24 * 60 * 60 * 1000;
+  private readonly tombstoneTtlMs: number = 30 * 24 * 60 * 60 * 1000;
+  private readonly externalLayoutConfig = {
+    columns: 4,
+    nodeWidth: 300,
+    nodeHeight: 200,
+    gap: 50,
+    startX: 100,
+    startY: 100,
+  };
   
   // 旧快照配置(已废弃,保留用于迁移)
   private lastSnapshotSeq: number = 0;
@@ -89,6 +106,10 @@ export class CanvasRoom implements DurableObject {
 
     if (url.pathname === '/leave' && request.method === 'POST') {
       return this.handleLeaveRequest(request);
+    }
+
+    if (url.pathname === '/commands' && request.method === 'POST') {
+      return this.handleExternalCommand(request);
     }
 
     // HTTP API（可选）
@@ -211,6 +232,9 @@ export class CanvasRoom implements DurableObject {
         seq: number;
         nodes: CanvasNodeData[];
         canvasId: string;
+        commandIds?: Record<string, number>;
+        tombstones?: Record<string, number>;
+        autoLayoutIndex?: number;
         [key: string]: any;
       }>('state');
 
@@ -222,6 +246,9 @@ export class CanvasRoom implements DurableObject {
           this.lastStateSource = 'do_storage';
           this.seq = storedData.seq;
           this.nodes = new Map(storedData.nodes.map(node => [node.id, node]));
+          this.processedCommandIds = new Map(Object.entries(storedData.commandIds || {}));
+          this.externalTombstones = new Map(Object.entries(storedData.tombstones || {}));
+          this.autoLayoutIndex = storedData.autoLayoutIndex ?? this.nodes.size;
           console.log(
             `[CanvasRoom] Restored from DO storage v${version}: ${storedData.nodes.length} nodes, seq ${this.seq}`
           );
@@ -234,6 +261,9 @@ export class CanvasRoom implements DurableObject {
           // 现在先加载,假设向后兼容
           this.seq = storedData.seq;
           this.nodes = new Map(storedData.nodes.map(node => [node.id, node]));
+          this.processedCommandIds = new Map(Object.entries(storedData.commandIds || {}));
+          this.externalTombstones = new Map(Object.entries(storedData.tombstones || {}));
+          this.autoLayoutIndex = storedData.autoLayoutIndex ?? this.nodes.size;
         }
       } else {
         // 2. DO Storage 为空,尝试从 R2+D1 迁移(仅一次)
@@ -245,6 +275,7 @@ export class CanvasRoom implements DurableObject {
           this.lastStateSource = 'legacy_migration';
           this.seq = snapshot.seq;
           this.nodes = new Map(snapshot.nodes.map(node => [node.id, node]));
+          this.autoLayoutIndex = this.nodes.size;
           console.log(`[CanvasRoom] Migrated from R2+D1: ${snapshot.nodes.length} nodes, seq ${this.seq}`);
           
           // 立即写入 DO Storage,完成迁移
@@ -254,6 +285,9 @@ export class CanvasRoom implements DurableObject {
               seq: this.seq,
               nodes: Array.from(this.nodes.values()),
               canvasId: this.canvasId,
+              commandIds: Object.fromEntries(this.processedCommandIds),
+              tombstones: Object.fromEntries(this.externalTombstones),
+              autoLayoutIndex: this.autoLayoutIndex,
               migratedAt: Date.now(),
               migratedFrom: 'R2_D1',
             });
@@ -262,6 +296,7 @@ export class CanvasRoom implements DurableObject {
         } else {
           this.lastStateSource = 'empty';
           console.log(`[CanvasRoom] No legacy data found, starting fresh`);
+          this.autoLayoutIndex = 0;
         }
       }
       
@@ -284,7 +319,7 @@ export class CanvasRoom implements DurableObject {
     const activeUsers = new Set(Array.from(this.connections.values()).map((info) => info.userId));
     if (activeUsers.size >= this.maxRoomUsers && !activeUsers.has(userId)) {
       this.send(ws, {
-        type: 'error',
+        type: MessageType.ERROR,
         error: 'Room is full',
         code: 'ROOM_FULL',
       });
@@ -314,7 +349,7 @@ export class CanvasRoom implements DurableObject {
 
     // 发送完整状态同步
     const syncMessage: SyncStateMessage = {
-      type: 'sync_state',
+      type: MessageType.SYNC_STATE,
       seq: this.seq,
       nodes: Array.from(this.nodes.values()),
       presences: Object.fromEntries(this.presences),
@@ -397,7 +432,7 @@ export class CanvasRoom implements DurableObject {
     this.seq++;
 
     const response: NodeCreatedMessage = {
-      type: 'node_created',
+      type: MessageType.NODE_CREATED,
       seq: this.seq,
       node,
       tempId: message.tempId,
@@ -423,7 +458,7 @@ export class CanvasRoom implements DurableObject {
     this.seq++;
 
     const response: NodeDeletedMessage = {
-      type: 'node_deleted',
+      type: MessageType.NODE_DELETED,
       seq: this.seq,
       nodeId,
     };
@@ -459,7 +494,7 @@ export class CanvasRoom implements DurableObject {
     this.seq++;
 
     const response: NodeUpdatedMessage = {
-      type: 'node_updated',
+      type: MessageType.NODE_UPDATED,
       seq: this.seq,
       nodeId,
       updates,
@@ -501,7 +536,7 @@ export class CanvasRoom implements DurableObject {
     this.seq++;
 
     const response: NodesUpdatedMessage = {
-      type: 'nodes_updated',
+      type: MessageType.NODES_UPDATED,
       seq: this.seq,
       updates: applied,
     };
@@ -541,14 +576,14 @@ export class CanvasRoom implements DurableObject {
 
     // 广播锁定状态
     this.broadcast({
-      type: 'node_locked',
+      type: MessageType.NODE_LOCKED,
       nodeId,
       userId,
     });
 
     // 广播位置更新
     this.broadcast({
-      type: 'node_updated',
+      type: MessageType.NODE_UPDATED,
       seq: this.seq,
       nodeId,
       updates: { position },
@@ -586,7 +621,7 @@ export class CanvasRoom implements DurableObject {
 
     // 广播位置更新（包含 userId 信息，让客户端可以过滤自己的更新）
     this.broadcast({
-      type: 'node_updated',
+      type: MessageType.NODE_UPDATED,
       seq: this.seq,
       nodeId,
       updates: { position },
@@ -621,12 +656,12 @@ export class CanvasRoom implements DurableObject {
 
     // 广播解锁和最终位置
     this.broadcast({
-      type: 'node_unlocked',
+      type: MessageType.NODE_UNLOCKED,
       nodeId,
     });
 
     this.broadcast({
-      type: 'node_updated',
+      type: MessageType.NODE_UPDATED,
       seq: this.seq,
       nodeId,
       updates: { position },
@@ -680,6 +715,51 @@ export class CanvasRoom implements DurableObject {
   }
 
   /**
+   * 处理外部命令
+   */
+  private async handleExternalCommand(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const canvasId = url.searchParams.get('canvasId');
+    if (!canvasId) {
+      return new Response(JSON.stringify({ error: 'Missing canvasId' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!this.canvasId) {
+      await this.initialize(canvasId);
+    } else if (this.canvasId !== canvasId) {
+      return new Response(JSON.stringify({ error: 'CanvasId mismatch' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const bodyText = await request.text();
+    const parsed = parseExternalCommand(bodyText);
+    if (!parsed.ok || !parsed.command) {
+      console.warn(`[CanvasRoom] Invalid external command: ${parsed.error || 'Invalid command'}`);
+      return new Response(JSON.stringify({ error: parsed.error || 'Invalid command' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(
+      `[CanvasRoom] External command received id=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
+    );
+
+    const result = this.applyExternalCommand(parsed.command);
+    console.log(
+      `[CanvasRoom] External command result id=${parsed.command.id} status=${result.status} created=${result.created} updated=${result.updated} deleted=${result.deleted} ignored=${result.ignored} seq=${result.seq}`
+    );
+    return new Response(JSON.stringify(result), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /**
    * 处理断开连接
    */
   private handleDisconnect(ws: WebSocket): void {
@@ -694,7 +774,7 @@ export class CanvasRoom implements DurableObject {
       if (lockUserId === userId) {
         this.lockedNodes.delete(nodeId);
         this.broadcast({
-          type: 'node_unlocked',
+          type: MessageType.NODE_UNLOCKED,
           nodeId,
         });
       }
@@ -745,7 +825,7 @@ export class CanvasRoom implements DurableObject {
           ws.close(4001, 'Heartbeat timeout');
           continue;
         }
-        const ping: PingMessage = { type: 'ping', ts: now };
+        const ping: PingMessage = { type: MessageType.PING, ts: now };
         this.send(ws, ping);
       }
     }, this.heartbeatInterval) as unknown as number;
@@ -777,6 +857,297 @@ export class CanvasRoom implements DurableObject {
     );
   }
 
+  private applyExternalCommand(command: ExternalCommandEnvelope) {
+    const now = Date.now();
+    this.pruneCommandIds(now);
+    this.pruneTombstones(now);
+
+    if (this.processedCommandIds.has(command.id)) {
+      return { success: true, status: 'duplicate', seq: this.seq };
+    }
+
+    this.processedCommandIds.set(command.id, now);
+
+    const summary = {
+      success: true,
+      status: 'applied',
+      seq: this.seq,
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      ignored: 0,
+    };
+
+    const updatesBatch: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+    const source = command.source;
+
+    switch (command.type) {
+      case 'append_nodes': {
+        for (const node of command.payload.nodes) {
+          const nodeId = this.getExternalNodeId(source, node.externalId);
+          const tombstoneAt = this.externalTombstones.get(nodeId);
+          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+            summary.ignored += 1;
+            continue;
+          }
+          if (this.nodes.has(nodeId)) {
+            summary.ignored += 1;
+            continue;
+          }
+          const createdNode = this.buildNodeFromExternal(node, nodeId, source);
+          if (!createdNode) {
+            summary.ignored += 1;
+            continue;
+          }
+          this.nodes.set(nodeId, createdNode);
+          this.seq += 1;
+          summary.created += 1;
+          this.broadcast({
+            type: MessageType.NODE_CREATED,
+            seq: this.seq,
+            node: createdNode,
+          });
+        }
+        break;
+      }
+      case 'upsert_nodes': {
+        for (const node of command.payload.nodes) {
+          const nodeId = this.getExternalNodeId(source, node.externalId);
+          const tombstoneAt = this.externalTombstones.get(nodeId);
+          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+            summary.ignored += 1;
+            continue;
+          }
+
+          const existing = this.nodes.get(nodeId);
+          if (!existing) {
+            const createdNode = this.buildNodeFromExternal(node, nodeId, source);
+            if (!createdNode) {
+              summary.ignored += 1;
+              continue;
+            }
+            this.nodes.set(nodeId, createdNode);
+            this.seq += 1;
+            summary.created += 1;
+            this.broadcast({
+              type: MessageType.NODE_CREATED,
+              seq: this.seq,
+              node: createdNode,
+            });
+            continue;
+          }
+
+          const previousUpdatedAt = this.getExternalUpdatedAt(existing);
+          if (node.updatedAt <= previousUpdatedAt) {
+            summary.ignored += 1;
+            continue;
+          }
+
+          const updates = this.buildExternalUpdates(node, existing, source);
+          if (Object.keys(updates).length === 0) {
+            summary.ignored += 1;
+            continue;
+          }
+          Object.assign(existing, updates);
+          updatesBatch.push({ nodeId, updates });
+          summary.updated += 1;
+        }
+        if (updatesBatch.length > 0) {
+          this.seq += 1;
+          summary.seq = this.seq;
+          this.broadcast({
+            type: MessageType.NODES_UPDATED,
+            seq: this.seq,
+            updates: updatesBatch,
+          });
+        }
+        break;
+      }
+      case 'delete_nodes': {
+        for (const node of command.payload.nodes) {
+          const nodeId = this.getExternalNodeId(source, node.externalId);
+          const tombstoneAt = this.externalTombstones.get(nodeId);
+          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+            summary.ignored += 1;
+            continue;
+          }
+
+          const existing = this.nodes.get(nodeId);
+          if (!existing) {
+            this.externalTombstones.set(nodeId, node.updatedAt);
+            summary.ignored += 1;
+            continue;
+          }
+
+          const previousUpdatedAt = this.getExternalUpdatedAt(existing);
+          if (node.updatedAt <= previousUpdatedAt) {
+            summary.ignored += 1;
+            continue;
+          }
+
+          this.nodes.delete(nodeId);
+          this.lockedNodes.delete(nodeId);
+          this.externalTombstones.set(nodeId, node.updatedAt);
+          this.seq += 1;
+          summary.deleted += 1;
+          this.broadcast({
+            type: MessageType.NODE_DELETED,
+            seq: this.seq,
+            nodeId,
+          });
+        }
+        break;
+      }
+      default:
+        summary.success = false;
+        summary.status = 'unsupported';
+        return summary;
+    }
+
+    if (summary.created + summary.updated + summary.deleted > 0) {
+      summary.seq = this.seq;
+    }
+
+    this.markDirty();
+    return summary;
+  }
+
+  private buildNodeFromExternal(node: ExternalNode, nodeId: string, source: string): CanvasNodeData | null {
+    const normalizedType = this.normalizeExternalType(node.type);
+    if (!normalizedType) {
+      return null;
+    }
+
+    const position = this.nextAutoPosition();
+    const size = this.getDefaultSize(normalizedType);
+    const sanitized = this.sanitizeExternalData(node.data);
+
+    return ({
+      id: nodeId,
+      type: normalizedType,
+      position,
+      size,
+      zIndex: 1,
+      externalId: node.externalId,
+      externalSource: source,
+      externalUpdatedAt: node.updatedAt,
+      ...sanitized,
+    } as unknown) as CanvasNodeData;
+  }
+
+  private buildExternalUpdates(
+    node: ExternalNode,
+    existing: CanvasNodeData,
+    source: string
+  ): Partial<CanvasNodeData> {
+    const updates: Partial<CanvasNodeData> = {
+      externalId: node.externalId,
+      externalSource: source,
+      externalUpdatedAt: node.updatedAt,
+    };
+
+    const normalizedType = this.normalizeExternalType(node.type);
+    if (normalizedType && existing.type !== normalizedType) {
+      updates.type = normalizedType;
+    }
+
+    Object.assign(updates, this.sanitizeExternalData(node.data));
+    return updates;
+  }
+
+  private sanitizeExternalData(data: Record<string, unknown>): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {};
+    const blockedKeys = new Set([
+      'id',
+      'type',
+      'position',
+      'size',
+      'zIndex',
+      'rotation',
+      'externalId',
+      'externalSource',
+      'externalUpdatedAt',
+      'deleted',
+      'deletedAt',
+    ]);
+
+    for (const [key, value] of Object.entries(data)) {
+      if (blockedKeys.has(key)) {
+        continue;
+      }
+      sanitized[key] = value;
+    }
+    return sanitized;
+  }
+
+  private normalizeExternalType(type: string): NodeType | null {
+    switch (type.toLowerCase()) {
+      case 'image':
+        return NodeType.IMAGE;
+      case 'video':
+        return NodeType.VIDEO;
+      case 'audio':
+        return NodeType.AUDIO;
+      case 'text':
+        return NodeType.TEXT;
+      default:
+        return null;
+    }
+  }
+
+  private getDefaultSize(type: NodeType): Size {
+    switch (type) {
+      case NodeType.AUDIO:
+        return { width: 300, height: 120 };
+      case NodeType.TEXT:
+        return { width: 300, height: 120 };
+      default:
+        return { width: 300, height: 200 };
+    }
+  }
+
+  private nextAutoPosition(): Position {
+    const { columns, nodeWidth, nodeHeight, gap, startX, startY } = this.externalLayoutConfig;
+    const index = this.autoLayoutIndex;
+    const row = Math.floor(index / columns);
+    const col = index % columns;
+    this.autoLayoutIndex += 1;
+    return {
+      x: startX + col * (nodeWidth + gap),
+      y: startY + row * (nodeHeight + gap),
+    };
+  }
+
+  private getExternalNodeId(source: string, externalId: string): string {
+    return `ext:${source}:${externalId}`;
+  }
+
+  private getExternalUpdatedAt(node: CanvasNodeData): number {
+    const value = (node as CanvasNodeData & { externalUpdatedAt?: number }).externalUpdatedAt;
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      return 0;
+    }
+    return value;
+  }
+
+  private pruneCommandIds(now: number): void {
+    const cutoff = now - this.commandIdTtlMs;
+    for (const [id, ts] of this.processedCommandIds.entries()) {
+      if (ts < cutoff) {
+        this.processedCommandIds.delete(id);
+      }
+    }
+  }
+
+  private pruneTombstones(now: number): void {
+    const cutoff = now - this.tombstoneTtlMs;
+    for (const [id, ts] of this.externalTombstones.entries()) {
+      if (ts < cutoff) {
+        this.externalTombstones.delete(id);
+      }
+    }
+  }
+
   /**
    * 广播消息给所有连接
    */
@@ -799,7 +1170,7 @@ export class CanvasRoom implements DurableObject {
    */
   private broadcastPresenceUpdate(userId: string, presence: UserPresence | null): void {
     this.broadcast({
-      type: 'presence_update',
+      type: MessageType.PRESENCE_UPDATE,
       userId,
       presence,
     });
@@ -819,7 +1190,7 @@ export class CanvasRoom implements DurableObject {
    */
   private sendError(ws: WebSocket, error: string, code?: string): void {
     this.send(ws, {
-      type: 'error',
+      type: MessageType.ERROR,
       error,
       code,
     });
@@ -842,6 +1213,9 @@ export class CanvasRoom implements DurableObject {
     }
 
     try {
+      const now = Date.now();
+      this.pruneCommandIds(now);
+      this.pruneTombstones(now);
       console.log(
         `[CanvasRoom] Flushing state (${reason}) for canvas ${this.canvasId} v${this.CURRENT_STATE_VERSION} at seq ${this.seq}`
       );
@@ -853,6 +1227,9 @@ export class CanvasRoom implements DurableObject {
           seq: this.seq,
           nodes: Array.from(this.nodes.values()),
           canvasId: this.canvasId,
+          commandIds: Object.fromEntries(this.processedCommandIds),
+          tombstones: Object.fromEntries(this.externalTombstones),
+          autoLayoutIndex: this.autoLayoutIndex,
           lastFlushedAt: Date.now(),
         });
       });

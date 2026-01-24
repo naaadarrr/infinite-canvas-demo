@@ -5,6 +5,8 @@
 
 import type { Env } from './types';
 import { extractToken, verifyToken } from './utils/auth';
+import { authenticateExternalRequest, isSourceAllowed } from './utils/externalAuth';
+import { parseExternalCommand } from './utils/externalCommands';
 
 export { CanvasRoom } from './canvasRoom';
 
@@ -29,6 +31,12 @@ export default {
       // WebSocket 路由
       if (url.pathname.startsWith('/ws/')) {
         return await handleWebSocket(request, env, url);
+      }
+
+      // 外部命令 API
+      const commandMatch = url.pathname.match(/^\/canvas\/([^/]+)\/commands$/);
+      if (commandMatch && request.method === 'POST') {
+        return await handleExternalCommands(request, env, commandMatch[1]);
       }
 
       // 根路径
@@ -244,6 +252,60 @@ async function handleDeleteCanvas(request: Request, env: Env, canvasId: string):
 }
 
 /**
+ * 外部命令 API
+ */
+async function handleExternalCommands(request: Request, env: Env, canvasId: string): Promise<Response> {
+  const requestId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const startedAt = Date.now();
+  const bodyText = await request.text();
+
+  console.log(`[ExternalCommands] request ${requestId} canvas=${canvasId} bytes=${bodyText.length}`);
+
+  const auth = await authenticateExternalRequest(request, env, bodyText, canvasId);
+  if (!auth.ok) {
+    console.warn(`[ExternalCommands] request ${requestId} auth failed: ${auth.error || 'Unauthorized'}`);
+    return errorResponse(auth.error || 'Unauthorized', auth.status, auth.retryAfterSeconds);
+  }
+
+  const parsed = parseExternalCommand(bodyText);
+  if (!parsed.ok || !parsed.command) {
+    console.warn(`[ExternalCommands] request ${requestId} invalid body: ${parsed.error || 'Invalid command body'}`);
+    return errorResponse(parsed.error || 'Invalid command body', 400);
+  }
+
+  if (!isSourceAllowed(auth.context!.config, parsed.command.source)) {
+    console.warn(`[ExternalCommands] request ${requestId} source not allowed: ${parsed.command.source}`);
+    return errorResponse('Source not allowed', 403);
+  }
+
+  console.log(
+    `[ExternalCommands] request ${requestId} cmd=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
+  );
+
+  const id = env.CANVAS_ROOM.idFromName(canvasId);
+  const stub = env.CANVAS_ROOM.get(id);
+  const doUrl = new URL(request.url);
+  doUrl.pathname = '/commands';
+  doUrl.searchParams.set('canvasId', canvasId);
+
+  const response = await stub.fetch(doUrl.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: bodyText,
+  });
+
+  const responseText = await response.clone().text();
+  const preview = responseText.length > 500 ? `${responseText.slice(0, 500)}...` : responseText;
+  console.log(
+    `[ExternalCommands] request ${requestId} status=${response.status} durationMs=${Date.now() - startedAt} body=${preview}`
+  );
+
+  return response;
+}
+
+/**
  * 处理 WebSocket 连接
  */
 async function handleWebSocket(request: Request, env: Env, url: URL): Promise<Response> {
@@ -287,7 +349,7 @@ function handleCORS(request: Request): Response {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Signature, X-Timestamp, X-Nonce',
       'Access-Control-Max-Age': '86400',
     },
   });
@@ -296,12 +358,13 @@ function handleCORS(request: Request): Response {
 /**
  * JSON 响应辅助函数
  */
-function jsonResponse(data: unknown, status: number = 200): Response {
+function jsonResponse(data: unknown, status: number = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json',
       'Access-Control-Allow-Origin': '*',
+      ...headers,
     },
   });
 }
@@ -309,6 +372,10 @@ function jsonResponse(data: unknown, status: number = 200): Response {
 /**
  * 错误响应辅助函数
  */
-function errorResponse(message: string, status: number = 400): Response {
-  return jsonResponse({ error: message }, status);
+function errorResponse(message: string, status: number = 400, retryAfterSeconds?: number): Response {
+  const headers: Record<string, string> = {};
+  if (retryAfterSeconds) {
+    headers['Retry-After'] = String(retryAfterSeconds);
+  }
+  return jsonResponse({ error: message }, status, headers);
 }

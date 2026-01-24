@@ -222,6 +222,12 @@ export function useCollaboration(
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSeqRef = useRef(0);
   const reconnectBlockedRef = useRef(false);
+  const manualCloseRef = useRef(false);
+  const shouldReconnectRef = useRef(true);
+  
+  // 使用 ref 存储 onMessage，避免它影响 connect 的依赖
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   // 发送消息
   const send = useCallback((message: any) => {
@@ -265,117 +271,156 @@ export function useCollaboration(
     if (!enabled) {
       return;
     }
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
       return;
     }
 
-    const url = `${wsUrl}/ws/canvas/${canvasId}?token=${token}`;
-    const ws = new WebSocket(url);
+    try {
+      const url = `${wsUrl}/ws/canvas/${canvasId}?token=${token}`;
+      console.log('[Collaboration] Connecting to:', url);
+      const ws = new WebSocket(url);
+      manualCloseRef.current = false;
 
-    ws.onopen = () => {
-      console.log('[Collaboration] Connected to canvas:', canvasId);
-      setConnected(true);
+      ws.onopen = () => {
+        console.log('[Collaboration] Connected to canvas:', canvasId);
+        setConnected(true);
 
-      // 发送 JOIN 消息
-      ws.send(
-        JSON.stringify({
-          type: MessageType.JOIN,
-          userId,
-          userName,
-          lastSeq: lastSeqRef.current,
-        })
-      );
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data) as ServerMessage;
-
-        // 更新 seq
-        if ('seq' in message) {
-          setSeq(message.seq);
-          lastSeqRef.current = message.seq;
+        // 发送 JOIN 消息
+        try {
+          ws.send(
+            JSON.stringify({
+              type: MessageType.JOIN,
+              userId,
+              userName,
+              lastSeq: lastSeqRef.current,
+            })
+          );
+        } catch (error) {
+          console.error('[Collaboration] Error sending JOIN message:', error);
         }
+      };
 
-        // 处理特殊消息
-        switch (message.type) {
-          case MessageType.PING:
-            send({ type: MessageType.PONG });
-            break;
-          case MessageType.SYNC_STATE:
-            setPresences(new Map(Object.entries(message.presences)));
-            setLockedNodes(new Map(Object.entries(message.lockedNodes)));
-            break;
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data) as ServerMessage;
 
-          case MessageType.NODE_LOCKED:
-            setLockedNodes((prev) => {
-              const next = new Map(prev);
-              next.set(message.nodeId, message.userId);
-              return next;
-            });
-            break;
+          // 更新 seq
+          if ('seq' in message) {
+            setSeq(message.seq);
+            lastSeqRef.current = message.seq;
+          }
 
-          case MessageType.NODE_UNLOCKED:
-            setLockedNodes((prev) => {
-              const next = new Map(prev);
-              next.delete(message.nodeId);
-              return next;
-            });
-            break;
-
-          case MessageType.PRESENCE_UPDATE:
-            setPresences((prev) => {
-              const next = new Map(prev);
-              if (message.presence) {
-                next.set(message.userId, message.presence);
-              } else {
-                next.delete(message.userId);
+          // 处理特殊消息
+          switch (message.type) {
+            case MessageType.PING:
+              // 直接发送 PONG，不使用 send 函数避免循环依赖
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: MessageType.PONG }));
               }
-              return next;
-            });
-            break;
+              break;
+            case MessageType.SYNC_STATE:
+              setPresences(new Map(Object.entries(message.presences)));
+              setLockedNodes(new Map(Object.entries(message.lockedNodes)));
+              break;
 
-        case MessageType.ERROR:
-            if (message.code === 'ROOM_FULL') {
-              reconnectBlockedRef.current = true;
-              ws.close(4000, 'Room full');
-            } else {
-              console.error('[Collaboration] Server error:', message.error);
-            }
-            break;
+            case MessageType.NODE_LOCKED:
+              setLockedNodes((prev) => {
+                const next = new Map(prev);
+                next.set(message.nodeId, message.userId);
+                return next;
+              });
+              break;
+
+            case MessageType.NODE_UNLOCKED:
+              setLockedNodes((prev) => {
+                const next = new Map(prev);
+                next.delete(message.nodeId);
+                return next;
+              });
+              break;
+
+            case MessageType.PRESENCE_UPDATE:
+              setPresences((prev) => {
+                const next = new Map(prev);
+                if (message.presence) {
+                  next.set(message.userId, message.presence);
+                } else {
+                  next.delete(message.userId);
+                }
+                return next;
+              });
+              break;
+
+          case MessageType.ERROR:
+              if (message.code === 'ROOM_FULL') {
+                reconnectBlockedRef.current = true;
+                ws.close(4000, 'Room full');
+              } else {
+                console.error('[Collaboration] Server error:', message.error);
+              }
+              break;
+          }
+
+          // 调用外部回调（使用 ref 避免依赖变化）
+          onMessageRef.current(message);
+        } catch (error) {
+          console.error('[Collaboration] Error parsing message:', error);
+        }
+      };
+
+      ws.onclose = (event) => {
+        console.log('[Collaboration] Disconnected from canvas:', canvasId, 'code:', event.code, 'reason:', event.reason);
+        setConnected(false);
+        if (wsRef.current === ws) {
+          wsRef.current = null;
         }
 
-        // 调用外部回调
-        onMessage(message);
-      } catch (error) {
-        console.error('[Collaboration] Error parsing message:', error);
-      }
-    };
+        if (event.code === 1013) {
+          reconnectBlockedRef.current = true;
+        }
+        if (event.code === 4000 || event.code === 4002) {
+          shouldReconnectRef.current = false;
+        }
+        if (manualCloseRef.current) {
+          manualCloseRef.current = false;
+          return;
+        }
 
-    ws.onclose = () => {
-      console.log('[Collaboration] Disconnected from canvas:', canvasId);
-      setConnected(false);
-      wsRef.current = null;
+        // 自动重连
+        if (
+          enabled &&
+          autoReconnect &&
+          shouldReconnectRef.current &&
+          !reconnectBlockedRef.current
+        ) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('[Collaboration] Reconnecting...');
+            connect();
+          }, reconnectInterval);
+        }
+      };
 
-      // 自动重连
-      if (enabled && autoReconnect && !reconnectBlockedRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('[Collaboration] Reconnecting...');
-          connect();
-        }, reconnectInterval);
-      }
-    };
+      ws.onerror = (error) => {
+        console.error('[Collaboration] WebSocket error:', {
+          error,
+          url,
+          readyState: ws.readyState,
+          canvasId,
+        });
+      };
 
-    ws.onerror = (error) => {
-      console.error('[Collaboration] WebSocket error:', error);
-    };
-
-    wsRef.current = ws;
-  }, [canvasId, userId, userName, wsUrl, token, autoReconnect, reconnectInterval, enabled, onMessage]);
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('[Collaboration] Error creating WebSocket:', error);
+    }
+  // 注意：移除 onMessage 依赖，使用 onMessageRef 替代，避免 connect 频繁重建
+  }, [canvasId, userId, userName, wsUrl, token, autoReconnect, reconnectInterval, enabled]);
 
   // 初始化连接
   useEffect(() => {
     if (!enabled) {
+      shouldReconnectRef.current = false;
+      manualCloseRef.current = true;
       setConnected(false);
       setPresences(new Map());
       setLockedNodes(new Map());
@@ -390,9 +435,12 @@ export function useCollaboration(
       return;
     }
 
+    shouldReconnectRef.current = true;
     connect();
 
     return () => {
+      shouldReconnectRef.current = false;
+      manualCloseRef.current = true;
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }

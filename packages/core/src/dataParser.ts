@@ -32,6 +32,7 @@ export interface LayoutConfig {
   startX?: number; // 起始 X 坐标，默认 100
   startY?: number; // 起始 Y 坐标，默认 100
   cdnBaseUrl?: string; // CDN 基础 URL，用于构建资源完整路径
+  includeRawData?: boolean; // 是否在节点上附带原始数据
 }
 
 /**
@@ -49,6 +50,7 @@ export function parseRawData(
     startX = 100,
     startY = 100,
     cdnBaseUrl = 'https://dr1coeak04nbk.cloudfront.net',
+    includeRawData = false,
   } = layoutConfig;
 
   const nodes: CanvasNodeData[] = [];
@@ -123,6 +125,9 @@ export function parseRawData(
     }
 
     if (node) {
+      if (includeRawData) {
+        (node as CanvasNodeData & { raw: RawDataItem }).raw = item;
+      }
       nodes.push(node);
       nodeIndex++;
     }

@@ -96,7 +96,7 @@ export interface InfiniteCanvasProps {
   onNodesChange?: (nodes: CanvasNodeData[]) => void;
   onEdgesChange?: (edges: Edge[]) => void;
   onNodeDragStart?: (nodeId: string, position: { x: number; y: number }) => void;
-  onNodeDrag?: (nodeId: string, position: { x: number; y: number }) => void;
+  onNodeDrag?: (nodeId: string, position: { x: number; y: number }, selectedNodeIds?: string[]) => void;
   onNodeDragEnd?: (nodeId: string, position: { x: number; y: number }) => void;
   onNodeContextMenu?: (event: React.MouseEvent, node: Node<CanvasNodeData>) => void;
   onPaneMouseMove?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
@@ -179,6 +179,7 @@ export function InfiniteCanvas({
     if (width === node.data.size.width && height === node.data.size.height) {
       return node;
     }
+    
     return {
       ...node,
       data: {
@@ -442,7 +443,9 @@ export function InfiniteCanvas({
           onNodeDragStart?.(node.id, node.position);
         }}
         onNodeDrag={(_, node) => {
-          onNodeDrag?.(node.id, node.position);
+          // 获取所有选中的节点ID
+          const selectedNodeIds = nodes.filter(n => n.selected).map(n => n.id);
+          onNodeDrag?.(node.id, node.position, selectedNodeIds.length > 1 ? selectedNodeIds : undefined);
         }}
         onNodeDragStop={(_, node) => {
           setSnapLines(null);

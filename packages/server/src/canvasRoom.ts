@@ -49,7 +49,7 @@ export class CanvasRoom implements DurableObject {
   private lastSnapshotTime: number = Date.now();
   private snapshotInterval: number = 30000; // 30 秒
   private snapshotOpThreshold: number = 50; // 50 个操作
-  private maxRoomUsers: number = 3;
+  private maxRoomUsers: number = 10;// 开放到10个人
   private heartbeatInterval: number = 30000; // 30 秒
   private heartbeatMissLimit: number = 3;
   
@@ -507,12 +507,13 @@ export class CanvasRoom implements DurableObject {
     node.position = position;
     this.seq++;
 
-    // 广播位置更新（节流由客户端控制）
+    // 广播位置更新（包含 userId 信息，让客户端可以过滤自己的更新）
     this.broadcast({
       type: 'node_updated',
       seq: this.seq,
       nodeId,
       updates: { position },
+      userId, // 添加 userId，让客户端知道是谁在拖动
     });
   }
 

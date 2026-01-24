@@ -84,6 +84,7 @@ export interface NodeUpdatedMessage {
   seq: number;
   nodeId: string;
   updates: Partial<CanvasNodeData>;
+  userId?: string; // 可选：标识是谁触发的更新，用于客户端过滤
 }
 
 export interface NodesUpdatedMessage {
@@ -232,6 +233,7 @@ export function useCollaboration(
   // 节流的发送方法
   const throttledDragMove = useRef(
     throttle((nodeId: string, position: Position) => {
+
       send({
         type: MessageType.DRAG_MOVE,
         nodeId,

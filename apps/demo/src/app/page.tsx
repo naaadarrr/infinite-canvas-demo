@@ -55,6 +55,7 @@ export default function Home() {
   const connectedRef = useRef(false);
   const wasConnectedRef = useRef(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const draggingNodesRef = useRef<Set<string>>(new Set());
   const userColor = useMemo(() => {
     const palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0f766e'];
     const hash = Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -107,7 +108,7 @@ export default function Home() {
         case 'sync_state':
           if (message.nodes.length > 0) {
             seededRef.current = true;
-            setNodes(message.nodes);
+            setNodes(message.nodes as CanvasNodeData[]);
           } else {
             setNodes([]);
             seedCanvas();
@@ -124,26 +125,49 @@ export default function Home() {
               const hasTemp = prevNodes.some((node) => node.id === message.tempId);
               if (hasTemp) {
                 return prevNodes.map((node) =>
-                  node.id === message.tempId ? message.node : node
+                  node.id === message.tempId ? (message.node as CanvasNodeData) : node
                 );
               }
             }
             if (prevNodes.some((node) => node.id === message.node.id)) {
               return prevNodes;
             }
-            return [...prevNodes, message.node];
+            return [...prevNodes, message.node as CanvasNodeData];
           });
           break;
 
         case 'node_updated':
+          
+          // 如果更新来自当前用户自己,完全跳过处理(避免回显造成抖动)
+          if (message.userId && message.userId === userId) {
+            break;
+          }
           setNodes((prevNodes) =>
             prevNodes.map((node) => {
               if (node.id === message.nodeId) {
-                return { ...node, ...message.updates };
+                // 如果节点正在被当前用户拖动,跳过位置更新
+                if (draggingNodesRef.current.has(node.id) && message.updates && 'position' in message.updates) {
+                  const { position, ...otherUpdates } = message.updates as any;
+                  return { ...node, ...otherUpdates } as CanvasNodeData;
+                }
+                return { ...node, ...(message.updates as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);
               if (mappedId && mappedId === message.nodeId) {
-                return { ...node, id: message.nodeId, ...message.updates };
+                // 如果节点正在被当前用户拖动,跳过位置更新
+                if (draggingNodesRef.current.has(node.id) && message.updates && 'position' in message.updates) {
+                  const { position, ...otherUpdates } = message.updates as any;
+                  return {
+                    ...node,
+                    id: message.nodeId,
+                    ...otherUpdates,
+                  } as CanvasNodeData;
+                }
+                return {
+                  ...node,
+                  id: message.nodeId,
+                  ...(message.updates as Partial<CanvasNodeData>),
+                } as CanvasNodeData;
               }
               return node;
             })
@@ -158,13 +182,31 @@ export default function Home() {
             return prevNodes.map((node) => {
               const directUpdate = updateMap.get(node.id);
               if (directUpdate) {
-                return { ...node, ...directUpdate };
+                // 如果节点正在被当前用户拖动，跳过位置更新
+                if (draggingNodesRef.current.has(node.id) && 'position' in directUpdate) {
+                  const { position, ...otherUpdates } = directUpdate as any;
+                  return { ...node, ...otherUpdates } as CanvasNodeData;
+                }
+                return { ...node, ...(directUpdate as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);
               if (mappedId) {
                 const mappedUpdate = updateMap.get(mappedId);
                 if (mappedUpdate) {
-                  return { ...node, id: mappedId, ...mappedUpdate };
+                  // 如果节点正在被当前用户拖动，跳过位置更新
+                  if (draggingNodesRef.current.has(node.id) && 'position' in mappedUpdate) {
+                    const { position, ...otherUpdates } = mappedUpdate as any;
+                    return {
+                      ...node,
+                      id: mappedId,
+                      ...otherUpdates,
+                    } as CanvasNodeData;
+                  }
+                  return {
+                    ...node,
+                    id: mappedId,
+                    ...(mappedUpdate as Partial<CanvasNodeData>),
+                  } as CanvasNodeData;
                 }
               }
               return node;
@@ -330,6 +372,8 @@ export default function Home() {
   const handleNodesChange = useCallback(
     (nextNodes: CanvasNodeData[]) => {
       const prevNodes = nodesRef.current;
+      
+      
       setNodes(nextNodes);
 
       // 检测被删除的节点
@@ -344,7 +388,12 @@ export default function Home() {
         idMapRef.current.delete(node.id);
       });
 
+      // 过滤掉正在拖动的节点，避免与 dragMove 和 dragEnd 冲突
       const movedNodes = nextNodes.filter((node) => {
+        // 跳过正在拖动的节点
+        if (draggingNodesRef.current.has(node.id)) {
+          return false;
+        }
         const prev = prevNodes.find((prevNode) => prevNode.id === node.id);
         if (!prev) {
           return false;
@@ -352,7 +401,9 @@ export default function Home() {
         return prev.position.x !== node.position.x || prev.position.y !== node.position.y;
       });
 
-      if (movedNodes.length > 1) {
+      // 只有在没有节点正在拖动，且有位置变化时才发送批量更新
+      // 这样可以避免在拖动过程中的干扰
+      if (movedNodes.length > 0 && draggingNodesRef.current.size === 0) {
         const updates = movedNodes.map((node) => ({
           nodeId: idMapRef.current.get(node.id) ?? node.id,
           updates: { position: node.position },
@@ -404,6 +455,9 @@ export default function Home() {
 
   const handleNodeDragStart = useCallback(
     (nodeId: string, position: { x: number; y: number }) => {
+      // 标记节点正在拖动
+      draggingNodesRef.current.add(nodeId);
+      
       const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
       collab.dragStart(mappedId, position);
     },
@@ -411,17 +465,68 @@ export default function Home() {
   );
 
   const handleNodeDrag = useCallback(
-    (nodeId: string, position: { x: number; y: number }) => {
-      const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
-      collab.dragMove(mappedId, position);
+    (nodeId: string, position: { x: number; y: number }, selectedNodeIds?: string[]) => {
+      
+      // 如果有选中的节点列表，将它们都标记为拖动状态并批量发送位置更新
+      if (selectedNodeIds && selectedNodeIds.length > 1) {
+        selectedNodeIds.forEach(id => draggingNodesRef.current.add(id));
+        
+        // 获取所有选中节点的当前位置
+        const currentNodes = nodesRef.current;
+        const updates = selectedNodeIds.map(id => {
+          const node = currentNodes.find(n => n.id === id);
+          if (!node) return null;
+          return {
+            nodeId: idMapRef.current.get(id) ?? id,
+            updates: { position: node.position },
+          };
+        }).filter((update): update is { nodeId: string; updates: { position: { x: number; y: number } } } => 
+          update !== null
+        );
+        
+        if (updates.length > 0) {
+          collab.updateNodes(updates);
+        }
+      } else {
+        // 单个节点拖动
+        const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
+        collab.dragMove(mappedId, position);
+      }
     },
     [collab]
   );
 
   const handleNodeDragEnd = useCallback(
     (nodeId: string, position: { x: number; y: number }) => {
+      // 获取所有正在拖动的节点
+      const draggingNodeIds = Array.from(draggingNodesRef.current);
+      
+      // 清除所有拖动标记
+      draggingNodesRef.current.clear();
+      
       const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
       collab.dragEnd(mappedId, position);
+      
+      // 如果有多个节点被拖动，发送批量更新
+      if (draggingNodeIds.length > 1) {
+        const currentNodes = nodesRef.current;
+        const updates = draggingNodeIds
+          .map((id) => {
+            const node = currentNodes.find((n) => n.id === id);
+            if (!node) return null;
+            return {
+              nodeId: idMapRef.current.get(id) ?? id,
+              updates: { position: node.position },
+            };
+          })
+          .filter((update): update is { nodeId: string; updates: { position: { x: number; y: number } } } => 
+            update !== null
+          );
+        
+        if (updates.length > 0) {
+          collab.updateNodes(updates);
+        }
+      }
     },
     [collab]
   );
@@ -654,6 +759,8 @@ export default function Home() {
               type="color"
               value={backgroundColor}
               onChange={(e) => setBackgroundColor(e.target.value)}
+              aria-label="选择背景颜色"
+              title="选择背景颜色"
               style={{
                 width: '50px',
                 height: '30px',

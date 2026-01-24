@@ -1,11 +1,7 @@
 // INSERT_YOUR_CODE
 .turbo
 node_modules
-.env
 .env.local
-.env.development
-.env.production
-.env.test
 .history
 .vscode
 .idea
@@ -21,6 +17,7 @@ version.json
 out
 *test*
 *example*
+**/.vercel/*
 
 # 构建时生成的版本信息文件
 apps/demo/.env.build

@@ -317,6 +317,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     startPosX: number;
     side: 'left' | 'right';
   } | null>(null);
+  const manualSizingRef = React.useRef(false); // 标记是否正在手动调整尺寸
   
   const fontSize = nodeData.fontSize ?? 16;
   const fontWeight = nodeData.fontWeight ?? 'normal';
@@ -394,6 +395,11 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       return;
     }
     
+    // 如果正在手动调整尺寸，不自动调整高度
+    if (manualSizingRef.current) {
+      return;
+    }
+    
     // 获取文本渲染区域的实际高度
     const scrollHeight = textDisplay.scrollHeight;
     const minContentHeight = lineHeightPx;
@@ -407,11 +413,48 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     nodeData.onNodeDataChange?.(nodeData.id, {
       size: { ...nodeData.size, height: Math.ceil(nextHeight) },
     });
-  }, [content, lineHeightPx, nodeData.id, nodeData.size.height, nodeData.onNodeDataChange, paddingSize, nodeData.size]);
+  // 移除 nodeData.size.height 和 nodeData.size 的依赖，避免循环触发
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, lineHeightPx, nodeData.id, nodeData.onNodeDataChange, paddingSize, nodeData.size.width]);
+
+  // 用于延迟同步内容到服务器的 ref
+  const contentSyncTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isComposingRef = React.useRef(false);
 
   const handleContentChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const nextValue = event.target.value;
     setContent(nextValue);
+    
+    // 如果正在输入中文（composing），不立即同步
+    if (isComposingRef.current) {
+      return;
+    }
+    
+    // 清除之前的延迟同步
+    if (contentSyncTimeoutRef.current) {
+      clearTimeout(contentSyncTimeoutRef.current);
+    }
+    
+    // 延迟 300ms 同步到服务器，避免打断输入
+    contentSyncTimeoutRef.current = setTimeout(() => {
+      nodeData.onNodeDataChange?.(nodeData.id, { content: nextValue });
+    }, 300);
+  };
+
+  // 处理输入法开始
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  // 处理输入法结束
+  const handleCompositionEnd = (event: React.CompositionEvent<HTMLTextAreaElement>) => {
+    isComposingRef.current = false;
+    const nextValue = (event.target as HTMLTextAreaElement).value;
+    
+    // 输入法结束后立即同步
+    if (contentSyncTimeoutRef.current) {
+      clearTimeout(contentSyncTimeoutRef.current);
+    }
     nodeData.onNodeDataChange?.(nodeData.id, { content: nextValue });
   };
 
@@ -457,6 +500,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    
+    manualSizingRef.current = true;
     
     const rect = containerRef.current?.getBoundingClientRect();
     
@@ -507,6 +552,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         newPosY = startPosY + (startHeight - newHeight);
       }
       
+      
       nodeData.onNodeDataChange?.(nodeData.id, {
         fontSize: Math.round(newFontSize),
         size: {
@@ -521,9 +567,15 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     };
 
     const handleUp = () => {
+      
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
       scaleStateRef.current = null;
+      
+      // 延迟清除手动调整标记，给足够时间让状态稳定
+      setTimeout(() => {
+        manualSizingRef.current = false;
+      }, 500);
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -536,6 +588,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   ) => {
     event.preventDefault();
     event.stopPropagation();
+    
+    manualSizingRef.current = true;
     
     widthResizeRef.current = {
       startX: event.clientX,
@@ -586,6 +640,11 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
       widthResizeRef.current = null;
+      
+      // 延迟清除手动调整标记
+      setTimeout(() => {
+        manualSizingRef.current = false;
+      }, 500);
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -746,6 +805,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           }}
           value={content}
           onChange={handleContentChange}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={handleCompositionEnd}
           onBlur={handleBlur}
         />
       )}

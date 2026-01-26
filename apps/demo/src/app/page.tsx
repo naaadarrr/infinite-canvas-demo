@@ -27,12 +27,16 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = widgetBridge.on('NODE_QUICK_ACTION', (event) => {
+    const unsubscribeQuickAction = widgetBridge.on('NODE_QUICK_ACTION', (event) => {
       console.log('[Widget Event] NODE_QUICK_ACTION', event);
+    });
+    const unsubscribeDeleted = widgetBridge.on('NODE_DELETED', (event) => {
+      console.log('[Widget Event] NODE_DELETED', event);
     });
 
     return () => {
-      unsubscribe();
+      unsubscribeQuickAction();
+      unsubscribeDeleted();
     };
   }, []);
 

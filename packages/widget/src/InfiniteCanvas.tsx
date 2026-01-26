@@ -15,7 +15,7 @@ import {
   SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { CanvasNodeData, CanvasConfig } from '@tc/infinite-core';
+import type { CanvasNodeData, CanvasConfig, RawDataItem } from '@tc/infinite-core';
 import { ImageNode, VideoNode, AudioNode, TextNode } from './nodes';
 
 type SnapLines = { x?: number; y?: number } | null;
@@ -190,6 +190,11 @@ export function InfiniteCanvas({
     } as Node<CanvasNodeData>;
   }, []);
 
+  const isSkeletonNode = useCallback((node: Node<CanvasNodeData>) => {
+    const raw = (node.data as CanvasNodeData & { raw?: RawDataItem }).raw;
+    return String(raw?.status ?? '').toLowerCase() === 'init';
+  }, []);
+
   const handleNodeDataUpdate = useCallback(
     (id: string, dataPatch: CanvasNodeDataPatch) => {
       // 检查是否是删除操作
@@ -331,17 +336,27 @@ export function InfiniteCanvas({
   // 处理节点变化
   const handleNodesChange: OnNodesChange = useCallback(
     (changes) => {
+      const nextChanges = changes.filter((change) => {
+        if (change.type !== 'remove') {
+          return true;
+        }
+        const target = nodes.find((node) => node.id === change.id);
+        if (!target) {
+          return true;
+        }
+        return !isSkeletonNode(target);
+      });
       const snapThreshold = config.snapThreshold ?? 5;
       const snapToNodes = config.snapToNodes ?? true;
       const showSnapLines = config.showSnapLines ?? true;
       let nextSnapLines: SnapLines = null;
       
       // 检查是否有正在拖动的节点
-      const hasDraggingChange = changes.some(
+      const hasDraggingChange = nextChanges.some(
         (change) => change.type === 'position' && 'dragging' in change && change.dragging === true
       );
 
-      const nextChanges = changes.map((change) => {
+      const mappedChanges = nextChanges.map((change) => {
         if (
           !snapToNodes ||
           change.type !== 'position' ||
@@ -398,7 +413,7 @@ export function InfiniteCanvas({
       }
 
       setNodes((nds) => {
-        const updatedNodes = applyNodeChanges(nextChanges, nds) as Node<CanvasNodeData>[];
+        const updatedNodes = applyNodeChanges(mappedChanges, nds) as Node<CanvasNodeData>[];
         const syncedNodes = updatedNodes.map(syncNodeDataSize);
         
         // 延迟通知外部节点变化，避免在渲染期间调用 setState
@@ -407,7 +422,15 @@ export function InfiniteCanvas({
         return syncedNodes;
       });
     },
-    [config.snapThreshold, config.snapToNodes, config.showSnapLines, nodes, emitNodesChange, syncNodeDataSize]
+    [
+      config.snapThreshold,
+      config.snapToNodes,
+      config.showSnapLines,
+      emitNodesChange,
+      isSkeletonNode,
+      nodes,
+      syncNodeDataSize,
+    ]
   );
 
   // 标记初始挂载完成

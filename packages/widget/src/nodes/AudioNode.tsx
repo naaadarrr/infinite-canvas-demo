@@ -1,17 +1,20 @@
 import React from 'react';
 import { NodeProps } from '@xyflow/react';
-import type { AudioNodeData } from '@tc/infinite-core';
+import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
 import { RefreshCw } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
+import { MediaSkeleton } from './MediaSkeleton';
 
 export function AudioNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as AudioNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<AudioNodeData, 'type'>>) => void;
   };
+  const rawItem = (nodeData as AudioNodeData & { raw?: RawDataItem }).raw;
+  const isSkeleton = String(rawItem?.status ?? '').toLowerCase() === 'init';
   const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging);
+  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton;
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -147,7 +150,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         border: `2px solid ${showHighlight ? '#3b82f6' : '#ddd'}`,
         // borderRadius: '8px',
         overflow: 'visible',
-        padding: '16px',
+        padding: isSkeleton ? 0 : '16px',
         backgroundColor: '#fff',
         display: 'flex',
         flexDirection: 'column',
@@ -182,50 +185,56 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
           })}
         </>
       )}
-      {/* 可拖拽区域 - 标题和艺术家 */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: '#333',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          🎵 {nodeData.title || '音频文件'}
-        </div>
-        {nodeData.artist && (
-          <div
-            style={{
-              fontSize: 12,
-              color: '#666',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {nodeData.artist}
+      {isSkeleton ? (
+        <MediaSkeleton />
+      ) : (
+        <>
+          {/* 可拖拽区域 - 标题和艺术家 */}
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <div
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#333',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🎵 {nodeData.title || '音频文件'}
+            </div>
+            {nodeData.artist && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: '#666',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {nodeData.artist}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      {/* 音频控件 - 使用 nodrag 阻止拖拽 */}
-      <div
-        className="nodrag nopan nowheel"
-        onPointerDownCapture={(e) => e.stopPropagation()}
-        onMouseDownCapture={(e) => e.stopPropagation()}
-      >
-        <audio
-          src={nodeData.url}
-          autoPlay={nodeData.autoplay}
-          loop={nodeData.loop}
-          controls
-          style={{
-            width: '100%',
-          }}
-        />
-      </div>
+          {/* 音频控件 - 使用 nodrag 阻止拖拽 */}
+          <div
+            className="nodrag nopan nowheel"
+            onPointerDownCapture={(e) => e.stopPropagation()}
+            onMouseDownCapture={(e) => e.stopPropagation()}
+          >
+            <audio
+              src={nodeData.url}
+              autoPlay={nodeData.autoplay}
+              loop={nodeData.loop}
+              controls
+              style={{
+                width: '100%',
+              }}
+            />
+          </div>
+        </>
+      )}
       {showToolbar && <QuickActionToolbar actions={quickActions} />}
     </div>
   );

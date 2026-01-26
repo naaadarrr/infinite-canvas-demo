@@ -1,16 +1,26 @@
 import React from 'react';
 import { NodeProps, useStore } from '@xyflow/react';
-import type { ImageNodeData } from '@tc/infinite-core';
+import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
+import { MediaSkeleton } from './MediaSkeleton';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as ImageNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<ImageNodeData, 'type'>>) => void;
   };
-  const sizeLabel = `${nodeData.size.width} x ${nodeData.size.height}`;
+  const rawItem = (nodeData as ImageNodeData & { raw?: RawDataItem }).raw;
+  const rawResult = rawItem?.result ?? undefined;
+  const actualWidth =
+    rawResult?.originImage?.width ?? rawResult?.compressedImage?.width ?? rawResult?.width;
+  const actualHeight =
+    rawResult?.originImage?.height ?? rawResult?.compressedImage?.height ?? rawResult?.height;
+  const sizeLabel =
+    typeof actualWidth === 'number' && typeof actualHeight === 'number'
+      ? `${Math.round(actualWidth)} x ${Math.round(actualHeight)}`
+      : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
     anchorX: number;
@@ -24,8 +34,9 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   } | null>(null);
   
   // 使用 React Flow 原生的 selected 和 dragging 状态
+  const isSkeleton = String(rawItem?.status ?? '').toLowerCase() === 'init';
   const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging);
+  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton;
   const zoom = useStore((state) => state.transform[2] ?? 1);
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
@@ -172,8 +183,8 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${showHighlight ? '#3b82f6' : '#ddd'}`,
-        // borderRadius: '8px',
+        border: `2px solid ${showHighlight ? '#3b82f6' : 'transparent'}`,
+        borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: '#fff',
       }}
@@ -185,18 +196,22 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           overflow: 'hidden',
         }}
       >
-        <img
-          src={nodeData.url}
-          alt={nodeData.alt || 'Image'}
-          draggable={false}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-            pointerEvents: 'none',
-          }}
-        />
+        {isSkeleton ? (
+          <MediaSkeleton />
+        ) : (
+          <img
+            src={nodeData.url}
+            alt={nodeData.alt || 'Image'}
+            draggable={false}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              display: 'block',
+              pointerEvents: 'none',
+            }}
+          />
+        )}
       </div>
       {showHighlight && (
         <>

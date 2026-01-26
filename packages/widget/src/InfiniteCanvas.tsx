@@ -143,6 +143,7 @@ export function InfiniteCanvas({
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const fitViewAppliedRef = React.useRef(false);
   const lastViewportNotifiedRef = React.useRef(viewport);
+  const snapPositionRef = React.useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // 使用 ref 追踪是否已初始化，避免重复设置
   const initializedRef = React.useRef(false);
@@ -341,14 +342,13 @@ export function InfiniteCanvas({
       );
 
       const nextChanges = changes.map((change) => {
-        // 只在正在拖动时应用 snap，拖动结束时不应用
         if (
           !snapToNodes ||
           change.type !== 'position' ||
           !('position' in change) ||
           !change.position ||
           !('dragging' in change) ||
-          change.dragging !== true  // 明确检查是否正在拖动
+          typeof change.dragging !== 'boolean'
         ) {
           return change;
         }
@@ -360,14 +360,35 @@ export function InfiniteCanvas({
 
         const otherNodes = nodes.filter((node) => node.id !== change.id);
         const snapped = getSnappedPosition(change.position, movingNode, otherNodes, snapThreshold);
-        if (snapped.snapLines && (snapped.snapLines.x !== undefined || snapped.snapLines.y !== undefined)) {
-          nextSnapLines = snapped.snapLines;
+        const hasSnap =
+          snapped.snapLines && (snapped.snapLines.x !== undefined || snapped.snapLines.y !== undefined);
+
+        if (change.dragging === true) {
+          if (hasSnap) {
+            nextSnapLines = snapped.snapLines;
+            snapPositionRef.current.set(change.id, snapped.position);
+          } else {
+            snapPositionRef.current.delete(change.id);
+          }
+
+          return {
+            ...change,
+            position: snapped.position,
+          };
         }
 
-        return {
-          ...change,
-          position: snapped.position,
-        };
+        if (change.dragging === false) {
+          const snappedPosition = snapPositionRef.current.get(change.id);
+          if (snappedPosition) {
+            snapPositionRef.current.delete(change.id);
+            return {
+              ...change,
+              position: snappedPosition,
+            };
+          }
+        }
+
+        return change;
       });
 
       if (showSnapLines && hasDraggingChange && nextSnapLines) {

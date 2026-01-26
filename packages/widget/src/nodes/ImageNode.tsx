@@ -1,6 +1,9 @@
 import React from 'react';
-import { NodeProps } from '@xyflow/react';
+import { NodeProps, useStore } from '@xyflow/react';
 import type { ImageNodeData } from '@tc/infinite-core';
+import { Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
+import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
+import { useToolbarVisibility } from './useToolbarVisibility';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as ImageNodeData & {
@@ -21,6 +24,16 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   
   // 使用 React Flow 原生的 selected 和 dragging 状态
   const showHighlight = selected || dragging;
+  const showToolbar = useToolbarVisibility(selected, dragging);
+  const zoom = useStore((state) => state.transform[2] ?? 1);
+  const handleQuickAction = React.useCallback((_actionId: string) => {}, []);
+  const quickActions: QuickAction[] = [
+    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit') },
+    { id: 'reference', label: 'Remix', icon: Shuffle, onClick: () => handleQuickAction('reference') },
+    { id: 'inpaint', label: 'Inpaint', icon: Paintbrush, onClick: () => handleQuickAction('inpaint') },
+    { id: 'video', label: 'Generate Video', icon: Video, onClick: () => handleQuickAction('video') },
+    { id: 'ocr', label: 'Edit Image Text', icon: Type, onClick: () => handleQuickAction('ocr') },
+  ];
 
   const handleScaleStart = (
     event: React.PointerEvent<HTMLDivElement>,
@@ -174,21 +187,23 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           })}
         </>
       )}
-      {showHighlight && (
+      {showToolbar && <QuickActionToolbar actions={quickActions} />}
+      {showToolbar && (
         <div
           style={{
             position: 'absolute',
             left: '50%',
-            bottom: -28,
-            transform: 'translateX(-50%)',
+            bottom: 'calc(100% + 5px)',
+            transform: `translateX(-50%) scale(${1 / zoom})`,
+            transformOrigin: 'bottom center',
             padding: '4px 8px',
-            // borderRadius: '6px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            // border: '1px solid #3b82f6',
-            outline: '1px solid #3b82f6',
-            outlineOffset: '-1px',
+            borderRadius: 8,
+            backgroundColor: 'rgba(0, 0, 0, 0.6)',
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            backdropFilter: 'blur(8px)',
+            WebkitBackdropFilter: 'blur(8px)',
             fontSize: 12,
-            color: '#1f2937',
+            color: '#fff',
             whiteSpace: 'nowrap',
             pointerEvents: 'none',
             zIndex: 1000,

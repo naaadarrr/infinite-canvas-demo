@@ -1,6 +1,7 @@
 import React from 'react';
 import { NodeProps, useStore } from '@xyflow/react';
 import type { TextNodeData, TextAlign } from '@tc/infinite-core';
+import { useToolbarVisibility } from './useToolbarVisibility';
 
 // 工具栏组件
 interface TextToolbarProps {
@@ -31,6 +32,8 @@ function TextToolbar({
   onBackgroundOpacityChange,
 }: TextToolbarProps) {
   const [showFontSizeDropdown, setShowFontSizeDropdown] = React.useState(false);
+  const [isExpanded, setIsExpanded] = React.useState(false);
+  const [hoveredTooltip, setHoveredTooltip] = React.useState<string | null>(null);
   const fontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96, 128];
   const backgroundOptions: Array<{ value: string | undefined; label: string; swatch: string }> = [
     { value: undefined, label: '透明', swatch: 'transparent' },
@@ -42,9 +45,68 @@ function TextToolbar({
     { value: '#dcfce7', label: '淡绿', swatch: '#dcfce7' },
   ];
 
+  const TooltipWrapper = ({
+    id,
+    label,
+    children,
+  }: {
+    id: string;
+    label: string;
+    children: React.ReactNode;
+  }) => (
+    <div
+      onMouseEnter={() => setHoveredTooltip(id)}
+      onMouseLeave={() => setHoveredTooltip((current) => (current === id ? null : current))}
+      style={{ position: 'relative', display: 'inline-flex' }}
+    >
+      {children}
+      {hoveredTooltip === id && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            marginBottom: 8,
+            pointerEvents: 'none',
+            zIndex: 10,
+          }}
+        >
+          <div
+            style={{
+              padding: '6px 10px',
+              borderRadius: 6,
+              backgroundColor: '#252525',
+              color: '#fff',
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              bottom: -4,
+              width: 8,
+              height: 8,
+              transform: 'translateX(-50%) rotate(45deg)',
+              backgroundColor: '#252525',
+              borderRight: '1px solid rgba(255, 255, 255, 0.12)',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.12)',
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div
-      className="nodrag"
+      className="nodrag nopan nowheel"
       style={{
         position: 'absolute',
         bottom: '100%',
@@ -54,40 +116,51 @@ function TextToolbar({
         marginBottom: 8,
         display: 'flex',
         alignItems: 'center',
-        gap: 4,
-        padding: '6px 10px',
-        backgroundColor: '#fff',
-        borderRadius: 8,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+        gap: 6,
+        padding: '6px 8px',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        borderRadius: 10,
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
         whiteSpace: 'nowrap',
         zIndex: 100,
       }}
-      onPointerDown={(e) => e.stopPropagation()}
-      onMouseDown={(e) => e.stopPropagation()}
+      onPointerDownCapture={(e) => e.stopPropagation()}
+      onMouseDownCapture={(e) => e.stopPropagation()}
     >
       {/* 字体大小下拉框 */}
       <div style={{ position: 'relative' }}>
-        <button
-          onClick={() => setShowFontSizeDropdown(!showFontSizeDropdown)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 8px',
-            border: '1px solid #e0e0e0',
-            borderRadius: 4,
-            backgroundColor: '#fff',
-            cursor: 'pointer',
-            fontSize: 13,
-            color: '#333',
-            minWidth: 60,
-          }}
-        >
-          {fontSize}
-          <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
-            <path d="M1 1L5 5L9 1" stroke="#666" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
+        <TooltipWrapper id="font-size" label="字号">
+          <button
+            onClick={() => setShowFontSizeDropdown(!showFontSizeDropdown)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '4px 8px',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: 6,
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              cursor: 'pointer',
+              fontSize: 12,
+              color: '#fff',
+              minWidth: 56,
+            }}
+          >
+            {fontSize}
+            <svg width="10" height="6" viewBox="0 0 10 6" fill="none">
+              <path
+                d="M1 1L5 5L9 1"
+                stroke="rgba(255, 255, 255, 0.8)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </TooltipWrapper>
         {showFontSizeDropdown && (
           <div
             style={{
@@ -95,10 +168,10 @@ function TextToolbar({
               top: '100%',
               left: 0,
               marginTop: 4,
-              backgroundColor: '#fff',
-              border: '1px solid #e0e0e0',
-              borderRadius: 4,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+              backgroundColor: '#252525',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 6,
+              boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
               maxHeight: 200,
               overflowY: 'auto',
               zIndex: 101,
@@ -114,15 +187,17 @@ function TextToolbar({
                 style={{
                   padding: '6px 16px',
                   cursor: 'pointer',
-                  fontSize: 13,
-                  color: size === fontSize ? '#3b82f6' : '#333',
-                  backgroundColor: size === fontSize ? '#f0f7ff' : 'transparent',
+                  fontSize: 12,
+                  color: size === fontSize ? '#ffffff' : 'rgba(255, 255, 255, 0.8)',
+                  backgroundColor: size === fontSize ? 'rgba(255, 255, 255, 0.12)' : 'transparent',
                 }}
                 onMouseEnter={(e) => {
-                  (e.target as HTMLElement).style.backgroundColor = size === fontSize ? '#f0f7ff' : '#f5f5f5';
+                  (e.target as HTMLElement).style.backgroundColor =
+                    size === fontSize ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.08)';
                 }}
                 onMouseLeave={(e) => {
-                  (e.target as HTMLElement).style.backgroundColor = size === fontSize ? '#f0f7ff' : 'transparent';
+                  (e.target as HTMLElement).style.backgroundColor =
+                    size === fontSize ? 'rgba(255, 255, 255, 0.12)' : 'transparent';
                 }}
               >
                 {size}
@@ -132,157 +207,200 @@ function TextToolbar({
         )}
       </div>
 
-      {/* 分隔线 */}
-      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
-
-      {/* 对齐方式按钮组 */}
-      <div style={{ display: 'flex', gap: 2 }}>
-        {/* 左对齐 */}
-        <button
-          onClick={() => onTextAlignChange('left')}
-          style={{
-            padding: 6,
-            border: 'none',
-            borderRadius: 4,
-            backgroundColor: textAlign === 'left' ? '#e8f0fe' : 'transparent',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          title="左对齐"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 3H14M2 6.5H10M2 10H14M2 13.5H10" stroke={textAlign === 'left' ? '#3b82f6' : '#666'} strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </button>
-        {/* 居中对齐 */}
-        <button
-          onClick={() => onTextAlignChange('center')}
-          style={{
-            padding: 6,
-            border: 'none',
-            borderRadius: 4,
-            backgroundColor: textAlign === 'center' ? '#e8f0fe' : 'transparent',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          title="居中对齐"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 3H14M4 6.5H12M2 10H14M4 13.5H12" stroke={textAlign === 'center' ? '#3b82f6' : '#666'} strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </button>
-        {/* 右对齐 */}
-        <button
-          onClick={() => onTextAlignChange('right')}
-          style={{
-            padding: 6,
-            border: 'none',
-            borderRadius: 4,
-            backgroundColor: textAlign === 'right' ? '#e8f0fe' : 'transparent',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          title="右对齐"
-        >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M2 3H14M6 6.5H14M2 10H14M6 13.5H14" stroke={textAlign === 'right' ? '#3b82f6' : '#666'} strokeWidth="1.5" strokeLinecap="round"/>
-          </svg>
-        </button>
-      </div>
-
-      {/* 分隔线 */}
-      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
-
-      {/* 背景色按钮组 */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        {backgroundOptions.map((option) => {
-          const isActive = (backgroundColor ?? undefined) === option.value;
-          return (
-            <button
-              key={option.label}
-              onClick={() => onBackgroundColorChange(option.value)}
-              title={option.label}
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: 4,
-                border: isActive ? '2px solid #3b82f6' : '1px solid #e0e0e0',
-                padding: 0,
-                backgroundColor: option.swatch,
-                cursor: 'pointer',
-                position: 'relative',
-              }}
-            >
-              {option.value === undefined && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    borderRadius: 3,
-                    background:
-                      'linear-gradient(135deg, transparent 45%, #ef4444 45%, #ef4444 55%, transparent 55%)',
-                  }}
-                />
-              )}
-              {option.value === '#000000' && (
-                <span
-                  style={{
-                    position: 'absolute',
-                    inset: 2,
-                    borderRadius: 2,
-                    border: '1px solid rgba(255,255,255,0.4)',
-                  }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 分隔线 */}
-      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
-
-      {/* 背景透明度 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          value={Math.round(backgroundOpacity * 100)}
-          onChange={(event) => onBackgroundOpacityChange(Number(event.target.value) / 100)}
-          style={{ width: 90 }}
-        />
-        <span style={{ fontSize: 12, color: '#666', minWidth: 36, textAlign: 'right' }}>
-          {Math.round(backgroundOpacity * 100)}%
-        </span>
-      </div>
-
-      {/* 分隔线 */}
-      <div style={{ width: 1, height: 20, backgroundColor: '#e0e0e0', margin: '0 4px' }} />
-
       {/* 加粗按钮 */}
-      <button
-        onClick={() => onFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
-        style={{
-          padding: '4px 8px',
-          border: 'none',
-          borderRadius: 4,
-          backgroundColor: fontWeight === 'bold' ? '#e8f0fe' : 'transparent',
-          cursor: 'pointer',
-          fontWeight: 'bold',
-          fontSize: 14,
-          color: fontWeight === 'bold' ? '#3b82f6' : '#666',
-        }}
-        title="加粗"
-      >
-        B
-      </button>
+      <TooltipWrapper id="bold" label="加粗">
+        <button
+          onClick={() => onFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
+          style={{
+            width: 26,
+            height: 26,
+            border: 'none',
+            borderRadius: 6,
+            backgroundColor: fontWeight === 'bold' ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+            fontSize: 14,
+            color: fontWeight === 'bold' ? '#ffffff' : 'rgba(255, 255, 255, 0.75)',
+          }}
+        >
+          B
+        </button>
+      </TooltipWrapper>
+
+      {isExpanded && (
+        <>
+          {/* 分隔线 */}
+          <div style={{ width: 1, height: 18, backgroundColor: 'rgba(255, 255, 255, 0.18)', margin: '0 4px' }} />
+
+          {/* 对齐方式按钮组 */}
+          <div style={{ display: 'flex', gap: 2 }}>
+            {/* 左对齐 */}
+            <TooltipWrapper id="align-left" label="左对齐">
+              <button
+                onClick={() => onTextAlignChange('left')}
+                style={{
+                  padding: 6,
+                  border: 'none',
+                  borderRadius: 6,
+                  backgroundColor: textAlign === 'left' ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M2 3H14M2 6.5H10M2 10H14M2 13.5H10"
+                    stroke={textAlign === 'left' ? '#ffffff' : 'rgba(255, 255, 255, 0.7)'}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </TooltipWrapper>
+            {/* 居中对齐 */}
+            <TooltipWrapper id="align-center" label="居中对齐">
+              <button
+                onClick={() => onTextAlignChange('center')}
+                style={{
+                  padding: 6,
+                  border: 'none',
+                  borderRadius: 6,
+                  backgroundColor: textAlign === 'center' ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M2 3H14M4 6.5H12M2 10H14M4 13.5H12"
+                    stroke={textAlign === 'center' ? '#ffffff' : 'rgba(255, 255, 255, 0.7)'}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </TooltipWrapper>
+            {/* 右对齐 */}
+            <TooltipWrapper id="align-right" label="右对齐">
+              <button
+                onClick={() => onTextAlignChange('right')}
+                style={{
+                  padding: 6,
+                  border: 'none',
+                  borderRadius: 6,
+                  backgroundColor: textAlign === 'right' ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path
+                    d="M2 3H14M6 6.5H14M2 10H14M6 13.5H14"
+                    stroke={textAlign === 'right' ? '#ffffff' : 'rgba(255, 255, 255, 0.7)'}
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </TooltipWrapper>
+          </div>
+
+          {/* 分隔线 */}
+          <div style={{ width: 1, height: 18, backgroundColor: 'rgba(255, 255, 255, 0.18)', margin: '0 4px' }} />
+
+          {/* 背景色按钮组 */}
+          <div style={{ display: 'flex', gap: 4 }}>
+            {backgroundOptions.map((option) => {
+              const isActive = (backgroundColor ?? undefined) === option.value;
+              return (
+                <TooltipWrapper key={option.label} id={`bg-${option.label}`} label={option.label}>
+                  <button
+                    onClick={() => onBackgroundColorChange(option.value)}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      border: isActive
+                        ? '2px solid rgba(255, 255, 255, 0.9)'
+                        : '1px solid rgba(255, 255, 255, 0.3)',
+                      padding: 0,
+                      backgroundColor: option.swatch,
+                      cursor: 'pointer',
+                      position: 'relative',
+                    }}
+                  >
+                    {option.value === undefined && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          borderRadius: 3,
+                          background:
+                            'linear-gradient(135deg, transparent 45%, #ef4444 45%, #ef4444 55%, transparent 55%)',
+                        }}
+                      />
+                    )}
+                    {option.value === '#000000' && (
+                      <span
+                        style={{
+                          position: 'absolute',
+                          inset: 2,
+                          borderRadius: 2,
+                          border: '1px solid rgba(255,255,255,0.4)',
+                        }}
+                      />
+                    )}
+                  </button>
+                </TooltipWrapper>
+              );
+            })}
+          </div>
+
+          {/* 分隔线 */}
+          <div style={{ width: 1, height: 18, backgroundColor: 'rgba(255, 255, 255, 0.18)', margin: '0 4px' }} />
+
+          {/* 背景透明度 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(backgroundOpacity * 100)}
+              onChange={(event) => onBackgroundOpacityChange(Number(event.target.value) / 100)}
+              style={{ width: 90, accentColor: '#ffffff' }}
+            />
+            <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', minWidth: 36, textAlign: 'right' }}>
+              {Math.round(backgroundOpacity * 100)}%
+            </span>
+          </div>
+        </>
+      )}
+
+      <TooltipWrapper id="expand" label={isExpanded ? '收起' : '更多'}>
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{
+            width: 26,
+            height: 26,
+            border: 'none',
+            borderRadius: 6,
+            backgroundColor: isExpanded ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
+            cursor: 'pointer',
+            fontSize: 16,
+            lineHeight: 1,
+            color: isExpanded ? '#ffffff' : 'rgba(255, 255, 255, 0.75)',
+          }}
+          aria-label={isExpanded ? '收起' : '更多'}
+        >
+          ...
+        </button>
+      </TooltipWrapper>
     </div>
   );
 }
@@ -292,7 +410,6 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     onNodeDataChange?: (id: string, patch: Partial<Omit<TextNodeData, 'type'>>) => void;
     autoEdit?: boolean;
   };
-  const sizeLabel = `${nodeData.size.width} x ${nodeData.size.height}`;
   const showHighlight = selected || dragging;
   const [content, setContent] = React.useState(nodeData.content || '');
   const [isEditing, setIsEditing] = React.useState(false);
@@ -327,6 +444,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const paddingSize = 12;
   const lineHeightPx = Math.round(fontSize * lineHeight);
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const showToolbar = useToolbarVisibility(selected, dragging);
   const resolvedBackgroundColor = React.useMemo(() => {
     if (!nodeData.backgroundColor || nodeData.backgroundColor === 'transparent') {
       return 'transparent';
@@ -462,8 +580,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     // 检查是否点击了工具栏，如果是则不失焦
     const relatedTarget = event.relatedTarget as HTMLElement;
     if (relatedTarget && containerRef.current?.contains(relatedTarget)) {
-      // 点击的是工具栏内的元素，保持聚焦
-      event.target.focus();
+      // 点击的是工具栏内的元素，保持编辑状态
       return;
     }
     
@@ -675,7 +792,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       }}
     >
       {/* 顶部工具栏 - 在编辑模式或选中时显示 */}
-      {(isEditing || selected) && (
+      {showToolbar && (
         <TextToolbar
           fontSize={fontSize}
           fontWeight={fontWeight}
@@ -811,21 +928,6 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         />
       )}
 
-      {showHighlight && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: -24,
-            left: 0,
-            fontSize: 12,
-            color: '#999',
-            userSelect: 'none',
-            pointerEvents: 'none',
-          }}
-        >
-          {sizeLabel}
-        </div>
-      )}
     </div>
   );
 }

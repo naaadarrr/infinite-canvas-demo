@@ -1,13 +1,20 @@
 import React from 'react';
 import { NodeProps } from '@xyflow/react';
 import type { AudioNodeData } from '@tc/infinite-core';
+import { RefreshCw } from 'lucide-react';
+import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
+import { useToolbarVisibility } from './useToolbarVisibility';
 
 export function AudioNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as AudioNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<AudioNodeData, 'type'>>) => void;
   };
-  const sizeLabel = `${nodeData.size.width} x ${nodeData.size.height}`;
   const showHighlight = selected || dragging;
+  const showToolbar = useToolbarVisibility(selected, dragging);
+  const handleQuickAction = React.useCallback((_actionId: string) => {}, []);
+  const quickActions: QuickAction[] = [
+    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit') },
+  ];
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
     anchorX: number;
@@ -200,28 +207,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
           }}
         />
       </div>
-      {showHighlight && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            bottom: -28,
-            transform: 'translateX(-50%)',
-            padding: '4px 8px',
-            // borderRadius: '6px',
-            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-            // border: '1px solid #3b82f6',
-            outline: '1px solid #3b82f6',
-            outlineOffset: '-1px',
-            fontSize: 12,
-            color: '#1f2937',
-            whiteSpace: 'nowrap',
-            pointerEvents: 'none',
-          }}
-        >
-          {sizeLabel}
-        </div>
-      )}
+      {showToolbar && <QuickActionToolbar actions={quickActions} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { CollaborativeCanvas } from '@tc/infinite-widget';
+import { useEffect, useMemo } from 'react';
+import { CollaborativeCanvas, widgetBridge } from '@tc/infinite-widget';
 import { mockData } from './mockData';
 
 export default function Home() {
@@ -24,6 +24,16 @@ export default function Home() {
     }
     const params = new URLSearchParams(window.location.search);
     return params.get('canvasId');
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = widgetBridge.on('NODE_QUICK_ACTION', (event) => {
+      console.log('[Widget Event] NODE_QUICK_ACTION', event);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   return (

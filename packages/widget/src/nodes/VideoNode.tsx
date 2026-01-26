@@ -4,6 +4,7 @@ import type { VideoNodeData } from '@tc/infinite-core';
 import { Paintbrush, RefreshCw, Shuffle } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { createWidgetEvent, widgetBridge } from '../bridge';
 
 export function VideoNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as VideoNodeData & {
@@ -13,11 +14,39 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging);
   const zoom = useStore((state) => state.transform[2] ?? 1);
-  const handleQuickAction = React.useCallback((_actionId: string) => {}, []);
+  const handleQuickAction = React.useCallback(
+    (actionId: string, actionLabel: string) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId,
+            actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
   const quickActions: QuickAction[] = [
-    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit') },
-    { id: 'avatar', label: 'AI Avatar', icon: Paintbrush, onClick: () => handleQuickAction('avatar') },
-    { id: 'upscale', label: 'Upscale', icon: Shuffle, onClick: () => handleQuickAction('upscale') },
+    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
+    {
+      id: 'avatar',
+      label: 'AI Avatar',
+      icon: Paintbrush,
+      onClick: () => handleQuickAction('avatar', 'AI Avatar'),
+    },
+    {
+      id: 'upscale',
+      label: 'Upscale',
+      icon: Shuffle,
+      onClick: () => handleQuickAction('upscale', 'Upscale'),
+    },
   ];
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{

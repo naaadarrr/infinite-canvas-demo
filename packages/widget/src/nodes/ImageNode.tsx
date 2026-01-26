@@ -4,6 +4,7 @@ import type { ImageNodeData } from '@tc/infinite-core';
 import { Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { createWidgetEvent, widgetBridge } from '../bridge';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as ImageNodeData & {
@@ -26,13 +27,51 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging);
   const zoom = useStore((state) => state.transform[2] ?? 1);
-  const handleQuickAction = React.useCallback((_actionId: string) => {}, []);
+  const handleQuickAction = React.useCallback(
+    (actionId: string, actionLabel: string) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId,
+            actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
   const quickActions: QuickAction[] = [
-    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit') },
-    { id: 'reference', label: 'Remix', icon: Shuffle, onClick: () => handleQuickAction('reference') },
-    { id: 'inpaint', label: 'Inpaint', icon: Paintbrush, onClick: () => handleQuickAction('inpaint') },
-    { id: 'video', label: 'Generate Video', icon: Video, onClick: () => handleQuickAction('video') },
-    { id: 'ocr', label: 'Edit Image Text', icon: Type, onClick: () => handleQuickAction('ocr') },
+    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
+    {
+      id: 'reference',
+      label: 'Remix',
+      icon: Shuffle,
+      onClick: () => handleQuickAction('reference', 'Remix'),
+    },
+    {
+      id: 'inpaint',
+      label: 'Inpaint',
+      icon: Paintbrush,
+      onClick: () => handleQuickAction('inpaint', 'Inpaint'),
+    },
+    {
+      id: 'video',
+      label: 'Generate Video',
+      icon: Video,
+      onClick: () => handleQuickAction('video', 'Generate Video'),
+    },
+    {
+      id: 'ocr',
+      label: 'Edit Image Text',
+      icon: Type,
+      onClick: () => handleQuickAction('ocr', 'Edit Image Text'),
+    },
   ];
 
   const handleScaleStart = (

@@ -4,6 +4,7 @@ import type { AudioNodeData } from '@tc/infinite-core';
 import { RefreshCw } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { createWidgetEvent, widgetBridge } from '../bridge';
 
 export function AudioNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as AudioNodeData & {
@@ -11,9 +12,27 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
   };
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging);
-  const handleQuickAction = React.useCallback((_actionId: string) => {}, []);
+  const handleQuickAction = React.useCallback(
+    (actionId: string, actionLabel: string) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId,
+            actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
   const quickActions: QuickAction[] = [
-    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit') },
+    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
   ];
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{

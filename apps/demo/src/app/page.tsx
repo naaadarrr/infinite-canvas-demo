@@ -30,12 +30,20 @@ export default function Home() {
     const unsubscribeQuickAction = widgetBridge.on('NODE_QUICK_ACTION', (event) => {
       console.log('[Widget Event] NODE_QUICK_ACTION', event);
     });
+    const unsubscribeDeleteRequest = widgetBridge.on('NODE_DELETE_REQUEST', (event) => {
+      console.log('[Widget Event] NODE_DELETE_REQUEST', event);
+      const nodeId = event.payload?.nodeId;
+      if (typeof nodeId === 'string') {
+        widgetBridge.command('NODE_DELETE_CONFIRM', { nodeId });
+      }
+    });
     const unsubscribeDeleted = widgetBridge.on('NODE_DELETED', (event) => {
       console.log('[Widget Event] NODE_DELETED', event);
     });
 
     return () => {
       unsubscribeQuickAction();
+      unsubscribeDeleteRequest();
       unsubscribeDeleted();
     };
   }, []);
@@ -46,6 +54,7 @@ export default function Home() {
       userId={userId}
       rawData={mockData}
       layoutConfig={layoutConfig}
+      dependencyEdgesVisible={true}
     />
   );
 }

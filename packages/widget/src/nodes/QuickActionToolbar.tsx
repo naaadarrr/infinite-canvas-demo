@@ -7,6 +7,7 @@ export type QuickAction = {
   label: string;
   icon: LucideIcon;
   onClick: () => void;
+  active?: boolean;
 };
 
 type QuickActionToolbarProps = {
@@ -64,6 +65,7 @@ export function QuickActionToolbar({ actions, offset = 5 }: QuickActionToolbarPr
                 type="button"
                 onClick={action.onClick}
                 aria-label={action.label}
+                aria-pressed={action.active ?? false}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -72,8 +74,8 @@ export function QuickActionToolbar({ actions, offset = 5 }: QuickActionToolbarPr
                   height: 26,
                   borderRadius: 6,
                   border: 'none',
-                  background: 'transparent',
-                  color: 'rgba(255, 255, 255, 0.85)',
+                  background: action.active ? 'rgba(255, 255, 255, 0.18)' : 'transparent',
+                  color: action.active ? '#fff' : 'rgba(255, 255, 255, 0.85)',
                   cursor: 'pointer',
                   padding: 0,
                 }}

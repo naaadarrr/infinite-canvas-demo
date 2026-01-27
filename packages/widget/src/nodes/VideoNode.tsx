@@ -1,17 +1,20 @@
 import React from 'react';
-import { NodeProps, useStore } from '@xyflow/react';
+import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
-import { Paintbrush, RefreshCw, Shuffle, Play, Pause } from 'lucide-react';
+import { Info, Paintbrush, RefreshCw, Shuffle, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
+import { useDependencyFocus } from './DependencyFocusContext';
+import { NodeRatingBadge } from './NodeRatingBadge';
 
 export function VideoNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as VideoNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<VideoNodeData, 'type'>>) => void;
   };
   const rawItem = (nodeData as VideoNodeData & { raw?: RawDataItem }).raw;
+  const status = String(rawItem?.status ?? '').toLowerCase();
   const rawResult = rawItem?.result ?? undefined;
   const actualWidth = rawResult?.originVideo?.width ?? rawResult?.originImage?.width ?? rawResult?.width;
   const actualHeight =
@@ -21,10 +24,14 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       ? `${Math.round(actualWidth)} x ${Math.round(actualHeight)}`
       : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
-  const isSkeleton = String(rawItem?.status ?? '').toLowerCase() === 'init';
+  const isSkeleton = status === 'init';
+  const isFailed = status === 'fail';
+  const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton;
+  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const { activeNodeId, toggleNode } = useDependencyFocus();
+  const isDependencyFocus = activeNodeId === nodeData.id;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
@@ -37,6 +44,27 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
             nodeType: nodeData.type,
             actionId,
             actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
+  const handleRatingChange = React.useCallback(
+    (nextRating: number) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      nodeData.onNodeDataChange?.(nodeData.id, { rating: nextRating } as any);
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId: 'rating',
+            actionLabel: 'Rating',
+            rating: nextRating,
             node: nodeSnapshot,
           },
           { source: 'ui' }
@@ -59,7 +87,22 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       icon: Shuffle,
       onClick: () => handleQuickAction('upscale', 'Upscale'),
     },
+    {
+      id: 'dependency',
+      label: 'Related Nodes',
+      icon: Info,
+      onClick: () => toggleNode(nodeData.id),
+      active: isDependencyFocus,
+    },
   ];
+  const handleDelete = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
+    },
+    [nodeData]
+  );
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
     anchorX: number;
@@ -205,12 +248,30 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${showHighlight ? '#3b82f6' : 'transparent'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: '#fff',
       }}
     >
+      <Handle
+        id="dep-source"
+        type="source"
+        position={Position.Top}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        id="dep-target"
+        type="target"
+        position={Position.Bottom}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      {isSuccess && (
+        <NodeRatingBadge
+          rating={(nodeData as any).rating ?? rawItem?.rating}
+          onChange={handleRatingChange}
+        />
+      )}
       {showHighlight && (
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
@@ -248,7 +309,44 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           backgroundColor: '#000',
         }}
       >
-        {isSkeleton ? (
+        {isFailed ? (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              textAlign: 'center',
+              padding: 16,
+              color: '#b91c1c',
+              background: '#fff',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Failed to generate video</div>
+            <button
+              type="button"
+              onClick={handleDelete}
+              onPointerDown={(event) => event.stopPropagation()}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: '1px solid #ef4444',
+                background: '#fee2e2',
+                color: '#b91c1c',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ) : isSkeleton ? (
           <MediaSkeleton />
         ) : (
           <>

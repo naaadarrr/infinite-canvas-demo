@@ -17,6 +17,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import type { CanvasNodeData, CanvasConfig, RawDataItem } from '@tc/infinite-core';
 import { ImageNode, VideoNode, AudioNode, TextNode } from './nodes';
+import { createWidgetEvent, widgetBridge } from './bridge';
 
 type SnapLines = { x?: number; y?: number } | null;
 type CanvasNodeDataPatch = Partial<Omit<CanvasNodeData, 'type'>>;
@@ -135,6 +136,8 @@ export function InfiniteCanvas({
   backgroundColor = '#f5f5f5',
 }: InfiniteCanvasProps) {
   const [nodes, setNodes] = React.useState<Node<CanvasNodeData>[]>([]);
+  const nodesRef = React.useRef<Node<CanvasNodeData>[]>([]);
+  const pendingDeleteRef = React.useRef<Set<string>>(new Set());
   const [edges, setEdges] = React.useState<Edge[]>(initialEdges);
   const isInitialMount = React.useRef(true);
   const [snapLines, setSnapLines] = React.useState<SnapLines>(null);
@@ -174,6 +177,43 @@ export function InfiniteCanvas({
     [onNodesChangeCallback]
   );
 
+  const requestDeleteNode = useCallback((targetNode: Node<CanvasNodeData>) => {
+    if (pendingDeleteRef.current.has(targetNode.id)) {
+      return;
+    }
+    pendingDeleteRef.current.add(targetNode.id);
+    const { onNodeDataChange: _ignore, ...nodeSnapshot } = targetNode.data as CanvasNodeData & {
+      onNodeDataChange?: unknown;
+    };
+    widgetBridge.emit(
+      createWidgetEvent(
+        'NODE_DELETE_REQUEST',
+        {
+          nodeId: targetNode.id,
+          nodeType: targetNode.data.type,
+          node: nodeSnapshot,
+        },
+        { source: 'ui' }
+      )
+    );
+  }, []);
+
+  const confirmDeleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((prevNodes) => {
+        const nextNodes = prevNodes.filter((node) => node.id !== nodeId);
+        if (nextNodes.length === prevNodes.length) {
+          pendingDeleteRef.current.delete(nodeId);
+          return prevNodes;
+        }
+        emitNodesChange(nextNodes);
+        pendingDeleteRef.current.delete(nodeId);
+        return nextNodes;
+      });
+    },
+    [emitNodesChange]
+  );
+
   const syncNodeDataSize = useCallback((node: Node<CanvasNodeData>) => {
     const width = node.width ?? node.data.size.width;
     const height = node.height ?? node.data.size.height;
@@ -200,9 +240,11 @@ export function InfiniteCanvas({
       // 检查是否是删除操作
       if ((dataPatch as any)._delete) {
         setNodes((prevNodes) => {
-          const filteredNodes = prevNodes.filter((node) => node.id !== id);
-          emitNodesChange(filteredNodes);
-          return filteredNodes;
+          const target = prevNodes.find((node) => node.id === id);
+          if (target) {
+            requestDeleteNode(target);
+          }
+          return prevNodes;
         });
         return;
       }
@@ -242,8 +284,61 @@ export function InfiniteCanvas({
         return updatedNodes;
       });
     },
-    [emitNodesChange]
+    [emitNodesChange, requestDeleteNode]
   );
+
+  React.useEffect(() => {
+    nodesRef.current = nodes;
+    if (pendingDeleteRef.current.size > 0) {
+      const existingIds = new Set(nodes.map((node) => node.id));
+      pendingDeleteRef.current.forEach((id) => {
+        if (!existingIds.has(id)) {
+          pendingDeleteRef.current.delete(id);
+        }
+      });
+    }
+  }, [nodes]);
+
+  React.useEffect(() => {
+    const unsubscribe = widgetBridge.onCommand<{ nodeId?: string } | string>(
+      'NODE_DELETE_CONFIRM',
+      (payload) => {
+        if (!payload) {
+          return;
+        }
+        const nodeId = typeof payload === 'string' ? payload : payload.nodeId;
+        if (typeof nodeId !== 'string') {
+          return;
+        }
+        confirmDeleteNode(nodeId);
+      }
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, [confirmDeleteNode]);
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Delete' && event.key !== 'Backspace') {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tagName = target.tagName?.toLowerCase();
+        if (tagName === 'input' || tagName === 'textarea' || target.isContentEditable) {
+          return;
+        }
+      }
+      const selectedNodes = nodesRef.current.filter((node) => node.selected);
+      if (selectedNodes.length === 0) {
+        return;
+      }
+      selectedNodes.forEach((node) => requestDeleteNode(node));
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [requestDeleteNode]);
 
   const updatePaneCursor = useCallback(() => {
     const pane = containerRef.current?.querySelector('.react-flow__pane') as HTMLElement | null;
@@ -312,6 +407,10 @@ export function InfiniteCanvas({
     setNodes(flowNodes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes]);
+
+  React.useEffect(() => {
+    setEdges(initialEdges);
+  }, [initialEdges]);
 
   React.useEffect(() => {
     const instance = reactFlowInstanceRef.current;
@@ -480,6 +579,17 @@ export function InfiniteCanvas({
       className={className}
       style={{ width: '100%', height: '100%', backgroundColor, position: 'relative', ...style }}
     >
+      <style>
+        {`
+          @keyframes dependency-edge-dash {
+            0% { stroke-dashoffset: 0; }
+            100% { stroke-dashoffset: 4.51056px; }
+          }
+          .dependency-edge-animated path {
+            animation: dependency-edge-dash 1.4s linear infinite;
+          }
+        `}
+      </style>
       <ReactFlow<Node<CanvasNodeData>, Edge>
         nodes={nodes}
         edges={edges}
@@ -505,6 +615,7 @@ export function InfiniteCanvas({
           }
           onNodeContextMenu(event, node);
         }}
+        deleteKeyCode={null}
         onMoveEnd={(_, nextViewport) => {
           setViewport((prevViewport) => {
             if (

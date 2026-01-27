@@ -3,6 +3,158 @@ import { BoardTaskItem } from '@tc/infinite-core';
 export const mockData: BoardTaskItem[] = 
 [
     {
+        "taskId": "e79da41e750c4427980e63887e062db5",
+        "boardId": "e0823bc2d449419080dd2bd20c1e03f0",
+        "sortWeight": 24,
+        "uid": "oksWvIchg9MX2fJcEdva",
+        "userName": "im13ng",
+        "toolType": "image-to-video",
+        "toolCategory": "video",
+        "status": "init",
+        "mediaType": "video",
+        "rating": 0,
+        "parameters": {
+            "boardTaskId": "e79da41e750c4427980e63887e062db5",
+            "duration": 10,
+            "imageMode": "singleImage",
+            "inputImages": [
+                {
+                    "inputImageS3Path": "analyzed_video/task/object_replace_llm/77b6360b39be4b34a28660204129d29b/image_0_0.jpg",
+                    "name": "firstFrame"
+                }
+            ],
+            "modelId": "kling-v2-6-pro",
+            "positivePrompt": "让Kiki 再天空飞来飞去，镜头由远到近",
+            "taskType": "imageToVideo"
+        },
+        "result": null,
+        "errorMessage": null,
+        "creditsCost": 0,
+        "creditsPayerUid": "oksWvIchg9MX2fJcEdva",
+        "creditsPayerName": "im13ng",
+        "gmtCreate": "2026-01-27 02:38:47",
+        "gmtModify": "2026-01-27 02:38:50",
+        "completedAt": null,
+        "isPinned": false,
+        "pinnedOriginalSortWeight": null
+    },
+    {
+        "taskId": "819d705e974c4a9c8606b34ba052c718",
+        "boardId": "e0823bc2d449419080dd2bd20c1e03f0",
+        "sortWeight": 23,
+        "uid": "oksWvIchg9MX2fJcEdva",
+        "userName": "im13ng",
+        "toolType": "image-to-video",
+        "toolCategory": "video",
+        "status": "init",
+        "mediaType": "video",
+        "rating": 0,
+        "parameters": {
+            "aspectRatio": "16:9",
+            "boardTaskId": "819d705e974c4a9c8606b34ba052c718",
+            "duration": 10,
+            "imageMode": "singleImage",
+            "inputImages": [
+                {
+                    "inputImageS3Path": "analyzed_video/task/object_replace_llm/77b6360b39be4b34a28660204129d29b/image_0_0.jpg",
+                    "name": "firstFrame"
+                }
+            ],
+            "modelId": "gpt-sora2",
+            "positivePrompt": "让Kiki 再天空飞来飞去，镜头由远到近",
+            "taskType": "imageToVideo"
+        },
+        "result": null,
+        "errorMessage": null,
+        "creditsCost": 0,
+        "creditsPayerUid": "oksWvIchg9MX2fJcEdva",
+        "creditsPayerName": "im13ng",
+        "gmtCreate": "2026-01-27 02:35:28",
+        "gmtModify": "2026-01-27 02:35:30",
+        "completedAt": null,
+        "isPinned": false,
+        "pinnedOriginalSortWeight": null
+    },
+    {
+        "taskId": "6dc88c57f4b34cfeb2a8dc7719db2503",
+        "boardId": "e0823bc2d449419080dd2bd20c1e03f0",
+        "sortWeight": 22,
+        "uid": "oksWvIchg9MX2fJcEdva",
+        "userName": "im13ng",
+        "toolType": "image-to-video",
+        "toolCategory": "video",
+        "status": "fail",
+        "mediaType": "video",
+        "rating": 0,
+        "parameters": {
+            "aspectRatio": "16:9",
+            "boardTaskId": "6dc88c57f4b34cfeb2a8dc7719db2503",
+            "duration": 10,
+            "imageMode": "singleImage",
+            "inputImages": [
+                {
+                    "inputImageS3Path": "analyzed_video/task/object_replace_llm/77b6360b39be4b34a28660204129d29b/image_0_0.jpg",
+                    "name": "firstFrame"
+                }
+            ],
+            "modelId": "gpt-sora2",
+            "positivePrompt": "",
+            "taskType": "imageToVideo"
+        },
+        "result": {},
+        "errorMessage": "Failed to generate video, error: Failed to generate video using gpt, error: All providers failed: Failed to submit async task: HTTP Error: 400 Bad Request, response: {\"message\":\"prompt is required\",\"data\":{\"code\":\"invalid_request\",\"data\":null,\"message\":\"prompt is required\"}}; Failed to submit async task: HTTP Error: 400 Bad Request, response: {\"error\":{\"code\":400,\"message\":\"prompt 参数不能为空 (请提供 prompt 或 messages 字段)\",\"type\":\"invalid_request_error\"}}, task_id: 2c49af8ce2474054bc1f6bdc110c3185",
+        "creditsCost": 0,
+        "creditsPayerUid": "oksWvIchg9MX2fJcEdva",
+        "creditsPayerName": "im13ng",
+        "gmtCreate": "2026-01-27 02:33:51",
+        "gmtModify": "2026-01-27 02:34:15",
+        "completedAt": "2026-01-27 02:34:15",
+        "isPinned": false,
+        "pinnedOriginalSortWeight": null
+    }, 
+    {
+        "taskId": "1b96e477cd514b46bcb7f172ed154f20",
+        "boardId": "e0823bc2d449419080dd2bd20c1e03f0",
+        "sortWeight": 21,
+        "uid": "oksWvIchg9MX2fJcEdva",
+        "userName": "im13ng",
+        "toolType": "image-to-video",
+        "toolCategory": "video",
+        "status": "fail",
+        "mediaType": "video",
+        "rating": 0,
+        "parameters": {
+            "aspectRatio": "16:9",
+            "boardTaskId": "1b96e477cd514b46bcb7f172ed154f20",
+            "duration": 8,
+            "imageMode": "startEndFrame",
+            "inputImages": [
+                {
+                    "inputImageS3Path": "analyzed_video/task/object_replace_llm/77b6360b39be4b34a28660204129d29b/image_0_0.jpg",
+                    "name": "firstFrame"
+                },
+                {
+                    "inputImageS3Path": "analyzed_video/task/object_replace_llm/23f1061e1d164de4b07ea18ce59bbee0/image_0_0.jpg",
+                    "name": "lastFrame"
+                }
+            ],
+            "modelId": "gemini-veo-3.1",
+            "positivePrompt": "",
+            "resolution": 2160,
+            "taskType": "imageToVideo"
+        },
+        "result": {},
+        "errorMessage": "Failed to generate video, error: Failed to generate video using gemini, error: Prompt is required for video generation, task_id: cdf5367d669c457fbf27f6791d75b642",
+        "creditsCost": 0,
+        "creditsPayerUid": "oksWvIchg9MX2fJcEdva",
+        "creditsPayerName": "im13ng",
+        "gmtCreate": "2026-01-27 02:29:30",
+        "gmtModify": "2026-01-27 02:29:37",
+        "completedAt": "2026-01-27 02:29:37",
+        "isPinned": false,
+        "pinnedOriginalSortWeight": null
+    },
+    {
         "taskId": "fb2d4402ee8240f68aead55ea79d9bcb",
         "boardId": "e0823bc2d449419080dd2bd20c1e03f0",
         "sortWeight": 19,

@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CanvasConfig, CanvasNodeData, LayoutConfig, RawDataItem } from '@tc/infinite-core';
 import { NodeType, generateId, parseRawData } from '@tc/infinite-core';
+import type { Edge } from '@xyflow/react';
+import { MarkerType } from '@xyflow/react';
 import type { CollaborationState, ServerMessage, UserPresence } from './hooks';
 import { useCollaboration } from './hooks';
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
+import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 
@@ -26,6 +29,7 @@ export interface CollaborativeCanvasProps {
   config?: CanvasConfig;
   initialBackgroundColor?: string;
   enableCollaboration?: boolean;
+  dependencyEdgesVisible?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -40,6 +44,7 @@ export function CollaborativeCanvas({
   config,
   initialBackgroundColor = '#f5f5f5',
   enableCollaboration,
+  dependencyEdgesVisible = true,
   className,
   style,
 }: CollaborativeCanvasProps) {
@@ -203,6 +208,25 @@ export function CollaborativeCanvas({
     [getInputImagePath]
   );
 
+  const getNodeOutputPaths = useCallback((node: CanvasNodeData) => {
+    const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
+    if (!raw) {
+      return [];
+    }
+    const paths: string[] = [];
+    const result = raw.result ?? undefined;
+    const pushPath = (value?: string) => {
+      if (typeof value === 'string' && value.length > 0) {
+        paths.push(value);
+      }
+    };
+    pushPath(result?.originImage?.filePath);
+    pushPath(result?.compressedImage?.filePath);
+    pushPath(result?.originVideo?.filePath);
+    pushPath(result?.originAudio?.filePath);
+    return paths;
+  }, []);
+
   const findAnchorNodeByInputPath = useCallback(
     (inputPath: string, baseNodes: CanvasNodeData[]) => {
       for (const node of baseNodes) {
@@ -338,6 +362,123 @@ export function CollaborativeCanvas({
     },
     [createSubCanvas, createSubCanvasAt]
   );
+
+  const [dependencyEdges, setDependencyEdges] = useState<Edge[]>([]);
+  const dependencySignatureRef = useRef('');
+  const dependencyFocusNodeId = useMemo(() => {
+    const focused = nodes.find((node) => Boolean((node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus));
+    return focused?.id ?? null;
+  }, [nodes]);
+  const toggleDependencyFocus = useCallback(
+    (nodeId: string) => {
+      const currentNodes = nodesRef.current;
+      if (currentNodes.length === 0) {
+        return;
+      }
+      const isActive = currentNodes.some(
+        (node) => node.id === nodeId && Boolean((node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus)
+      );
+      const updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+      const nextNodes = currentNodes.map((node) => {
+        const nextFocus = node.id === nodeId ? !isActive : false;
+        const currentFocus = Boolean(
+          (node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus
+        );
+        if (currentFocus === nextFocus) {
+          return node;
+        }
+        updates.push({
+          nodeId: idMapRef.current.get(node.id) ?? node.id,
+          updates: { dependencyFocus: nextFocus } as Partial<CanvasNodeData>,
+        });
+        return { ...node, dependencyFocus: nextFocus } as CanvasNodeData;
+      });
+      setNodes(nextNodes);
+      if (updates.length > 0) {
+        collabRef.current?.updateNodes(updates);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!dependencyEdgesVisible || !dependencyFocusNodeId) {
+      dependencySignatureRef.current = '';
+      setDependencyEdges([]);
+      return;
+    }
+    const signature = nodes
+      .map((node) => {
+        const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
+        const inputPath = getInputImagePath(raw) ?? '';
+        const outputPaths = getNodeOutputPaths(node).sort().join(',');
+        return `${node.id}:${inputPath}:${outputPaths}`;
+      })
+      .sort()
+      .join('|');
+    const focusSignature = `${dependencyFocusNodeId}|${signature}`;
+    if (focusSignature === dependencySignatureRef.current) {
+      return;
+    }
+    dependencySignatureRef.current = focusSignature;
+    const focusNode = nodes.find((node) => node.id === dependencyFocusNodeId);
+    if (!focusNode) {
+      setDependencyEdges([]);
+      return;
+    }
+
+    const outputPathToNodeId = new Map<string, string>();
+    nodes.forEach((node) => {
+      const paths = getNodeOutputPaths(node);
+      paths.forEach((path) => {
+        if (!outputPathToNodeId.has(path)) {
+          outputPathToNodeId.set(path, node.id);
+        }
+      });
+    });
+
+    const buildEdge = (sourceId: string, targetId: string, suffix: string): Edge => ({
+      id: `dep_${sourceId}_${targetId}_${suffix}`,
+      source: sourceId,
+      target: targetId,
+      sourceHandle: 'dep-source',
+      targetHandle: 'dep-target',
+      type: 'bezier',
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(210, 210, 210)' },
+      style: {
+        stroke: 'rgb(210, 210, 210)',
+        strokeWidth: 2,
+        strokeDasharray: '6 6',
+      },
+      className: 'dependency-edge-animated',
+    });
+
+    const edges: Edge[] = [];
+    const focusRaw = (focusNode as CanvasNodeData & { raw?: RawDataItem }).raw;
+    const focusInputPath = getInputImagePath(focusRaw);
+    if (focusInputPath) {
+      const targetId = outputPathToNodeId.get(focusInputPath);
+      if (targetId && targetId !== focusNode.id) {
+        edges.push(buildEdge(focusNode.id, targetId, 'prev'));
+      }
+    }
+
+    const focusOutputs = new Set(getNodeOutputPaths(focusNode));
+    if (focusOutputs.size > 0) {
+      nodes.forEach((node) => {
+        if (node.id === focusNode.id) {
+          return;
+        }
+        const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
+        const inputPath = getInputImagePath(raw);
+        if (inputPath && focusOutputs.has(inputPath)) {
+          edges.push(buildEdge(node.id, focusNode.id, 'next'));
+        }
+      });
+    }
+
+    setDependencyEdges(edges);
+  }, [dependencyEdgesVisible, dependencyFocusNodeId, getInputImagePath, getNodeOutputPaths, nodes]);
 
   const applyGridOffset = useCallback(
     (items: CanvasNodeData[], startIndex: number) => {
@@ -1283,6 +1424,29 @@ export function CollaborativeCanvas({
     setContextMenu(null);
   }, [collab, contextMenu]);
 
+  const handleDeleteNode = useCallback(() => {
+    if (!contextMenu) {
+      return;
+    }
+    const target = nodesRef.current.find((node) => node.id === contextMenu.nodeId);
+    if (!target) {
+      setContextMenu(null);
+      return;
+    }
+    widgetBridge.emit(
+      createWidgetEvent(
+        'NODE_DELETE_REQUEST',
+        {
+          nodeId: target.id,
+          nodeType: target.type,
+          node: target,
+        },
+        { source: 'ui' }
+      )
+    );
+    setContextMenu(null);
+  }, [contextMenu]);
+
   return (
     <main
       className={className}
@@ -1573,24 +1737,29 @@ export function CollaborativeCanvas({
           </button>
         </div>
         <div style={{ width: '100%', height: '100%' }}>
-          <InfiniteCanvas
-            nodes={nodes}
-            onNodesChange={handleNodesChange}
-            backgroundColor={backgroundColor}
-            onPaneClick={handlePaneClick}
-            onNodeDragStart={handleNodeDragStart}
-            onNodeDrag={handleNodeDrag}
-            onNodeDragEnd={handleNodeDragEnd}
-            onNodeContextMenu={handleNodeContextMenu}
-            onPaneMouseMove={handlePaneMouseMove}
-            onViewportChange={handleViewportChange}
-            paneCursor={toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
-            nodesDraggable={toolMode === 'edit'}
-            elementsSelectable={toolMode === 'edit'}
-            selectionOnDrag={toolMode === 'edit'}
-            panOnDrag={toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
-            config={canvasConfig}
-          />
+          <DependencyFocusProvider
+            value={{ activeNodeId: dependencyFocusNodeId, toggleNode: toggleDependencyFocus }}
+          >
+            <InfiniteCanvas
+              nodes={nodes}
+              edges={dependencyEdges}
+              onNodesChange={handleNodesChange}
+              backgroundColor={backgroundColor}
+              onPaneClick={handlePaneClick}
+              onNodeDragStart={handleNodeDragStart}
+              onNodeDrag={handleNodeDrag}
+              onNodeDragEnd={handleNodeDragEnd}
+              onNodeContextMenu={handleNodeContextMenu}
+              onPaneMouseMove={handlePaneMouseMove}
+              onViewportChange={handleViewportChange}
+              paneCursor={toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
+              nodesDraggable={toolMode === 'edit'}
+              elementsSelectable={toolMode === 'edit'}
+              selectionOnDrag={toolMode === 'edit'}
+              panOnDrag={toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
+              config={canvasConfig}
+            />
+          </DependencyFocusProvider>
         </div>
         {contextMenu && (
           <div
@@ -1609,87 +1778,117 @@ export function CollaborativeCanvas({
             onClick={(event) => event.stopPropagation()}
           >
             {(() => {
+              const targetNode = nodesRef.current.find((node) => node.id === contextMenu.nodeId);
+              const raw = (targetNode as CanvasNodeData & { raw?: RawDataItem } | undefined)?.raw;
+              const status = String(raw?.status ?? '');
+              const isSuccess = status ? status.toLowerCase() === 'success' : true;
               const layerInfo = getLayerInfo(contextMenu.nodeId);
               return (
                 <>
+                  {isSuccess && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={layerInfo.isTop}
+                        onClick={() => applyLayerAction(contextMenu.nodeId, 'forward')}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
+                          fontSize: 13,
+                          color: layerInfo.isTop ? '#9ca3af' : '#111',
+                        }}
+                      >
+                        上一层
+                      </button>
+                      <button
+                        type="button"
+                        disabled={layerInfo.isBottom}
+                        onClick={() => applyLayerAction(contextMenu.nodeId, 'backward')}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
+                          fontSize: 13,
+                          color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                        }}
+                      >
+                        下一层
+                      </button>
+                      <button
+                        type="button"
+                        disabled={layerInfo.isTop}
+                        onClick={() => applyLayerAction(contextMenu.nodeId, 'front')}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
+                          fontSize: 13,
+                          color: layerInfo.isTop ? '#9ca3af' : '#111',
+                        }}
+                      >
+                        最顶层
+                      </button>
+                      <button
+                        type="button"
+                        disabled={layerInfo.isBottom}
+                        onClick={() => applyLayerAction(contextMenu.nodeId, 'back')}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
+                          fontSize: 13,
+                          color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                        }}
+                      >
+                        最底层
+                      </button>
+                      <div
+                        style={{
+                          height: 1,
+                          background: '#e5e7eb',
+                          margin: '6px 4px',
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCloneNode}
+                        style={{
+                          width: '100%',
+                          textAlign: 'left',
+                          padding: '8px 10px',
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          fontSize: 13,
+                        }}
+                      >
+                        复制节点
+                      </button>
+                      <div
+                        style={{
+                          height: 1,
+                          background: '#e5e7eb',
+                          margin: '6px 4px',
+                        }}
+                      />
+                    </>
+                  )}
                   <button
                     type="button"
-                    disabled={layerInfo.isTop}
-                    onClick={() => applyLayerAction(contextMenu.nodeId, 'forward')}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
-                      fontSize: 13,
-                      color: layerInfo.isTop ? '#9ca3af' : '#111',
-                    }}
-                  >
-                    上一层
-                  </button>
-                  <button
-                    type="button"
-                    disabled={layerInfo.isBottom}
-                    onClick={() => applyLayerAction(contextMenu.nodeId, 'backward')}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
-                      fontSize: 13,
-                      color: layerInfo.isBottom ? '#9ca3af' : '#111',
-                    }}
-                  >
-                    下一层
-                  </button>
-                  <button
-                    type="button"
-                    disabled={layerInfo.isTop}
-                    onClick={() => applyLayerAction(contextMenu.nodeId, 'front')}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
-                      fontSize: 13,
-                      color: layerInfo.isTop ? '#9ca3af' : '#111',
-                    }}
-                  >
-                    最顶层
-                  </button>
-                  <button
-                    type="button"
-                    disabled={layerInfo.isBottom}
-                    onClick={() => applyLayerAction(contextMenu.nodeId, 'back')}
-                    style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
-                      fontSize: 13,
-                      color: layerInfo.isBottom ? '#9ca3af' : '#111',
-                    }}
-                  >
-                    最底层
-                  </button>
-                  <div
-                    style={{
-                      height: 1,
-                      background: '#e5e7eb',
-                      margin: '6px 4px',
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCloneNode}
+                    onClick={handleDeleteNode}
                     style={{
                       width: '100%',
                       textAlign: 'left',
@@ -1698,9 +1897,10 @@ export function CollaborativeCanvas({
                       background: 'transparent',
                       cursor: 'pointer',
                       fontSize: 13,
+                      color: '#dc2626',
                     }}
                   >
-                    复制节点
+                    删除节点
                   </button>
                 </>
               );

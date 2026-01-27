@@ -174,8 +174,9 @@ export function parseRawData(
     const status = String(item.status ?? '').toLowerCase();
     const isInit = status === 'init';
     const isSuccess = status === 'success';
-    // 只处理 status 为 success 或 init 的项
-    if (!isInit && !isSuccess) {
+    const isFail = status === 'fail';
+    // 只处理 status 为 success / init / fail 的项
+    if (!isInit && !isSuccess && !isFail) {
       continue;
     }
 
@@ -195,7 +196,7 @@ export function parseRawData(
           [result?.originImage, result?.compressedImage],
           cdnBaseUrl
         );
-        if (imageUrl || isInit) {
+        if (imageUrl || isInit || isFail) {
           const aspectRatio =
             resolveAspectRatioFromParameters(item.parameters) ??
             resolveAspectRatioFromResources([result?.originImage, result?.compressedImage]);
@@ -216,7 +217,7 @@ export function parseRawData(
           [result?.originVideo, result?.originImage],
           cdnBaseUrl
         );
-        if (videoUrl || isInit) {
+        if (videoUrl || isInit || isFail) {
           const poster =
             resolveCoverUrl(result?.originVideo, cdnBaseUrl) ??
             resolveCoverUrl(result?.originImage, cdnBaseUrl);
@@ -240,7 +241,7 @@ export function parseRawData(
 
       case 'AUDIO':
         const audioUrl = resolveMediaUrl(result?.originAudio, cdnBaseUrl);
-        if (audioUrl || isInit) {
+        if (audioUrl || isInit || isFail) {
           const title =
             resolveTitle(item.parameters?.fileName) ??
             resolveTitle(item.title) ??

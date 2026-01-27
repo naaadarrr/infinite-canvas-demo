@@ -1,20 +1,27 @@
 import React from 'react';
-import { NodeProps } from '@xyflow/react';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
-import { RefreshCw } from 'lucide-react';
+import { Info, RefreshCw } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
+import { useDependencyFocus } from './DependencyFocusContext';
+import { NodeRatingBadge } from './NodeRatingBadge';
 
 export function AudioNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as AudioNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<AudioNodeData, 'type'>>) => void;
   };
   const rawItem = (nodeData as AudioNodeData & { raw?: RawDataItem }).raw;
-  const isSkeleton = String(rawItem?.status ?? '').toLowerCase() === 'init';
+  const status = String(rawItem?.status ?? '').toLowerCase();
+  const isSkeleton = status === 'init';
+  const isFailed = status === 'fail';
+  const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton;
+  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
+  const { activeNodeId, toggleNode } = useDependencyFocus();
+  const isDependencyFocus = activeNodeId === nodeData.id;
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -34,9 +41,45 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
+  const handleRatingChange = React.useCallback(
+    (nextRating: number) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      nodeData.onNodeDataChange?.(nodeData.id, { rating: nextRating } as any);
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId: 'rating',
+            actionLabel: 'Rating',
+            rating: nextRating,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
   const quickActions: QuickAction[] = [
     { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
+    {
+      id: 'dependency',
+      label: 'Related Nodes',
+      icon: Info,
+      onClick: () => toggleNode(nodeData.id),
+      active: isDependencyFocus,
+    },
   ];
+  const handleDelete = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
+    },
+    [nodeData]
+  );
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
     anchorX: number;
@@ -147,16 +190,34 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${showHighlight ? '#3b82f6' : '#ddd'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : '#ddd'}`,
         // borderRadius: '8px',
         overflow: 'visible',
-        padding: isSkeleton ? 0 : '16px',
+        padding: isSkeleton || isFailed ? 0 : '16px',
         backgroundColor: '#fff',
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
       }}
     >
+      <Handle
+        id="dep-source"
+        type="source"
+        position={Position.Top}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        id="dep-target"
+        type="target"
+        position={Position.Bottom}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      {isSuccess && (
+        <NodeRatingBadge
+          rating={(nodeData as any).rating ?? rawItem?.rating}
+          onChange={handleRatingChange}
+        />
+      )}
       {showHighlight && (
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
@@ -185,7 +246,43 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
           })}
         </>
       )}
-      {isSkeleton ? (
+      {isFailed ? (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 10,
+            textAlign: 'center',
+            padding: 16,
+            color: '#b91c1c',
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Failed to generate audio</div>
+          <button
+            type="button"
+            onClick={handleDelete}
+            onPointerDown={(event) => event.stopPropagation()}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 6,
+              border: '1px solid #ef4444',
+              background: '#fee2e2',
+              color: '#b91c1c',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              pointerEvents: 'auto',
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : isSkeleton ? (
         <MediaSkeleton />
       ) : (
         <>

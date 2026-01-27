@@ -1,11 +1,13 @@
 import React from 'react';
-import { NodeProps, useStore } from '@xyflow/react';
+import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
-import { Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
+import { Info, Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
+import { useDependencyFocus } from './DependencyFocusContext';
+import { NodeRatingBadge } from './NodeRatingBadge';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as ImageNodeData & {
@@ -13,6 +15,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   };
   const rawItem = (nodeData as ImageNodeData & { raw?: RawDataItem }).raw;
   const rawResult = rawItem?.result ?? undefined;
+  const status = String(rawItem?.status ?? '').toLowerCase();
   const actualWidth =
     rawResult?.originImage?.width ?? rawResult?.compressedImage?.width ?? rawResult?.width;
   const actualHeight =
@@ -34,10 +37,14 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   } | null>(null);
   
   // 使用 React Flow 原生的 selected 和 dragging 状态
-  const isSkeleton = String(rawItem?.status ?? '').toLowerCase() === 'init';
+  const isSkeleton = status === 'init';
+  const isFailed = status === 'fail';
+  const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton;
+  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const { activeNodeId, toggleNode } = useDependencyFocus();
+  const isDependencyFocus = activeNodeId === nodeData.id;
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -49,6 +56,27 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
             nodeType: nodeData.type,
             actionId,
             actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
+  const handleRatingChange = React.useCallback(
+    (nextRating: number) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      nodeData.onNodeDataChange?.(nodeData.id, { rating: nextRating } as any);
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId: 'rating',
+            actionLabel: 'Rating',
+            rating: nextRating,
             node: nodeSnapshot,
           },
           { source: 'ui' }
@@ -83,7 +111,22 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       icon: Type,
       onClick: () => handleQuickAction('ocr', 'Edit Image Text'),
     },
+    {
+      id: 'dependency',
+      label: 'Related Nodes',
+      icon: Info,
+      onClick: () => toggleNode(nodeData.id),
+      active: isDependencyFocus,
+    },
   ];
+  const handleDelete = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
+    },
+    [nodeData]
+  );
 
   const handleScaleStart = (
     event: React.PointerEvent<HTMLDivElement>,
@@ -183,12 +226,30 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${showHighlight ? '#3b82f6' : 'transparent'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: '#fff',
       }}
     >
+      <Handle
+        id="dep-source"
+        type="source"
+        position={Position.Top}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        id="dep-target"
+        type="target"
+        position={Position.Bottom}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      {isSuccess && (
+        <NodeRatingBadge
+          rating={(nodeData as any).rating ?? rawItem?.rating}
+          onChange={handleRatingChange}
+        />
+      )}
       <div
         style={{
           width: '100%',
@@ -196,7 +257,43 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           overflow: 'hidden',
         }}
       >
-        {isSkeleton ? (
+        {isFailed ? (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              textAlign: 'center',
+              padding: 16,
+              color: '#b91c1c',
+              pointerEvents: 'none',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 600 }}>Failed to generate image</div>
+            <button
+              type="button"
+              onClick={handleDelete}
+              onPointerDown={(event) => event.stopPropagation()}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 6,
+                border: '1px solid #ef4444',
+                background: '#fee2e2',
+                color: '#b91c1c',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                pointerEvents: 'auto',
+              }}
+            >
+              Delete
+            </button>
+          </div>
+        ) : isSkeleton ? (
           <MediaSkeleton />
         ) : (
           <img

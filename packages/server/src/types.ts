@@ -332,20 +332,81 @@ export interface ConnectionInfo {
 
 // ============ External Command API 类型 ============
 
-export type ExternalCommandType = 'append_nodes' | 'upsert_nodes' | 'delete_nodes';
-
-export interface ExternalNode {
-  externalId: string;
-  type: string;
-  data: Record<string, unknown>;
-  updatedAt: number;
+export interface TaskParameters {
+  model_id?: string;
+  model_name?: string;
+  prompt?: string;
+  negative_prompt?: string;
+  aspect_ratio?: string;
+  steps?: number;
+  cfg_scale?: number;
+  seed?: number;
+  [key: string]: unknown;
 }
+
+export interface MediaResourceInfo {
+  url?: string;
+  width?: number;
+  height?: number;
+  filePath?: string;
+  filePathWithWatermark?: string;
+  format?: string;
+  type?: string;
+  duration?: number;
+  coverPath?: string;
+  resourceId?: string;
+}
+
+export interface TaskResultOutput {
+  type?: string;
+  url?: string;
+  thumbnail_url?: string;
+  width?: number;
+  height?: number;
+  file_size?: number;
+  compressedImage?: MediaResourceInfo;
+  originImage?: MediaResourceInfo;
+  originVideo?: MediaResourceInfo;
+  originAudio?: MediaResourceInfo;
+  outputResourceIds?: string[];
+}
+
+export interface BoardTaskItem {
+  taskId: string;
+  boardId: string;
+  sortWeight: number;
+  uid: string;
+  userName: string;
+  title?: string | null;
+  toolType: string;
+  toolCategory: string;
+  status: string;
+  mediaType: string;
+  rating: number;
+  parameters: TaskParameters;
+  result?: TaskResultOutput | null;
+  creditsCost: number;
+  creditsPayerUid: string;
+  creditsPayerName: string;
+  gmtCreate: string;
+  gmtModify: string;
+  completedAt: string | null;
+  isPinned?: boolean;
+  errorMessage?: string | null;
+  pinnedOriginalSortWeight?: number | null;
+}
+
+export type ExternalCommandType =
+  | 'append_nodes'
+  | 'update_nodes'
+  | 'upsert_nodes'
+  | 'delete_nodes';
 
 export interface ExternalCommandEnvelope {
   id: string;
   source: string;
   type: ExternalCommandType;
   payload: {
-    nodes: ExternalNode[];
+    nodes: BoardTaskItem[];
   };
 }

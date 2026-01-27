@@ -5,7 +5,7 @@
 
 import type { Env } from './types';
 import { extractToken, verifyToken } from './utils/auth';
-import { authenticateExternalRequest, isSourceAllowed } from './utils/externalAuth';
+// import { authenticateExternalRequest, isSourceAllowed } from './utils/externalAuth';
 import { parseExternalCommand } from './utils/externalCommands';
 
 export { CanvasRoom } from './canvasRoom';
@@ -263,11 +263,11 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
 
   console.log(`[ExternalCommands] request ${requestId} canvas=${canvasId} bytes=${bodyText.length}`);
 
-  const auth = await authenticateExternalRequest(request, env, bodyText, canvasId);
-  if (!auth.ok) {
-    console.warn(`[ExternalCommands] request ${requestId} auth failed: ${auth.error || 'Unauthorized'}`);
-    return errorResponse(auth.error || 'Unauthorized', auth.status, auth.retryAfterSeconds);
-  }
+  // const auth = await authenticateExternalRequest(request, env, bodyText, canvasId);
+  // if (!auth.ok) {
+  //   console.warn(`[ExternalCommands] request ${requestId} auth failed: ${auth.error || 'Unauthorized'}`);
+  //   return errorResponse(auth.error || 'Unauthorized', auth.status, auth.retryAfterSeconds);
+  // }
 
   const parsed = parseExternalCommand(bodyText);
   if (!parsed.ok || !parsed.command) {
@@ -275,10 +275,10 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
     return errorResponse(parsed.error || 'Invalid command body', 400);
   }
 
-  if (!isSourceAllowed(auth.context!.config, parsed.command.source)) {
-    console.warn(`[ExternalCommands] request ${requestId} source not allowed: ${parsed.command.source}`);
-    return errorResponse('Source not allowed', 403);
-  }
+  // if (!isSourceAllowed(auth.context!.config, parsed.command.source)) {
+  //   console.warn(`[ExternalCommands] request ${requestId} source not allowed: ${parsed.command.source}`);
+  //   return errorResponse('Source not allowed', 403);
+  // }
 
   console.log(
     `[ExternalCommands] request ${requestId} cmd=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`

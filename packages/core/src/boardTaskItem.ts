@@ -97,6 +97,8 @@ export interface BoardTaskItem {
     sortWeight: number;
     uid: string;
     userName: string;
+    /** 可选标题（例如音频/上传文件名的展示） */
+    title?: string | null;
     toolType: string;
     toolCategory: ToolCategory | string;
     status: TaskStatus | string;

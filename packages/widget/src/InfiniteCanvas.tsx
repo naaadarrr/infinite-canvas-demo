@@ -111,6 +111,14 @@ export interface InfiniteCanvasProps {
   className?: string;
   style?: React.CSSProperties;
   backgroundColor?: string;
+  /** 画布宽度，默认 '100%'。当嵌入到业务方 UI 时，建议明确指定或确保父容器有明确宽度 */
+  width?: string | number;
+  /** 画布高度，默认 '100%'。当嵌入到业务方 UI 时，建议明确指定或确保父容器有明确高度 */
+  height?: string | number;
+  /** 最小宽度，默认 '300px' */
+  minWidth?: string | number;
+  /** 最小高度，默认 '400px' */
+  minHeight?: string | number;
 }
 
 export function InfiniteCanvas({
@@ -134,6 +142,10 @@ export function InfiniteCanvas({
   className,
   style,
   backgroundColor = '#f5f5f5',
+  width = '100%',
+  height = '100%',
+  minWidth = '300px',
+  minHeight = '400px',
 }: InfiniteCanvasProps) {
   const [nodes, setNodes] = React.useState<Node<CanvasNodeData>[]>([]);
   const nodesRef = React.useRef<Node<CanvasNodeData>[]>([]);
@@ -573,11 +585,22 @@ export function InfiniteCanvas({
     [onEdgesChangeCallback]
   );
 
+  // 合并容器样式
+  const containerStyle: React.CSSProperties = {
+    width,
+    height,
+    minWidth,
+    minHeight,
+    backgroundColor,
+    position: 'relative',
+    ...style,
+  };
+
   return (
     <div
       ref={containerRef}
       className={className}
-      style={{ width: '100%', height: '100%', backgroundColor, position: 'relative', ...style }}
+      style={containerStyle}
     >
       <style>
         {`
@@ -591,6 +614,7 @@ export function InfiniteCanvas({
         `}
       </style>
       <ReactFlow<Node<CanvasNodeData>, Edge>
+        style={{ width: '50vh', height: '50vh' }}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}

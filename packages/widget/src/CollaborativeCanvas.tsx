@@ -8,6 +8,7 @@ import { useCollaboration } from './hooks';
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
+import { BoardTaskItem } from '@tc/infinite-core';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 
@@ -24,7 +25,7 @@ export interface CollaborativeCanvasProps {
   userId?: string;
   userName?: string;
   seedNodes?: CanvasNodeData[];
-  rawData?: RawDataItem[];
+  rawData?: BoardTaskItem[];
   layoutConfig?: LayoutConfig;
   config?: CanvasConfig;
   initialBackgroundColor?: string;
@@ -32,6 +33,14 @@ export interface CollaborativeCanvasProps {
   dependencyEdgesVisible?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** 画布宽度，默认 '100%'。当嵌入到业务方 UI 时，建议明确指定或确保父容器有明确宽度 */
+  width?: string | number;
+  /** 画布高度，默认 '100%'。当嵌入到业务方 UI 时，建议明确指定或确保父容器有明确高度 */
+  height?: string | number;
+  /** 最小宽度，默认 '300px' */
+  minWidth?: string | number;
+  /** 最小高度，默认 '400px' */
+  minHeight?: string | number;
 }
 
 export function CollaborativeCanvas({
@@ -47,6 +56,10 @@ export function CollaborativeCanvas({
   dependencyEdgesVisible = true,
   className,
   style,
+  width,
+  height,
+  minWidth,
+  minHeight,
 }: CollaborativeCanvasProps) {
   const resolvedLayout = useMemo<LayoutConfig>(
     () => ({
@@ -161,7 +174,7 @@ export function CollaborativeCanvas({
     return raw.taskId;
   }, []);
 
-  const getInputImagePath = useCallback((item?: RawDataItem) => {
+  const getInputImagePath = useCallback((item?: BoardTaskItem) => {
     if (!item) {
       return null;
     }
@@ -905,7 +918,7 @@ export function CollaborativeCanvas({
     if (pendingItems.length === 0) {
       return;
     }
-    const anchoredGroups = new Map<string, { anchor: CanvasNodeData; items: RawDataItem[] }>();
+    const anchoredGroups = new Map<string, { anchor: CanvasNodeData; items: BoardTaskItem[] }>();
     const fallbackItems: RawDataItem[] = [];
     pendingItems.forEach((item) => {
       const inputPath = getInputImagePath(item);
@@ -1454,14 +1467,14 @@ export function CollaborativeCanvas({
     <main
       className={className}
       style={{
-        width: '100vw',
-        height: '100vh',
+        width: 'inherit',
+        height: 'inherit',
         display: 'flex',
         flexDirection: 'column',
         ...style,
       }}
     >
-      <header
+      {/* <header
         style={{
           padding: '20px',
           background: '#fff',
@@ -1533,7 +1546,7 @@ export function CollaborativeCanvas({
             </div>
           </div>
         </div>
-      </header>
+      </header> */}
       <div style={{ flex: 1, position: 'relative' }} ref={canvasRef}>
         {toasts.length > 0 && (
           <div
@@ -1761,6 +1774,10 @@ export function CollaborativeCanvas({
               selectionOnDrag={toolMode === 'edit'}
               panOnDrag={toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
               config={canvasConfig}
+              width={width}
+              height={height}
+              minWidth={minWidth}
+              minHeight={minHeight}
             />
           </DependencyFocusProvider>
         </div>

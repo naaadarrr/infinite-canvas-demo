@@ -7,7 +7,8 @@ import type {
   Env,
   CanvasNodeData,
   ExternalCommandEnvelope,
-  ExternalNode,
+  BoardTaskItem,
+  MediaResourceInfo,
   Size,
   UserPresence,
   ConnectionInfo,
@@ -35,6 +36,9 @@ import type {
 import { MessageType, NodeType } from './types';
 import { loadLatestSnapshot } from './snapshot';
 import { parseExternalCommand } from './utils/externalCommands';
+
+const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
+const ASPECT_RATIO_PATTERN = /^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/;
 
 export class CanvasRoom implements DurableObject {
   private state: DurableObjectState;
@@ -68,6 +72,7 @@ export class CanvasRoom implements DurableObject {
     startX: 100,
     startY: 100,
   };
+  private readonly externalCdnBaseUrl = 'https://dr1coeak04nbk.cloudfront.net';
   
   // 旧快照配置(已废弃,保留用于迁移)
   private lastSnapshotSeq: number = 0;
@@ -863,7 +868,15 @@ export class CanvasRoom implements DurableObject {
     this.pruneTombstones(now);
 
     if (this.processedCommandIds.has(command.id)) {
-      return { success: true, status: 'duplicate', seq: this.seq };
+      return {
+        success: true,
+        status: 'duplicate',
+        seq: this.seq,
+        created: 0,
+        updated: 0,
+        deleted: 0,
+        ignored: 0,
+      };
     }
 
     this.processedCommandIds.set(command.id, now);
@@ -880,21 +893,24 @@ export class CanvasRoom implements DurableObject {
 
     const updatesBatch: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
     const source = command.source;
+    const commandType = command.type === 'upsert_nodes' ? 'update_nodes' : command.type;
 
-    switch (command.type) {
+    switch (commandType) {
       case 'append_nodes': {
-        for (const node of command.payload.nodes) {
-          const nodeId = this.getExternalNodeId(source, node.externalId);
-          const tombstoneAt = this.externalTombstones.get(nodeId);
-          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+        for (const item of command.payload.nodes) {
+          if (!item || typeof item.taskId !== 'string') {
             summary.ignored += 1;
             continue;
           }
-          if (this.nodes.has(nodeId)) {
+
+          const existingId = this.findNodeIdByTaskId(item.taskId, source);
+          if (existingId) {
             summary.ignored += 1;
             continue;
           }
-          const createdNode = this.buildNodeFromExternal(node, nodeId, source);
+
+          const nodeId = this.getTaskNodeId(item.taskId);
+          const createdNode = this.buildNodeFromTaskItem(item, nodeId, source);
           if (!createdNode) {
             summary.ignored += 1;
             continue;
@@ -910,46 +926,40 @@ export class CanvasRoom implements DurableObject {
         }
         break;
       }
-      case 'upsert_nodes': {
-        for (const node of command.payload.nodes) {
-          const nodeId = this.getExternalNodeId(source, node.externalId);
-          const tombstoneAt = this.externalTombstones.get(nodeId);
-          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+      case 'update_nodes': {
+        for (const item of command.payload.nodes) {
+          if (!item || typeof item.taskId !== 'string') {
             summary.ignored += 1;
             continue;
           }
 
-          const existing = this.nodes.get(nodeId);
+          const existingId = this.findNodeIdByTaskId(item.taskId, source);
+          if (!existingId) {
+            summary.ignored += 1;
+            continue;
+          }
+
+          const existing = this.nodes.get(existingId);
           if (!existing) {
-            const createdNode = this.buildNodeFromExternal(node, nodeId, source);
-            if (!createdNode) {
-              summary.ignored += 1;
-              continue;
-            }
-            this.nodes.set(nodeId, createdNode);
-            this.seq += 1;
-            summary.created += 1;
-            this.broadcast({
-              type: MessageType.NODE_CREATED,
-              seq: this.seq,
-              node: createdNode,
-            });
-            continue;
-          }
-
-          const previousUpdatedAt = this.getExternalUpdatedAt(existing);
-          if (node.updatedAt <= previousUpdatedAt) {
             summary.ignored += 1;
             continue;
           }
 
-          const updates = this.buildExternalUpdates(node, existing, source);
-          if (Object.keys(updates).length === 0) {
+          const existingRaw = (existing as CanvasNodeData & { raw?: BoardTaskItem }).raw;
+          const mergedRaw = this.mergeTaskItem(existingRaw, item);
+          if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw)) {
             summary.ignored += 1;
             continue;
           }
+
+          const updates = this.buildTaskItemUpdates(mergedRaw, existing, source);
+          if (!updates || Object.keys(updates).length === 0) {
+            summary.ignored += 1;
+            continue;
+          }
+
           Object.assign(existing, updates);
-          updatesBatch.push({ nodeId, updates });
+          updatesBatch.push({ nodeId: existingId, updates });
           summary.updated += 1;
         }
         if (updatesBatch.length > 0) {
@@ -964,36 +974,31 @@ export class CanvasRoom implements DurableObject {
         break;
       }
       case 'delete_nodes': {
-        for (const node of command.payload.nodes) {
-          const nodeId = this.getExternalNodeId(source, node.externalId);
-          const tombstoneAt = this.externalTombstones.get(nodeId);
-          if (tombstoneAt && node.updatedAt <= tombstoneAt) {
+        for (const item of command.payload.nodes) {
+          if (!item || typeof item.taskId !== 'string') {
             summary.ignored += 1;
             continue;
           }
 
-          const existing = this.nodes.get(nodeId);
-          if (!existing) {
-            this.externalTombstones.set(nodeId, node.updatedAt);
+          const existingId = this.findNodeIdByTaskId(item.taskId, source);
+          if (!existingId) {
             summary.ignored += 1;
             continue;
           }
 
-          const previousUpdatedAt = this.getExternalUpdatedAt(existing);
-          if (node.updatedAt <= previousUpdatedAt) {
+          if (!this.nodes.has(existingId)) {
             summary.ignored += 1;
             continue;
           }
 
-          this.nodes.delete(nodeId);
-          this.lockedNodes.delete(nodeId);
-          this.externalTombstones.set(nodeId, node.updatedAt);
+          this.nodes.delete(existingId);
+          this.lockedNodes.delete(existingId);
           this.seq += 1;
           summary.deleted += 1;
           this.broadcast({
             type: MessageType.NODE_DELETED,
             seq: this.seq,
-            nodeId,
+            nodeId: existingId,
           });
         }
         break;
@@ -1006,21 +1011,20 @@ export class CanvasRoom implements DurableObject {
 
     if (summary.created + summary.updated + summary.deleted > 0) {
       summary.seq = this.seq;
+      this.markDirty();
     }
-
-    this.markDirty();
     return summary;
   }
 
-  private buildNodeFromExternal(node: ExternalNode, nodeId: string, source: string): CanvasNodeData | null {
-    const normalizedType = this.normalizeExternalType(node.type);
+  private buildNodeFromTaskItem(item: BoardTaskItem, nodeId: string, source: string): CanvasNodeData | null {
+    const normalizedType = this.normalizeTaskMediaType(item.mediaType);
     if (!normalizedType) {
       return null;
     }
 
-    const position = this.nextAutoPosition();
-    const size = this.getDefaultSize(normalizedType);
-    const sanitized = this.sanitizeExternalData(node.data);
+    const size = this.getTaskDefaultSize(item, normalizedType);
+    const position = this.nextAutoPosition(size);
+    const derived = this.buildTaskNodeData(item, normalizedType);
 
     return ({
       id: nodeId,
@@ -1028,60 +1032,87 @@ export class CanvasRoom implements DurableObject {
       position,
       size,
       zIndex: 1,
-      externalId: node.externalId,
+      raw: item,
+      taskId: item.taskId,
+      rating: item.rating,
+      externalId: item.taskId,
       externalSource: source,
-      externalUpdatedAt: node.updatedAt,
-      ...sanitized,
+      ...derived,
     } as unknown) as CanvasNodeData;
   }
 
-  private buildExternalUpdates(
-    node: ExternalNode,
+  private buildTaskItemUpdates(
+    item: BoardTaskItem,
     existing: CanvasNodeData,
     source: string
-  ): Partial<CanvasNodeData> {
+  ): Partial<CanvasNodeData> | null {
+    const normalizedType = this.resolveTaskNodeType(item.mediaType, existing);
+    if (!normalizedType) {
+      return null;
+    }
+
+    const derived = this.buildTaskNodeData(item, normalizedType);
     const updates: Partial<CanvasNodeData> = {
-      externalId: node.externalId,
+      raw: item,
+      taskId: item.taskId,
+      rating: item.rating,
+      externalId: item.taskId,
       externalSource: source,
-      externalUpdatedAt: node.updatedAt,
     };
 
-    const normalizedType = this.normalizeExternalType(node.type);
-    if (normalizedType && existing.type !== normalizedType) {
+    if (existing.type !== normalizedType) {
       updates.type = normalizedType;
     }
 
-    Object.assign(updates, this.sanitizeExternalData(node.data));
+    for (const [key, value] of Object.entries(derived)) {
+      if (!this.isDeepEqual((existing as Record<string, unknown>)[key], value)) {
+        (updates as Record<string, unknown>)[key] = value;
+      }
+    }
+
     return updates;
   }
 
-  private sanitizeExternalData(data: Record<string, unknown>): Record<string, unknown> {
-    const sanitized: Record<string, unknown> = {};
-    const blockedKeys = new Set([
-      'id',
-      'type',
-      'position',
-      'size',
-      'zIndex',
-      'rotation',
-      'externalId',
-      'externalSource',
-      'externalUpdatedAt',
-      'deleted',
-      'deletedAt',
-    ]);
+  private buildTaskNodeData(item: BoardTaskItem, type: NodeType): Partial<CanvasNodeData> {
+    const result = item.result ?? undefined;
 
-    for (const [key, value] of Object.entries(data)) {
-      if (blockedKeys.has(key)) {
-        continue;
+    switch (type) {
+      case NodeType.IMAGE: {
+        const url = this.resolveMediaUrlFrom([result?.originImage, result?.compressedImage]) ?? '';
+        return { url };
       }
-      sanitized[key] = value;
+      case NodeType.VIDEO: {
+        const url = this.resolveMediaUrlFrom([result?.originVideo, result?.originImage]) ?? '';
+        const poster =
+          this.resolveCoverUrl(result?.originVideo) ??
+          this.resolveCoverUrl(result?.originImage);
+        return { url, poster, loop: true, muted: true };
+      }
+      case NodeType.AUDIO: {
+        const url = this.resolveMediaUrl(result?.originAudio) ?? '';
+        const title =
+          this.resolveTitle(item.parameters?.fileName) ??
+          this.resolveTitle(item.title) ??
+          '音频文件';
+        return { url, title };
+      }
+      case NodeType.TEXT: {
+        const content =
+          this.resolveTitle(item.title) ??
+          this.resolveTitle(item.parameters?.prompt) ??
+          '';
+        return { content };
+      }
+      default:
+        return {};
     }
-    return sanitized;
   }
 
-  private normalizeExternalType(type: string): NodeType | null {
-    switch (type.toLowerCase()) {
+  private normalizeTaskMediaType(mediaType: unknown): NodeType | null {
+    if (typeof mediaType !== 'string') {
+      return null;
+    }
+    switch (mediaType.toLowerCase()) {
       case 'image':
         return NodeType.IMAGE;
       case 'video':
@@ -1095,39 +1126,266 @@ export class CanvasRoom implements DurableObject {
     }
   }
 
-  private getDefaultSize(type: NodeType): Size {
-    switch (type) {
-      case NodeType.AUDIO:
-        return { width: 300, height: 120 };
-      case NodeType.TEXT:
-        return { width: 300, height: 120 };
-      default:
-        return { width: 300, height: 200 };
+  private resolveTaskNodeType(mediaType: unknown, existing: CanvasNodeData): NodeType | null {
+    const normalized = this.normalizeTaskMediaType(mediaType);
+    if (normalized) {
+      return normalized;
     }
+    return existing.type ?? null;
   }
 
-  private nextAutoPosition(): Position {
+  private mergeTaskItem(existing: BoardTaskItem | undefined, incoming: BoardTaskItem): BoardTaskItem {
+    if (!existing) {
+      return incoming;
+    }
+    return this.deepMerge(existing, incoming) as BoardTaskItem;
+  }
+
+  private deepMerge<T>(base: T, patch: T): T {
+    if (!base || typeof base !== 'object' || !patch || typeof patch !== 'object') {
+      return patch;
+    }
+    if (Array.isArray(base) && Array.isArray(patch)) {
+      return patch as T;
+    }
+    const result: Record<string, unknown> = { ...(base as Record<string, unknown>) };
+    for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const existingValue = result[key];
+        if (existingValue && typeof existingValue === 'object' && !Array.isArray(existingValue)) {
+          result[key] = this.deepMerge(existingValue, value);
+        } else {
+          result[key] = this.deepMerge({}, value);
+        }
+      } else if (Array.isArray(value)) {
+        result[key] = value.slice();
+      } else {
+        result[key] = value;
+      }
+    }
+    return result as T;
+  }
+
+  private getTaskDefaultSize(item: BoardTaskItem, type: NodeType): Size {
+    const { nodeWidth, nodeHeight } = this.externalLayoutConfig;
+    if (type === NodeType.AUDIO || type === NodeType.TEXT) {
+      return { width: nodeWidth, height: 120 };
+    }
+
+    const result = item.result ?? undefined;
+    const resources =
+      type === NodeType.IMAGE
+        ? [result?.originImage, result?.compressedImage]
+        : [result?.originVideo, result?.originImage];
+    const aspectRatio =
+      this.resolveAspectRatioFromParameters(item.parameters) ??
+      this.resolveAspectRatioFromResources(resources);
+    return this.resolveNodeSize(nodeWidth, nodeHeight, aspectRatio);
+  }
+
+  private resolveNodeSize(
+    nodeWidth: number,
+    nodeHeight: number,
+    aspectRatio?: number
+  ): Size {
+    if (!aspectRatio || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+      return { width: nodeWidth, height: nodeHeight };
+    }
+    const containerRatio = nodeWidth / nodeHeight;
+    if (aspectRatio >= containerRatio) {
+      return { width: nodeWidth, height: nodeWidth / aspectRatio };
+    }
+    return { width: nodeHeight * aspectRatio, height: nodeHeight };
+  }
+
+  private resolveMediaUrl(resource?: MediaResourceInfo): string | undefined {
+    if (!resource) {
+      return undefined;
+    }
+    if (resource.url) {
+      return this.resolveUrl(resource.url);
+    }
+    return this.resolveUrl(resource.filePath);
+  }
+
+  private resolveMediaUrlFrom(resources: Array<MediaResourceInfo | undefined>): string | undefined {
+    for (const resource of resources) {
+      const url = this.resolveMediaUrl(resource);
+      if (url) {
+        return url;
+      }
+    }
+    return undefined;
+  }
+
+  private resolveCoverUrl(resource?: MediaResourceInfo): string | undefined {
+    if (!resource?.coverPath) {
+      return undefined;
+    }
+    return this.resolveUrl(resource.coverPath);
+  }
+
+  private resolveUrl(value?: string): string | undefined {
+    if (!value) {
+      return undefined;
+    }
+    if (ABSOLUTE_URL_PATTERN.test(value)) {
+      return value;
+    }
+    const trimmedBase = this.externalCdnBaseUrl.endsWith('/')
+      ? this.externalCdnBaseUrl.slice(0, -1)
+      : this.externalCdnBaseUrl;
+    const trimmedPath = value.startsWith('/') ? value.slice(1) : value;
+    return `${trimmedBase}/${trimmedPath}`;
+  }
+
+  private resolveTitle(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private resolveAspectRatioFromParameters(parameters?: BoardTaskItem['parameters']): number | undefined {
+    if (!parameters || typeof parameters !== 'object') {
+      return undefined;
+    }
+    const record = parameters as Record<string, unknown>;
+    return this.parseAspectRatio(record.aspectRatio ?? record.aspect_ratio);
+  }
+
+  private resolveAspectRatioFromResources(
+    resources: Array<MediaResourceInfo | undefined>
+  ): number | undefined {
+    for (const resource of resources) {
+      const width = resource?.width;
+      const height = resource?.height;
+      if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
+        return width / height;
+      }
+    }
+    return undefined;
+  }
+
+  private parseAspectRatio(value: unknown): number | undefined {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) && value > 0 ? value : undefined;
+    }
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const match = ASPECT_RATIO_PATTERN.exec(value.trim());
+    if (!match) {
+      return undefined;
+    }
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+      return undefined;
+    }
+    return width / height;
+  }
+
+  private nextAutoPosition(size?: Size): Position {
     const { columns, nodeWidth, nodeHeight, gap, startX, startY } = this.externalLayoutConfig;
     const index = this.autoLayoutIndex;
     const row = Math.floor(index / columns);
     const col = index % columns;
     this.autoLayoutIndex += 1;
+    const cellX = startX + col * (nodeWidth + gap);
+    const cellY = startY + row * (nodeHeight + gap);
+    if (!size) {
+      return { x: cellX, y: cellY };
+    }
     return {
-      x: startX + col * (nodeWidth + gap),
-      y: startY + row * (nodeHeight + gap),
+      x: cellX + (nodeWidth - size.width) / 2,
+      y: cellY + (nodeHeight - size.height) / 2,
     };
   }
 
-  private getExternalNodeId(source: string, externalId: string): string {
-    return `ext:${source}:${externalId}`;
+  private getTaskNodeId(taskId: string): string {
+    return `task:${taskId}`;
   }
 
-  private getExternalUpdatedAt(node: CanvasNodeData): number {
-    const value = (node as CanvasNodeData & { externalUpdatedAt?: number }).externalUpdatedAt;
-    if (typeof value !== 'number' || Number.isNaN(value)) {
-      return 0;
+  private getLegacyExternalNodeId(source: string, taskId: string): string {
+    return `ext:${source}:${taskId}`;
+  }
+
+  private findNodeIdByTaskId(taskId: string, source?: string): string | null {
+    const directId = this.getTaskNodeId(taskId);
+    if (this.nodes.has(directId)) {
+      return directId;
     }
-    return value;
+
+    if (source) {
+      const legacyId = this.getLegacyExternalNodeId(source, taskId);
+      if (this.nodes.has(legacyId)) {
+        return legacyId;
+      }
+    }
+
+    for (const [nodeId, node] of this.nodes.entries()) {
+      const candidate = this.extractTaskId(node);
+      if (candidate === taskId) {
+        return nodeId;
+      }
+    }
+
+    return null;
+  }
+
+  private extractTaskId(node: CanvasNodeData): string | null {
+    const rawTaskId = (node as CanvasNodeData & { raw?: BoardTaskItem }).raw?.taskId;
+    if (typeof rawTaskId === 'string') {
+      return rawTaskId;
+    }
+    const taskId = (node as CanvasNodeData & { taskId?: string }).taskId;
+    if (typeof taskId === 'string') {
+      return taskId;
+    }
+    const externalId = (node as CanvasNodeData & { externalId?: string }).externalId;
+    if (typeof externalId === 'string') {
+      return externalId;
+    }
+    return null;
+  }
+
+  private isDeepEqual(a: unknown, b: unknown): boolean {
+    if (Object.is(a, b)) {
+      return true;
+    }
+    if (typeof a !== typeof b) {
+      return false;
+    }
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object') {
+      return false;
+    }
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+      }
+      for (let i = 0; i < a.length; i += 1) {
+        if (!this.isDeepEqual(a[i], b[i])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) {
+      return false;
+    }
+    for (const key of keysA) {
+      if (!Object.prototype.hasOwnProperty.call(b, key)) {
+        return false;
+      }
+      if (!this.isDeepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private pruneCommandIds(now: number): void {

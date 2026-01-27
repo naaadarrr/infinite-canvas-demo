@@ -1,46 +1,31 @@
-import type { ExternalCommandEnvelope, ExternalCommandType, ExternalNode } from '../types';
+import type { BoardTaskItem, ExternalCommandEnvelope, ExternalCommandType } from '../types';
 
 const ALLOWED_COMMAND_TYPES = new Set<ExternalCommandType>([
   'append_nodes',
+  'update_nodes',
   'upsert_nodes',
   'delete_nodes',
 ]);
-
-const ALLOWED_NODE_TYPES = new Set(['image', 'video', 'audio', 'text']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function validateExternalNode(node: ExternalNode): string | null {
+function validateTaskItem(node: BoardTaskItem): string | null {
   if (!node || typeof node !== 'object') {
     return 'Invalid node payload';
   }
 
-  if (!node.externalId || typeof node.externalId !== 'string') {
-    return 'Missing externalId';
-  }
-
-  if (!node.type || typeof node.type !== 'string') {
-    return 'Missing node type';
-  }
-
-  if (!ALLOWED_NODE_TYPES.has(node.type.toLowerCase())) {
-    return `Unsupported node type: ${node.type}`;
-  }
-
-  if (!isRecord(node.data)) {
-    return 'Missing node data';
-  }
-
-  if (typeof node.updatedAt !== 'number' || Number.isNaN(node.updatedAt)) {
-    return 'Missing updatedAt';
+  if (!node.taskId || typeof node.taskId !== 'string') {
+    return 'Missing taskId';
   }
 
   return null;
 }
 
-export function validateExternalCommand(command: unknown): { ok: boolean; error?: string; command?: ExternalCommandEnvelope } {
+export function validateExternalCommand(
+  command: unknown
+): { ok: boolean; error?: string; command?: ExternalCommandEnvelope } {
   if (!isRecord(command)) {
     return { ok: false, error: 'Invalid command body' };
   }
@@ -67,8 +52,8 @@ export function validateExternalCommand(command: unknown): { ok: boolean; error?
     return { ok: false, error: 'Missing payload.nodes' };
   }
 
-  for (const node of payload.nodes as ExternalNode[]) {
-    const error = validateExternalNode(node);
+  for (const node of payload.nodes as BoardTaskItem[]) {
+    const error = validateTaskItem(node);
     if (error) {
       return { ok: false, error };
     }

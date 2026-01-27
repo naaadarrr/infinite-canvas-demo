@@ -407,6 +407,9 @@ export function CollaborativeCanvas({
       setDependencyEdges([]);
       return;
     }
+    if (draggingNodesRef.current.size > 0) {
+      return;
+    }
     const signature = nodes
       .map((node) => {
         const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;

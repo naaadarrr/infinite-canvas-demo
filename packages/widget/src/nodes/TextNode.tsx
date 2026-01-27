@@ -1033,6 +1033,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       {/* 隐藏的输入层 - 仅在编辑模式下显示 */}
       {isEditing && (
         <textarea
+          title="Input Text"
+          placeholder="Untitle Text"
           ref={textareaRef}
           className="nodrag"
           autoFocus

@@ -400,11 +400,15 @@ export function useCollaboration(
         }
       };
 
-      ws.onerror = (error) => {
+      ws.onerror = (error: Event) => {
+        const wsError = error as ErrorEvent;
         console.error('[Collaboration] WebSocket error:', {
-          error,
+          error: wsError,
+          message: wsError.message || 'Unknown error',
+          type: wsError.type,
           url,
           readyState: ws.readyState,
+          readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState],
           canvasId,
         });
       };

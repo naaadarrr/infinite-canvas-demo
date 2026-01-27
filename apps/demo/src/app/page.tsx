@@ -52,7 +52,7 @@ export default function Home() {
     <CollaborativeCanvas
       canvasId={canvasId}
       userId={userId}
-      rawData={mockData}
+      rawData={[]}
       layoutConfig={layoutConfig}
       dependencyEdgesVisible={true}
     />

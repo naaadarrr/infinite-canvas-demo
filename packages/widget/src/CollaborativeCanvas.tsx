@@ -626,17 +626,23 @@ export function CollaborativeCanvas({
           console.log('[Collaboration] Received sync_state:', {
             nodesCount: message.nodes.length,
             presencesCount: Object.keys(message.presences).length,
+            currentNodesCount: nodesRef.current.length,
+            seeded: seededRef.current,
           });
           
           if (message.nodes.length > 0) {
             seededRef.current = true;
             setNodes(message.nodes as CanvasNodeData[]);
           } else {
-            setNodes([]);
-            // 只有在房间为空时才seed
-            if (!seededRef.current) {
+            // 如果本地已经有数据,不要清空
+            // 只在首次连接且房间为空时才初始化
+            if (!seededRef.current && nodesRef.current.length === 0) {
               seedCanvas();
+            } else if (!seededRef.current) {
+              // 本地有数据但未 seed,保持现有数据不变
+              console.log('[Collaboration] Keeping local nodes, not clearing');
             }
+            // 不要执行 setNodes([]),这会清空本地数据
           }
           
           // 初始化已知用户列表,排除自己

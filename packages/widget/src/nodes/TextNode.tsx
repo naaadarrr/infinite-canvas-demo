@@ -18,7 +18,7 @@ interface TextToolbarProps {
   onBackgroundOpacityChange: (opacity: number) => void;
 }
 
-function TextToolbar({
+const TextToolbar = React.memo(function TextToolbar({
   fontSize,
   fontWeight,
   textAlign,
@@ -107,6 +107,22 @@ function TextToolbar({
   return (
     <div
       className="nodrag nopan nowheel"
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onMouseDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       style={{
         position: 'absolute',
         bottom: '100%',
@@ -125,16 +141,28 @@ function TextToolbar({
         WebkitBackdropFilter: 'blur(8px)',
         boxShadow: '0 8px 20px rgba(0,0,0,0.2)',
         whiteSpace: 'nowrap',
-        zIndex: 100,
+        zIndex: 9999,
+        pointerEvents: 'auto',
       }}
-      onPointerDownCapture={(e) => e.stopPropagation()}
-      onMouseDownCapture={(e) => e.stopPropagation()}
     >
       {/* 字体大小下拉框 */}
       <div style={{ position: 'relative' }}>
         <TooltipWrapper id="font-size" label="字号">
           <button
-            onClick={() => setShowFontSizeDropdown(!showFontSizeDropdown)}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setShowFontSizeDropdown(!showFontSizeDropdown);
+            }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -163,6 +191,15 @@ function TextToolbar({
         </TooltipWrapper>
         {showFontSizeDropdown && (
           <div
+            className="nodrag nopan nowheel"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
             style={{
               position: 'absolute',
               top: '100%',
@@ -174,15 +211,26 @@ function TextToolbar({
               boxShadow: '0 8px 20px rgba(0,0,0,0.35)',
               maxHeight: 200,
               overflowY: 'auto',
-              zIndex: 101,
+              zIndex: 10000,
+              pointerEvents: 'auto',
             }}
           >
             {fontSizes.map((size) => (
               <div
                 key={size}
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   onFontSizeChange(size);
                   setShowFontSizeDropdown(false);
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                 }}
                 style={{
                   padding: '6px 16px',
@@ -210,7 +258,20 @@ function TextToolbar({
       {/* 加粗按钮 */}
       <TooltipWrapper id="bold" label="加粗">
         <button
-          onClick={() => onFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold')}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onFontWeightChange(fontWeight === 'bold' ? 'normal' : 'bold');
+          }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           style={{
             width: 26,
             height: 26,
@@ -237,7 +298,20 @@ function TextToolbar({
             {/* 左对齐 */}
             <TooltipWrapper id="align-left" label="左对齐">
               <button
-                onClick={() => onTextAlignChange('left')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTextAlignChange('left');
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 style={{
                   padding: 6,
                   border: 'none',
@@ -262,7 +336,20 @@ function TextToolbar({
             {/* 居中对齐 */}
             <TooltipWrapper id="align-center" label="居中对齐">
               <button
-                onClick={() => onTextAlignChange('center')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTextAlignChange('center');
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 style={{
                   padding: 6,
                   border: 'none',
@@ -287,7 +374,20 @@ function TextToolbar({
             {/* 右对齐 */}
             <TooltipWrapper id="align-right" label="右对齐">
               <button
-                onClick={() => onTextAlignChange('right')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onTextAlignChange('right');
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 style={{
                   padding: 6,
                   border: 'none',
@@ -321,7 +421,20 @@ function TextToolbar({
               return (
                 <TooltipWrapper key={option.label} id={`bg-${option.label}`} label={option.label}>
                   <button
-                    onClick={() => onBackgroundColorChange(option.value)}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onBackgroundColorChange(option.value);
+                    }}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
                     style={{
                       width: 20,
                       height: 20,
@@ -372,7 +485,19 @@ function TextToolbar({
               min={0}
               max={100}
               value={Math.round(backgroundOpacity * 100)}
-              onChange={(event) => onBackgroundOpacityChange(Number(event.target.value) / 100)}
+              onChange={(event) => {
+                event.stopPropagation();
+                onBackgroundOpacityChange(Number(event.target.value) / 100);
+              }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
               style={{ width: 90, accentColor: '#ffffff' }}
             />
             <span style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', minWidth: 36, textAlign: 'right' }}>
@@ -384,7 +509,20 @@ function TextToolbar({
 
       <TooltipWrapper id="expand" label={isExpanded ? '收起' : '更多'}>
         <button
-          onClick={() => setIsExpanded(!isExpanded)}
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsExpanded(!isExpanded);
+          }}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           style={{
             width: 26,
             height: 26,
@@ -403,7 +541,7 @@ function TextToolbar({
       </TooltipWrapper>
     </div>
   );
-}
+});
 
 export function TextNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as TextNodeData & {
@@ -577,39 +715,43 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   };
 
   const handleBlur = (event: React.FocusEvent<HTMLTextAreaElement>) => {
-    // 检查是否点击了工具栏，如果是则不失焦
-    const relatedTarget = event.relatedTarget as HTMLElement;
-    if (relatedTarget && containerRef.current?.contains(relatedTarget)) {
-      // 点击的是工具栏内的元素，保持编辑状态
-      return;
-    }
-    
-    setIsEditing(false);
-    // 如果内容为空（去除空格后），触发删除
-    if (!content.trim()) {
-      nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
-    }
+    // 延迟检查，给工具栏按钮点击事件时间执行
+    setTimeout(() => {
+      // 检查是否点击了工具栏，如果是则不失焦
+      const relatedTarget = event.relatedTarget as HTMLElement;
+      if (relatedTarget && containerRef.current?.contains(relatedTarget)) {
+        // 点击的是工具栏内的元素，保持编辑状态并重新聚焦
+        textareaRef.current?.focus();
+        return;
+      }
+      
+      setIsEditing(false);
+      // 如果内容为空（去除空格后），触发删除
+      if (!content.trim()) {
+        nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
+      }
+    }, 0);
   };
 
-  const handleFontSizeChange = (newSize: number) => {
+  const handleFontSizeChange = React.useCallback((newSize: number) => {
     nodeData.onNodeDataChange?.(nodeData.id, { fontSize: newSize });
-  };
+  }, [nodeData]);
 
-  const handleFontWeightChange = (newWeight: 'normal' | 'bold') => {
+  const handleFontWeightChange = React.useCallback((newWeight: 'normal' | 'bold') => {
     nodeData.onNodeDataChange?.(nodeData.id, { fontWeight: newWeight });
-  };
+  }, [nodeData]);
 
-  const handleTextAlignChange = (newAlign: TextAlign) => {
+  const handleTextAlignChange = React.useCallback((newAlign: TextAlign) => {
     nodeData.onNodeDataChange?.(nodeData.id, { textAlign: newAlign });
-  };
+  }, [nodeData]);
 
-  const handleBackgroundColorChange = (newColor: string | undefined) => {
+  const handleBackgroundColorChange = React.useCallback((newColor: string | undefined) => {
     nodeData.onNodeDataChange?.(nodeData.id, { backgroundColor: newColor });
-  };
+  }, [nodeData]);
 
-  const handleBackgroundOpacityChange = (newOpacity: number) => {
+  const handleBackgroundOpacityChange = React.useCallback((newOpacity: number) => {
     nodeData.onNodeDataChange?.(nodeData.id, { backgroundOpacity: newOpacity });
-  };
+  }, [nodeData]);
 
   const handleScaleStart = (
     event: React.PointerEvent<HTMLDivElement>,

@@ -5,9 +5,7 @@ import { generateId } from './utils';
 /**
  * 原始数据项接口
  */
-export interface RawDataItem extends BoardTaskItem {
-  [key: string]: unknown;
-}
+export type RawDataItem = BoardTaskItem;
 
 /**
  * 布局配置

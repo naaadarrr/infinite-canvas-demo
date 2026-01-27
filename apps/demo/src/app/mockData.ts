@@ -1,6 +1,6 @@
-import type { RawDataItem } from '@tc/infinite-core';
+import { BoardTaskItem } from '@tc/infinite-core';
 
-export const mockData: RawDataItem[] = 
+export const mockData: BoardTaskItem[] = 
 [
     {
         "taskId": "e79da41e750c4427980e63887e062db5",

@@ -6,10 +6,14 @@ import { useCollaboration } from './hooks';
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
 
+const DEFAULT_SUBCANVAS_KEY = '__default__';
+
 type SubCanvasInfo = {
   id: string;
   status: 'unread' | 'read';
   origin: { x: number; y: number };
+  groupKey: string;
+  anchorNodeId?: string;
 };
 
 export interface CollaborativeCanvasProps {
@@ -114,6 +118,8 @@ export function CollaborativeCanvas({
   const draggingNodesRef = useRef<Set<string>>(new Set());
   const activeSubCanvasRef = useRef<SubCanvasInfo | null>(null);
   const processedRawIdsRef = useRef<Set<string>>(new Set());
+  const anchoredSubCanvasesRef = useRef<Map<string, SubCanvasInfo>>(new Map());
+  const subCanvasByIdRef = useRef<Map<string, SubCanvasInfo>>(new Map());
   const readyForRawMergeRef = useRef(false);
   const userColor = useMemo(() => {
     const palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0f766e'];
@@ -150,6 +156,66 @@ export function CollaborativeCanvas({
     return raw.taskId;
   }, []);
 
+  const getInputImagePath = useCallback((item?: RawDataItem) => {
+    if (!item) {
+      return null;
+    }
+    const inputImages = item.parameters?.inputImages;
+    if (!Array.isArray(inputImages) || inputImages.length === 0) {
+      return null;
+    }
+    const first = inputImages[0] as unknown;
+    if (typeof first === 'string') {
+      return first;
+    }
+    if (first && typeof first === 'object') {
+      const path = (first as { inputImageS3Path?: unknown }).inputImageS3Path;
+      if (typeof path === 'string') {
+        return path;
+      }
+    }
+    return null;
+  }, []);
+
+  const getNodeReferencePaths = useCallback(
+    (node: CanvasNodeData) => {
+      const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
+      if (!raw) {
+        return [];
+      }
+      const paths: string[] = [];
+      const result = raw.result ?? undefined;
+      const pushPath = (value?: string) => {
+        if (typeof value === 'string' && value.length > 0) {
+          paths.push(value);
+        }
+      };
+      pushPath(result?.originImage?.filePath);
+      pushPath(result?.compressedImage?.filePath);
+      pushPath(result?.originVideo?.filePath);
+      pushPath(result?.originAudio?.filePath);
+      const inputPath = getInputImagePath(raw);
+      if (inputPath) {
+        paths.push(inputPath);
+      }
+      return paths;
+    },
+    [getInputImagePath]
+  );
+
+  const findAnchorNodeByInputPath = useCallback(
+    (inputPath: string, baseNodes: CanvasNodeData[]) => {
+      for (const node of baseNodes) {
+        const paths = getNodeReferencePaths(node);
+        if (paths.includes(inputPath)) {
+          return node;
+        }
+      }
+      return null;
+    },
+    [getNodeReferencePaths]
+  );
+
   const getSubCanvasOrigin = useCallback(
     (baseNodes: CanvasNodeData[]) => {
       const startX = resolvedLayout.startX ?? 100;
@@ -168,18 +234,57 @@ export function CollaborativeCanvas({
     [resolvedLayout.startX, resolvedLayout.startY, viewport.zoom]
   );
 
-  const createSubCanvas = useCallback(
-    (baseNodes: CanvasNodeData[]) => {
-      const origin = getSubCanvasOrigin(baseNodes);
+  const createSubCanvasAt = useCallback(
+    (
+      origin: { x: number; y: number },
+      options?: { setActive?: boolean; groupKey?: string; anchorNodeId?: string }
+    ) => {
+      const groupKey = options?.groupKey ?? DEFAULT_SUBCANVAS_KEY;
       const info: SubCanvasInfo = {
         id: `subcanvas_${generateId()}`,
         status: 'unread',
         origin,
+        groupKey,
+        anchorNodeId: options?.anchorNodeId,
       };
-      activeSubCanvasRef.current = info;
+      subCanvasByIdRef.current.set(info.id, info);
+      if (options?.setActive) {
+        activeSubCanvasRef.current = info;
+      }
       return info;
     },
-    [getSubCanvasOrigin]
+    []
+  );
+
+  const createSubCanvas = useCallback(
+    (baseNodes: CanvasNodeData[]) => {
+      const origin = getSubCanvasOrigin(baseNodes);
+      return createSubCanvasAt(origin, { setActive: true, groupKey: DEFAULT_SUBCANVAS_KEY });
+    },
+    [createSubCanvasAt, getSubCanvasOrigin]
+  );
+
+  const getAnchoredSubCanvas = useCallback(
+    (inputPath: string, anchorNode: CanvasNodeData) => {
+      const existing = anchoredSubCanvasesRef.current.get(inputPath);
+      if (existing && existing.status === 'unread') {
+        return existing;
+      }
+      const zoom = viewport.zoom || 1;
+      const anchorGap = 1 / zoom;
+      const origin = {
+        x: anchorNode.position.x,
+        y: anchorNode.position.y + anchorNode.size.height + anchorGap,
+      };
+      const info = createSubCanvasAt(origin, {
+        setActive: false,
+        groupKey: inputPath,
+        anchorNodeId: anchorNode.id,
+      });
+      anchoredSubCanvasesRef.current.set(inputPath, info);
+      return info;
+    },
+    [createSubCanvasAt, viewport.zoom]
   );
 
   const ensureActiveSubCanvas = useCallback(
@@ -193,16 +298,45 @@ export function CollaborativeCanvas({
     [createSubCanvas]
   );
 
-  const markActiveSubCanvasRead = useCallback(
-    (baseNodes: CanvasNodeData[]) => {
-      const current = activeSubCanvasRef.current;
-      if (!current || current.status === 'read') {
+  const markSubCanvasRead = useCallback(
+    (subCanvasId: string, baseNodes: CanvasNodeData[]) => {
+      const info = subCanvasByIdRef.current.get(subCanvasId);
+      if (!info || info.status === 'read') {
         return;
       }
-      current.status = 'read';
-      createSubCanvas(baseNodes);
+      info.status = 'read';
+      if (info.groupKey === DEFAULT_SUBCANVAS_KEY) {
+        createSubCanvas(baseNodes);
+        return;
+      }
+      const anchorNode = info.anchorNodeId
+        ? baseNodes.find((node) => node.id === info.anchorNodeId) ?? null
+        : null;
+      if (anchorNode) {
+        const zoom = viewport.zoom || 1;
+        const anchorGap = 1 / zoom;
+        const nextInfo = createSubCanvasAt(
+          {
+            x: anchorNode.position.x,
+            y: anchorNode.position.y + anchorNode.size.height + anchorGap,
+          },
+          {
+            setActive: false,
+            groupKey: info.groupKey,
+            anchorNodeId: anchorNode.id,
+          }
+        );
+        anchoredSubCanvasesRef.current.set(info.groupKey, nextInfo);
+      } else {
+        const nextInfo = createSubCanvasAt(info.origin, {
+          setActive: false,
+          groupKey: info.groupKey,
+          anchorNodeId: info.anchorNodeId,
+        });
+        anchoredSubCanvasesRef.current.set(info.groupKey, nextInfo);
+      }
     },
-    [createSubCanvas]
+    [createSubCanvas, createSubCanvasAt]
   );
 
   const applyGridOffset = useCallback(
@@ -238,6 +372,40 @@ export function CollaborativeCanvas({
       });
     },
     [resolvedLayout.columns, resolvedLayout.gap, resolvedLayout.nodeHeight, resolvedLayout.nodeWidth]
+  );
+
+  const layoutDependentNodes = useCallback(
+    (
+      items: CanvasNodeData[],
+      subCanvas: SubCanvasInfo,
+      existingNodes: CanvasNodeData[]
+    ) => {
+      if (items.length === 0) {
+        return items;
+      }
+      const zoom = viewport.zoom || 1;
+      const baseGap = resolvedLayout.gap ?? 50;
+      const compactGap = Math.max(4, Math.round(baseGap * 0.2));
+      const gap = compactGap / zoom;
+      const columnCount = Math.min(2, Math.max(1, existingNodes.length + items.length));
+      const allNodes = [...existingNodes, ...items];
+      const cellWidth = Math.max(...allNodes.map((node) => node.size.width));
+      const cellHeight = Math.max(...allNodes.map((node) => node.size.height));
+
+      return items.map((node, index) => {
+        const placeIndex = existingNodes.length + index;
+        const row = Math.floor(placeIndex / columnCount);
+        const col = placeIndex % columnCount;
+        return {
+          ...node,
+          position: {
+            x: subCanvas.origin.x + col * (cellWidth + gap),
+            y: subCanvas.origin.y + row * (cellHeight + gap),
+          },
+        };
+      });
+    },
+    [resolvedLayout.gap, viewport.zoom]
   );
 
   const appendNodes = useCallback(
@@ -593,11 +761,61 @@ export function CollaborativeCanvas({
     if (pendingItems.length === 0) {
       return;
     }
+    const anchoredGroups = new Map<string, { anchor: CanvasNodeData; items: RawDataItem[] }>();
+    const fallbackItems: RawDataItem[] = [];
+    pendingItems.forEach((item) => {
+      const inputPath = getInputImagePath(item);
+      if (inputPath) {
+        const anchor = findAnchorNodeByInputPath(inputPath, nodes);
+        if (anchor) {
+          const existing = anchoredGroups.get(inputPath);
+          if (existing) {
+            existing.items.push(item);
+          } else {
+            anchoredGroups.set(inputPath, { anchor, items: [item] });
+          }
+          return;
+        }
+      }
+      fallbackItems.push(item);
+    });
+
+    const markProcessed = (list: CanvasNodeData[]) => {
+      list.forEach((node) => {
+        const taskId = getRawTaskId(node);
+        if (taskId) {
+          processedRawIdsRef.current.add(taskId);
+        }
+      });
+    };
+
+    anchoredGroups.forEach(({ anchor, items }, inputPath) => {
+      const subCanvas = getAnchoredSubCanvas(inputPath, anchor);
+      const existingNodes = nodes.filter(
+        (node) => (node as CanvasNodeData & { subCanvasId?: string }).subCanvasId === subCanvas.id
+      );
+      const positionedNodes = parseRawData(items, {
+        ...resolvedLayout,
+        startX: subCanvas.origin.x,
+        startY: subCanvas.origin.y,
+      });
+      if (positionedNodes.length === 0) {
+        return;
+      }
+      const compactNodes = layoutDependentNodes(positionedNodes, subCanvas, existingNodes);
+      const newNodes = compactNodes.map((node) => ({ ...node, subCanvasId: subCanvas.id }));
+      appendNodes(newNodes);
+      markProcessed(newNodes);
+    });
+
+    if (fallbackItems.length === 0) {
+      return;
+    }
     const subCanvas = ensureActiveSubCanvas(nodes);
     const existingCount = nodes.filter(
       (node) => (node as CanvasNodeData & { subCanvasId?: string }).subCanvasId === subCanvas.id
     ).length;
-    const positionedNodes = parseRawData(pendingItems, {
+    const positionedNodes = parseRawData(fallbackItems, {
       ...resolvedLayout,
       startX: subCanvas.origin.x,
       startY: subCanvas.origin.y,
@@ -608,13 +826,20 @@ export function CollaborativeCanvas({
     const offsetNodes = applyGridOffset(positionedNodes, existingCount);
     const newNodes = offsetNodes.map((node) => ({ ...node, subCanvasId: subCanvas.id }));
     appendNodes(newNodes);
-    newNodes.forEach((node) => {
-      const taskId = getRawTaskId(node);
-      if (taskId) {
-        processedRawIdsRef.current.add(taskId);
-      }
-    });
-  }, [appendNodes, applyGridOffset, ensureActiveSubCanvas, getRawTaskId, nodes, rawData, resolvedLayout]);
+    markProcessed(newNodes);
+  }, [
+    appendNodes,
+    applyGridOffset,
+    ensureActiveSubCanvas,
+    findAnchorNodeByInputPath,
+    getAnchoredSubCanvas,
+    getInputImagePath,
+    layoutDependentNodes,
+    getRawTaskId,
+    nodes,
+    rawData,
+    resolvedLayout,
+  ]);
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
@@ -713,17 +938,17 @@ export function CollaborativeCanvas({
         return prev.position.x !== node.position.x || prev.position.y !== node.position.y;
       });
 
-      if (rawData !== undefined) {
-        const activeSubCanvas = activeSubCanvasRef.current;
-        if (activeSubCanvas && activeSubCanvas.status === 'unread') {
-          const movedUnreadNode = movedNodes.find(
-            (node) =>
-              (node as CanvasNodeData & { subCanvasId?: string }).subCanvasId === activeSubCanvas.id
-          );
-          if (movedUnreadNode) {
-            markActiveSubCanvasRead(nextNodes);
+      if (rawData !== undefined && movedNodes.length > 0) {
+        const touchedSubCanvasIds = new Set<string>();
+        movedNodes.forEach((node) => {
+          const subCanvasId = (node as CanvasNodeData & { subCanvasId?: string }).subCanvasId;
+          if (subCanvasId) {
+            touchedSubCanvasIds.add(subCanvasId);
           }
-        }
+        });
+        touchedSubCanvasIds.forEach((subCanvasId) => {
+          markSubCanvasRead(subCanvasId, nextNodes);
+        });
       }
 
       // 只有在没有节点正在拖动，且有位置变化时才发送批量更新
@@ -774,7 +999,7 @@ export function CollaborativeCanvas({
         collab.updateNodes(dataUpdates);
       }
     },
-    [collab, markActiveSubCanvasRead, rawData]
+    [collab, markSubCanvasRead, rawData]
   );
 
   const handleNodeDragStart = useCallback(

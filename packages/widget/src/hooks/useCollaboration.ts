@@ -206,7 +206,7 @@ export function useCollaboration(
     canvasId,
     userId,
     userName,
-    wsUrl = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_WS_BASE) || 'ws://127.0.0.1:8787',
+    wsUrl = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_WS_BASE) || 'wss://infinite-canvas-collab-server.buzzbus.workers.dev',
     token = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_USER_TOKEN) || `user_${userId}`,
     autoReconnect = true,
     reconnectInterval = 3000,

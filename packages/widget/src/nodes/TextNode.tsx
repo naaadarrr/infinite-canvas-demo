@@ -549,7 +549,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     autoEdit?: boolean;
   };
   const showHighlight = selected || dragging;
-  const [content, setContent] = React.useState(nodeData.content || '');
+  const [content, setContent] = React.useState(nodeData.content || 'Add Text');
   const [isEditing, setIsEditing] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -601,12 +601,12 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const resolvedTextColor = React.useMemo(() => {
     const raw = (nodeData.backgroundColor || '').toLowerCase();
     if (!raw || raw === 'transparent') {
-      return nodeData.color || '#ffffff';
+      return nodeData.color || '#000000';
     }
     const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
     const hex = normalized.length === 3 ? normalized.split('').map((c) => c + c).join('') : normalized;
-    if (hex === '000000') {
-      return '#ffffff';
+    if (hex === 'ffffff') {
+      return '#000000';
     }
     return nodeData.color || '#000';
   }, [nodeData.backgroundColor, nodeData.color]);
@@ -1034,7 +1034,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       {isEditing && (
         <textarea
           title="Input Text"
-          placeholder="Untitle Text"
+          placeholder="Add Text"
           ref={textareaRef}
           className="nodrag"
           autoFocus

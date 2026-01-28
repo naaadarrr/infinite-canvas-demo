@@ -9,7 +9,7 @@ import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
-import { EditModeIcon, PanModeIcon, TextModeIcon } from './icons';
+import { EditModeIcon, LockModeIcon, PanModeIcon, TextModeIcon } from './icons';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
@@ -1727,7 +1727,7 @@ export function CollaborativeCanvas({
                     boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
                   }}
                 >
-                  🔒 {lockName} 正在编辑
+                  {lockName} is editing 
                 </div>
               </div>
             );
@@ -1783,7 +1783,7 @@ export function CollaborativeCanvas({
             <PanModeIcon size={16} />
           </button>
            {/* 文本工具按钮 */}
-           <button
+          <button
             type="button"
             onClick={() => {
               if (toolMode === 'pan' || isLocked) {
@@ -1796,6 +1796,15 @@ export function CollaborativeCanvas({
             disabled={toolMode === 'pan' || isLocked}
           >
             <TextModeIcon size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsLocked((prev) => !prev)}
+            title={isLocked ? '解锁画布' : '锁定画布'}
+            aria-pressed={isLocked}
+            style={getToolButtonStyle(isLocked, false)}
+          >
+            <LockModeIcon size={16} locked={isLocked} />
           </button>
         </div>
         <div style={{ width: '100%', height: '100%' }}>

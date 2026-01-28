@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   ReactFlow,
-  Controls,
   MiniMap,
   Node,
   Edge,
@@ -15,9 +14,11 @@ import {
   SelectionMode,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import './styles.css';
 import type { CanvasNodeData, CanvasConfig, RawDataItem } from '@tc/infinite-core';
 import { ImageNode, VideoNode, AudioNode, TextNode } from './nodes';
 import { createWidgetEvent, widgetBridge } from './bridge';
+import { CanvasControls } from './CanvasControls';
 
 type SnapLines = { x?: number; y?: number } | null;
 type CanvasNodeDataPatch = Partial<Omit<CanvasNodeData, 'type'>>;
@@ -108,6 +109,8 @@ export interface InfiniteCanvasProps {
   elementsSelectable?: boolean;
   selectionOnDrag?: boolean;
   panOnDrag?: number[];
+  onLockChange?: (locked: boolean) => void;
+  isLocked?: boolean;
   className?: string;
   style?: React.CSSProperties;
   backgroundColor?: string;
@@ -139,9 +142,11 @@ export function InfiniteCanvas({
   elementsSelectable = true,
   selectionOnDrag = true,
   panOnDrag = [1, 2],
+  onLockChange,
+  isLocked = false,
   className,
   style,
-  backgroundColor = '#f5f5f5',
+  backgroundColor = '#121417',
   width = '100%',
   height = '100%',
   minWidth = '300px',
@@ -155,6 +160,7 @@ export function InfiniteCanvas({
   const [snapLines, setSnapLines] = React.useState<SnapLines>(null);
   const [viewport, setViewport] = React.useState({ x: 0, y: 0, zoom: 1 });
   const reactFlowInstanceRef = React.useRef<ReactFlowInstance<Node<CanvasNodeData>, Edge> | null>(null);
+  const [instanceReady, setInstanceReady] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const fitViewAppliedRef = React.useRef(false);
   const lastViewportNotifiedRef = React.useRef(viewport);
@@ -167,6 +173,44 @@ export function InfiniteCanvas({
     () => ({ x: 0, y: 0, zoom: config.defaultZoom || 1 }),
     [config.defaultZoom]
   );
+
+  const getViewportFromInstance = useCallback(
+    (instance: ReactFlowInstance<Node<CanvasNodeData>, Edge>) => {
+      const viewportGetter = (instance as ReactFlowInstance<Node<CanvasNodeData>, Edge> & {
+        getViewport?: () => { x: number; y: number; zoom: number };
+        toObject?: () => { viewport?: { x: number; y: number; zoom: number } };
+      });
+      const viewport = viewportGetter.getViewport?.() ?? viewportGetter.toObject?.().viewport;
+      if (!viewport) {
+        return null;
+      }
+      return viewport;
+    },
+    []
+  );
+
+  const applyInitialFitView = useCallback(() => {
+    const instance = reactFlowInstanceRef.current;
+    if (!instance || fitViewAppliedRef.current || nodes.length === 0) {
+      return;
+    }
+    instance.fitView({ padding: 0.2, duration: 0 });
+    fitViewAppliedRef.current = true;
+    const nextViewport = getViewportFromInstance(instance);
+    if (!nextViewport) {
+      return;
+    }
+    setViewport((prevViewport) => {
+      if (
+        prevViewport.x === nextViewport.x &&
+        prevViewport.y === nextViewport.y &&
+        prevViewport.zoom === nextViewport.zoom
+      ) {
+        return prevViewport;
+      }
+      return nextViewport;
+    });
+  }, [getViewportFromInstance, nodes.length]);
 
   const emitNodesChange = useCallback(
     (nextNodes: Node<CanvasNodeData>[]) => {
@@ -425,13 +469,14 @@ export function InfiniteCanvas({
   }, [initialEdges]);
 
   React.useEffect(() => {
-    const instance = reactFlowInstanceRef.current;
-    if (!instance || fitViewAppliedRef.current || nodes.length === 0) {
+    if (!instanceReady || nodes.length === 0) {
       return;
     }
-    instance.fitView({ padding: 0.2, duration: 0 });
-    fitViewAppliedRef.current = true;
-  }, [nodes.length]);
+    const frame = requestAnimationFrame(() => {
+      applyInitialFitView();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [applyInitialFitView, instanceReady, nodes.length]);
 
   // 节点类型映射
   const nodeTypes = useMemo(
@@ -611,10 +656,23 @@ export function InfiniteCanvas({
           .dependency-edge-animated path {
             animation: dependency-edge-dash 1.4s linear infinite;
           }
+          .react-flow__minimap {
+            background: #1c1e22;
+            border: 1px solid rgba(255,255,255,0.03);
+            border-radius: 12px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+          }
+          .react-flow__minimap-mask {
+            fill: rgba(255,255,255,0.06);
+          }
+          .react-flow__minimap-node {
+            fill: rgba(255,255,255,0.35);
+            stroke: rgba(255,255,255,0.2);
+          }
         `}
       </style>
       <ReactFlow<Node<CanvasNodeData>, Edge>
-        style={{ width: '50vh', height: '50vh' }}
+        style={{ width: '100%', height: '100%' }}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -654,6 +712,7 @@ export function InfiniteCanvas({
         }}
         onInit={(instance) => {
           reactFlowInstanceRef.current = instance;
+          setInstanceReady(true);
         }}
         onPaneMouseEnter={updatePaneCursor}
         onPaneMouseMove={(event) => {
@@ -699,11 +758,16 @@ export function InfiniteCanvas({
         zoomOnPinch={true}
         zoomOnDoubleClick={false}
         panOnScrollSpeed={0.5}
+        colorMode="dark"
         proOptions={{
           hideAttribution: true,
         }}
       >
-        <Controls />
+        <CanvasControls
+          position="bottom-left"
+          isLocked={isLocked}
+          onLockChange={onLockChange}
+        />
         <MiniMap />
       </ReactFlow>
       {snapLines && (
@@ -723,7 +787,7 @@ export function InfiniteCanvas({
                 left: snapLines.x,
                 top: -10000,
                 height: 20000,
-                borderLeft: '1px dashed #ddd',
+                borderLeft: '1px dashed rgba(255,255,255,0.2)',
               }}
             />
           )}
@@ -734,7 +798,7 @@ export function InfiniteCanvas({
                 top: snapLines.y,
                 left: -10000,
                 width: 20000,
-                borderTop: '1px dashed #ddd',
+                borderTop: '1px dashed rgba(255,255,255,0.2)',
               }}
             />
           )}

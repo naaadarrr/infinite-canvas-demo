@@ -600,8 +600,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   }, [backgroundOpacity, nodeData.backgroundColor]);
   const resolvedTextColor = React.useMemo(() => {
     const raw = (nodeData.backgroundColor || '').toLowerCase();
-    if (!raw) {
-      return nodeData.color || '#000';
+    if (!raw || raw === 'transparent') {
+      return nodeData.color || '#ffffff';
     }
     const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
     const hex = normalized.length === 3 ? normalized.split('').map((c) => c + c).join('') : normalized;

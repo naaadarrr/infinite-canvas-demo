@@ -9,8 +9,21 @@ import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
+import { EditModeIcon, PanModeIcon, TextModeIcon } from './icons';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
+const FLOW_UI = {
+  canvasBg: '#121417',
+  panelBg: '#1c1e22',
+  panelBorder: 'rgba(255,255,255,0.03)',
+  panelShadow: '0 4px 16px rgba(0,0,0,0.2)',
+  panelHighlight: 'rgba(255,255,255,0.08)',
+  panelText: '#ffffff',
+  panelTextMuted: 'rgba(255,255,255,0.7)',
+  panelTextDisabled: 'rgba(255,255,255,0.35)',
+  divider: 'rgba(255,255,255,0.08)',
+  danger: '#ef4444',
+};
 
 type SubCanvasInfo = {
   id: string;
@@ -51,7 +64,7 @@ export function CollaborativeCanvas({
   rawData,
   layoutConfig,
   config,
-  initialBackgroundColor = '#f5f5f5',
+  initialBackgroundColor = FLOW_UI.canvasBg,
   enableCollaboration,
   dependencyEdgesVisible = true,
   className,
@@ -113,6 +126,7 @@ export function CollaborativeCanvas({
   const [backgroundColor, setBackgroundColor] = useState(initialBackgroundColor);
   const [activeTool, setActiveTool] = useState<'select' | 'text'>('select');
   const [toolMode, setToolMode] = useState<'pan' | 'edit'>('pan');
+  const [isLocked, setIsLocked] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -122,6 +136,22 @@ export function CollaborativeCanvas({
   const [toasts, setToasts] = useState<
     Array<{ id: string; message: string; variant: 'info' | 'error' }>
   >([]);
+  const getToolButtonStyle = (active: boolean, disabled: boolean): React.CSSProperties => ({
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    border: 'none',
+    background: active ? FLOW_UI.panelHighlight : 'transparent',
+    color: active ? FLOW_UI.panelText : FLOW_UI.panelTextMuted,
+    fontSize: 16,
+    fontWeight: 600,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.35 : 1,
+    transition: 'all 0.15s ease',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
 
   const collabRef = useRef<CollaborationState | null>(null);
   const seededRef = useRef(false);
@@ -768,14 +798,14 @@ export function CollaborativeCanvas({
             // 用户进入房间
             if (!knownUsersRef.current.has(message.userId)) {
               const name = message.presence.userName || message.userId;
-              pushToast(`${name} 进入了房间`, 'info');
+              pushToast(`${name} has entered the session`, 'info');
               knownUsersRef.current.add(message.userId);
             }
           } else {
             // 用户离开房间
             if (knownUsersRef.current.has(message.userId)) {
               const name = presencesRef.current.get(message.userId)?.userName || message.userId;
-              pushToast(`${name} 离开了房间`, 'info');
+              pushToast(`${name} left the session`, 'info');
               knownUsersRef.current.delete(message.userId);
             }
           }
@@ -783,7 +813,7 @@ export function CollaborativeCanvas({
 
         case 'error':
           if (message.code === 'ROOM_FULL') {
-            pushToast('房间已满，请稍后再进入', 'error');
+            pushToast('The session is full, please try again later', 'error');
           }
           break;
       }
@@ -1006,7 +1036,7 @@ export function CollaborativeCanvas({
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
-      if (toolMode !== 'edit' || activeTool !== 'text') {
+      if (isLocked || toolMode !== 'edit' || activeTool !== 'text') {
         return;
       }
       const tempId = `temp_${generateId()}`;
@@ -1053,7 +1083,7 @@ export function CollaborativeCanvas({
       collab.createNode(newNode, tempId);
       setActiveTool('select');
     },
-    [activeTool, collab, toolMode]
+    [activeTool, collab, isLocked, toolMode]
   );
 
   const handleNodesChange = useCallback(
@@ -1321,7 +1351,7 @@ export function CollaborativeCanvas({
   const handleNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: { id: string }) => {
       event.preventDefault();
-      if (toolMode !== 'edit') {
+      if (isLocked || toolMode !== 'edit') {
         return;
       }
       const targetNode = nodesRef.current.find((item) => item.id === node.id);
@@ -1335,7 +1365,7 @@ export function CollaborativeCanvas({
         nodeId: node.id,
       });
     },
-    [toolMode]
+    [isLocked, toolMode]
   );
 
   const sortNodesByLayer = useCallback((list: CanvasNodeData[]) => {
@@ -1572,8 +1602,9 @@ export function CollaborativeCanvas({
                 style={{
                   padding: '10px 14px',
                   borderRadius: 10,
-                  background: toast.variant === 'error' ? '#fee2e2' : '#fef3c7',
-                  color: toast.variant === 'error' ? '#991b1b' : '#92400e',
+                  background: toast.variant === 'error' ? 'rgba(239,68,68,0.18)' : 'rgba(255,255,255,0.08)',
+                  border: `1px solid ${FLOW_UI.panelBorder}`,
+                  color: toast.variant === 'error' ? '#fecaca' : '#e2e8f0',
                   fontSize: 13,
                   boxShadow: '0 10px 24px rgba(15, 23, 42, 0.12)',
                 }}
@@ -1598,7 +1629,7 @@ export function CollaborativeCanvas({
             if (id === userId || !cursor) {
               return null;
             }
-            const color = presence.color || '#2563eb';
+            const color = presence.color || '#5ad37b';
             return (
               <div
                 key={id}
@@ -1610,32 +1641,38 @@ export function CollaborativeCanvas({
               >
                 <div
                   style={{
-                    transform: `translate(8px, 8px) scale(${1 / viewport.zoom})`,
+                    transform: `translate(6px, 6px) scale(${1 / viewport.zoom})`,
                     transformOrigin: '0 0',
                   }}
                 >
                   <div
                     style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: '50%',
-                      background: color,
-                      boxShadow: '0 0 0 2px #fff',
-                    }}
-                  />
-                  <div
-                    style={{
-                      marginTop: 4,
-                      padding: '2px 6px',
-                      borderRadius: 8,
-                      background: '#fff',
-                      border: '1px solid #e2e8f0',
-                      fontSize: 11,
-                      color: '#0f172a',
-                      whiteSpace: 'nowrap',
+                      display: 'inline-flex',
+                      alignItems: 'flex-start',
+                      gap: 6,
                     }}
                   >
-                    {presence.userName || id}
+                    <EditModeIcon
+                      size={16}
+                      style={{ flex: '0 0 auto', color, filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.35))' }}
+                    />
+                    <div
+                      style={{
+                        marginTop: 6,
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        background: 'rgba(15, 18, 22, 0.92)',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        lineHeight: '16px',
+                        color,
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 8px 18px rgba(0,0,0,0.35)',
+                      }}
+                    >
+                      {presence.userName || id}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1699,63 +1736,66 @@ export function CollaborativeCanvas({
         <div
           style={{
             position: 'absolute',
-            left: 16,
-            top: 120,
+            left: 12,
+            top: '50%',
+            transform: 'translateY(-50%)',
             zIndex: 5,
             display: 'flex',
             flexDirection: 'column',
-            gap: 10,
-            padding: '10px 8px',
-            borderRadius: 16,
-            background: '#fff',
-            border: '1px solid #e5e7eb',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.12)',
-            height: 150,
+            gap: 2,
+            padding: 4,
+            width: 40,
+            borderRadius: 12,
+            background: FLOW_UI.panelBg,
+            border: `1px solid ${FLOW_UI.panelBorder}`,
+            boxShadow: FLOW_UI.panelShadow,
           }}
         >
+         
+
+          {/* Edit 模式按钮 */}
           <button
             type="button"
             onClick={() => {
-              if (toolMode === 'pan') {
-                setToolMode('edit');
+              if (isLocked) return;
+              setToolMode('edit');
+              setActiveTool('select');
+            }}
+            title="Edit mode (V)"
+            style={getToolButtonStyle(toolMode === 'edit', isLocked)}
+            disabled={isLocked}
+          >
+            <EditModeIcon size={16} />
+          </button>
+
+          {/* Pan 模式按钮 */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isLocked) return;
+              setToolMode('pan');
+              setActiveTool('select');
+            }}
+            title="Pan mode (H)"
+            style={getToolButtonStyle(toolMode === 'pan', isLocked)}
+            disabled={isLocked}
+          >
+            <PanModeIcon size={16} />
+          </button>
+           {/* 文本工具按钮 */}
+           <button
+            type="button"
+            onClick={() => {
+              if (toolMode === 'pan' || isLocked) {
+                return;
               }
               setActiveTool(activeTool === 'text' ? 'select' : 'text');
             }}
-            title="添加文本"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border: activeTool === 'text' ? '1px solid #1d4ed8' : '1px solid #e5e7eb',
-              background: activeTool === 'text' ? '#1d4ed8' : '#fff',
-              color: activeTool === 'text' ? '#fff' : '#111',
-              fontSize: 16,
-              fontWeight: 700,
-              cursor: toolMode === 'pan' ? 'not-allowed' : 'pointer',
-              opacity: toolMode === 'pan' ? 0.5 : 1,
-            }}
-            disabled={toolMode === 'pan'}
+            title="Add Text (T)"
+            style={getToolButtonStyle(activeTool === 'text', toolMode === 'pan' || isLocked)}
+            disabled={toolMode === 'pan' || isLocked}
           >
-            T
-          </button>
-          <div style={{ flex: 1 }} />
-          <button
-            type="button"
-            onClick={() => setToolMode((prev) => (prev === 'pan' ? 'edit' : 'pan'))}
-            title={toolMode === 'pan' ? '移动 (H)' : '选择 (V)'}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              border: toolMode === 'pan' ? '1px solid #e5e7eb' : '1px solid #e5e7eb',
-              background: toolMode === 'pan' ? '#fff' : '#fff',
-              color: toolMode === 'pan' ? '#fff' : '#111',
-              fontSize: 16,
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
-          >
-            {toolMode === 'pan' ? '✋' : '↖'}
+            <TextModeIcon size={16} />
           </button>
         </div>
         <div style={{ width: '100%', height: '100%' }}>
@@ -1774,11 +1814,13 @@ export function CollaborativeCanvas({
               onNodeContextMenu={handleNodeContextMenu}
               onPaneMouseMove={handlePaneMouseMove}
               onViewportChange={handleViewportChange}
-              paneCursor={toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
-              nodesDraggable={toolMode === 'edit'}
-              elementsSelectable={toolMode === 'edit'}
-              selectionOnDrag={toolMode === 'edit'}
-              panOnDrag={toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
+              paneCursor={isLocked ? 'not-allowed' : toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
+              nodesDraggable={!isLocked && toolMode === 'edit'}
+              elementsSelectable={!isLocked && toolMode === 'edit'}
+              selectionOnDrag={!isLocked && toolMode === 'edit'}
+              panOnDrag={isLocked ? [] : toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
+              onLockChange={setIsLocked}
+              isLocked={isLocked}
               config={canvasConfig}
               width={width}
               height={height}
@@ -1794,10 +1836,10 @@ export function CollaborativeCanvas({
               left: contextMenu.x,
               top: contextMenu.y,
               zIndex: 50,
-              background: '#fff',
-              borderRadius: 10,
-              border: '1px solid #e5e7eb',
-              boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+              background: FLOW_UI.panelBg,
+              borderRadius: 12,
+              border: `1px solid ${FLOW_UI.panelBorder}`,
+              boxShadow: FLOW_UI.panelShadow,
               padding: 6,
               minWidth: 140,
             }}
@@ -1825,10 +1867,10 @@ export function CollaborativeCanvas({
                           background: 'transparent',
                           cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
                           fontSize: 13,
-                          color: layerInfo.isTop ? '#9ca3af' : '#111',
+                          color: layerInfo.isTop ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
-                        上一层
+                        Forward 
                       </button>
                       <button
                         type="button"
@@ -1842,10 +1884,10 @@ export function CollaborativeCanvas({
                           background: 'transparent',
                           cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
                           fontSize: 13,
-                          color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                          color: layerInfo.isBottom ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
-                        下一层
+                        Backward
                       </button>
                       <button
                         type="button"
@@ -1859,10 +1901,10 @@ export function CollaborativeCanvas({
                           background: 'transparent',
                           cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
                           fontSize: 13,
-                          color: layerInfo.isTop ? '#9ca3af' : '#111',
+                          color: layerInfo.isTop ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
-                        最顶层
+                        To Front
                       </button>
                       <button
                         type="button"
@@ -1876,19 +1918,19 @@ export function CollaborativeCanvas({
                           background: 'transparent',
                           cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
                           fontSize: 13,
-                          color: layerInfo.isBottom ? '#9ca3af' : '#111',
+                          color: layerInfo.isBottom ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
-                        最底层
+                        To Back
                       </button>
                       <div
                         style={{
                           height: 1,
-                          background: '#e5e7eb',
+                          background: FLOW_UI.divider,
                           margin: '6px 4px',
                         }}
                       />
-                      <button
+                      {/* <button
                         type="button"
                         onClick={handleCloneNode}
                         style={{
@@ -1899,14 +1941,15 @@ export function CollaborativeCanvas({
                           background: 'transparent',
                           cursor: 'pointer',
                           fontSize: 13,
+                          color: FLOW_UI.panelText,
                         }}
                       >
                         复制节点
-                      </button>
+                      </button> */}
                       <div
                         style={{
                           height: 1,
-                          background: '#e5e7eb',
+                          background: FLOW_UI.divider,
                           margin: '6px 4px',
                         }}
                       />
@@ -1923,10 +1966,10 @@ export function CollaborativeCanvas({
                       background: 'transparent',
                       cursor: 'pointer',
                       fontSize: 13,
-                      color: '#dc2626',
+                      color: FLOW_UI.danger,
                     }}
                   >
-                    删除节点
+                    Delete
                   </button>
                 </>
               );

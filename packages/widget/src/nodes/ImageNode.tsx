@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
+import { Handle, NodeProps, Position } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { Info, Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
@@ -42,7 +42,6 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
-  const zoom = useStore((state) => state.transform[2] ?? 1);
   const { activeNodeId, toggleNode } = useDependencyFocus();
   const isDependencyFocus = activeNodeId === nodeData.id;
   const handleQuickAction = React.useCallback(
@@ -340,26 +339,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       )}
       {showToolbar && <QuickActionToolbar actions={quickActions} />}
       {showToolbar && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            bottom: 'calc(100% + 5px)',
-            transform: `translateX(-50%) scale(${1 / zoom})`,
-            transformOrigin: 'bottom center',
-            padding: '4px 8px',
-            borderRadius: 8,
-            backgroundColor: 'rgba(0, 0, 0, 0.6)',
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            fontSize: 12,
-            color: '#fff',
-            whiteSpace: 'nowrap',
-            pointerEvents: 'none',
-            zIndex: 1000,
-          }}
-        >
+        <div className="tc-node-size-badge">
           {sizeLabel}
         </div>
       )}

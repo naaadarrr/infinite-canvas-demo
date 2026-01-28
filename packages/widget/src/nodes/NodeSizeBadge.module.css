@@ -1,0 +1,20 @@
+.sizeBadge {
+  --tc-node-size-bg: #262626;
+  --tc-node-size-color: #ffffff;
+
+  position: absolute;
+  left: 50%;
+  top: calc(100% + var(--tc-node-toolbar-offset, 5px));
+  transform: translateX(-50%) scale(var(--tc-node-toolbar-scale, 1));
+  transform-origin: top center;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background-color: var(--tc-node-size-bg);
+  color: var(--tc-node-size-color);
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+}

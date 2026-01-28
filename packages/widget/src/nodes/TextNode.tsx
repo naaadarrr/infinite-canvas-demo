@@ -549,7 +549,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     autoEdit?: boolean;
   };
   const showHighlight = selected || dragging;
-  const [content, setContent] = React.useState(nodeData.content || 'Add Text');
+  const [content, setContent] = React.useState(nodeData.content || 'Add some text..');
   const [isEditing, setIsEditing] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
@@ -600,15 +600,22 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   }, [backgroundOpacity, nodeData.backgroundColor]);
   const resolvedTextColor = React.useMemo(() => {
     const raw = (nodeData.backgroundColor || '').toLowerCase();
+    // 透明背景使用白色字体
     if (!raw || raw === 'transparent') {
-      return nodeData.color || '#000000';
+      return nodeData.color || '#ffffff';
     }
     const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
     const hex = normalized.length === 3 ? normalized.split('').map((c) => c + c).join('') : normalized;
-    if (hex === 'ffffff') {
-      return '#000000';
+    // 黑色背景使用白色字体
+    if (hex === '000000') {
+      return nodeData.color || '#ffffff';
     }
-    return nodeData.color || '#000';
+    // 白色背景使用黑色字体
+    if (hex === 'ffffff') {
+      return nodeData.color || '#000000';
+    }
+    // 其他背景使用黑色字体
+    return nodeData.color || '#000000';
   }, [nodeData.backgroundColor, nodeData.color]);
 
   React.useEffect(() => {
@@ -617,21 +624,21 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
 
   // 自动进入编辑模式(针对新创建的文本节点)
   React.useEffect(() => {
-    if (nodeData.autoEdit && selected && !isEditing && !autoEditProcessedRef.current) {
+    if (nodeData.autoEdit && !autoEditProcessedRef.current) {
       autoEditProcessedRef.current = true;
       setIsEditing(true);
       // 清除 autoEdit 标记
       nodeData.onNodeDataChange?.(nodeData.id, { autoEdit: undefined } as any);
-      // 聚焦到textarea
+      // 聚焦到textarea并全选文本
       setTimeout(() => {
-        textareaRef.current?.focus();
-        // 全选文本(如果有内容)
-        if (textareaRef.current && content) {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          // 全选文本，让用户可以直接开始输入替换
           textareaRef.current.select();
         }
-      }, 50);
+      }, 100);
     }
-  }, [nodeData.autoEdit, selected, isEditing, nodeData, content]);
+  }, [nodeData.autoEdit, nodeData, content]);
 
   // 当选中且点击时进入编辑模式
   const handleContainerClick = React.useCallback(() => {
@@ -746,7 +753,34 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   }, [nodeData]);
 
   const handleBackgroundColorChange = React.useCallback((newColor: string | undefined) => {
-    nodeData.onNodeDataChange?.(nodeData.id, { backgroundColor: newColor });
+    // 根据新背景色自动设置文字颜色
+    let textColor: string;
+    const raw = (newColor || '').toLowerCase();
+    
+    // 透明背景使用白色字体
+    if (!raw || raw === 'transparent') {
+      textColor = '#ffffff';
+    } else {
+      const normalized = raw.startsWith('#') ? raw.slice(1) : raw;
+      const hex = normalized.length === 3 ? normalized.split('').map((c) => c + c).join('') : normalized;
+      // 黑色背景使用白色字体
+      if (hex === '000000') {
+        textColor = '#ffffff';
+      } 
+      // 白色背景使用黑色字体
+      else if (hex === 'ffffff') {
+        textColor = '#000000';
+      } 
+      // 其他背景使用黑色字体
+      else {
+        textColor = '#000000';
+      }
+    }
+    
+    nodeData.onNodeDataChange?.(nodeData.id, { 
+      backgroundColor: newColor,
+      color: textColor 
+    });
   }, [nodeData]);
 
   const handleBackgroundOpacityChange = React.useCallback((newOpacity: number) => {
@@ -1034,7 +1068,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       {isEditing && (
         <textarea
           title="Input Text"
-          placeholder="Add Text"
+          placeholder="Add some text.."
           ref={textareaRef}
           className="nodrag"
           autoFocus

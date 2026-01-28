@@ -1040,24 +1040,26 @@ export function CollaborativeCanvas({
         return;
       }
       const tempId = `temp_${generateId()}`;
-      const defaultContent = '';
+      const defaultContent = 'Add some text..';
       const defaultFontSize = 24;
       const paddingSize = 12;
       const borderSize = 2;
       const lineHeight = 1.4;
 
-      // 计算文本宽度(使用占位符文本)
+      // 计算文本宽度(使用默认文本)
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
-      const placeholderText = '输入文字...';
       let textWidth = 100;
       if (context) {
         context.font = `${defaultFontSize}px sans-serif`;
-        textWidth = context.measureText(placeholderText).width;
+        textWidth = context.measureText(defaultContent).width;
       }
 
       // 计算单行高度
       const singleLineHeight = Math.ceil(defaultFontSize * lineHeight) + paddingSize * 2;
+
+      // 计算默认宽度（增加1倍）
+      const defaultWidth = Math.max(200, Math.ceil((textWidth + paddingSize * 2 + 16) * 2));
 
       // 文本框有 padding 和 border，所以要让文本内容的起始位置对齐鼠标点击位置
       // 文本内容位置 = 文本框左上角 + border + padding
@@ -1070,14 +1072,15 @@ export function CollaborativeCanvas({
           y: position.y - paddingSize - borderSize,
         },
         size: {
-          width: Math.max(100, Math.ceil(textWidth + paddingSize * 2 + 16)),
+          width: defaultWidth,
           height: singleLineHeight,
         },
         content: defaultContent,
         fontSize: defaultFontSize,
-        color: '#111',
+        color: '#ffffff',
         backgroundColor: 'transparent',
         autoEdit: true, // 标记为自动进入编辑模式
+        selected: true, // 自动选中新创建的节点
       } as CanvasNodeData;
       setNodes((prevNodes) => [...prevNodes, newNode]);
       collab.createNode(newNode, tempId);
@@ -1800,7 +1803,7 @@ export function CollaborativeCanvas({
           <button
             type="button"
             onClick={() => setIsLocked((prev) => !prev)}
-            title={isLocked ? '解锁画布' : '锁定画布'}
+            title={isLocked ? 'Unlock the board' : 'Lock the board'}
             aria-pressed={isLocked}
             style={getToolButtonStyle(isLocked, false)}
           >
@@ -1932,29 +1935,6 @@ export function CollaborativeCanvas({
                       >
                         To Back
                       </button>
-                      <div
-                        style={{
-                          height: 1,
-                          background: FLOW_UI.divider,
-                          margin: '6px 4px',
-                        }}
-                      />
-                      {/* <button
-                        type="button"
-                        onClick={handleCloneNode}
-                        style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: 'pointer',
-                          fontSize: 13,
-                          color: FLOW_UI.panelText,
-                        }}
-                      >
-                        复制节点
-                      </button> */}
                       <div
                         style={{
                           height: 1,

@@ -235,7 +235,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
         borderRadius: '2px',
         overflow: 'visible',
-        backgroundColor: '#fff',
+        backgroundColor: 'transparent',
       }}
     >
       <Handle

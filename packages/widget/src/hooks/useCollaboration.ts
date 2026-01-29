@@ -165,6 +165,7 @@ export interface CollaborationState {
   dragEnd: (nodeId: string, position: Position) => void;
   updatePresence: (presence: Partial<UserPresence>) => void;
   leave: () => void;
+  reconnect: () => void;
 }
 
 // 节流函数
@@ -292,12 +293,6 @@ export function useCollaboration(
     const now = Date.now();
     lastUserActivityRef.current = now;
     
-    // 标记不再是空闲断开状态
-    // 实际的重连会在下面的 useEffect 中触发
-    if (wasIdleDisconnectedRef.current) {
-      wasIdleDisconnectedRef.current = false;
-    }
-    
     // 通知服务端用户有活动(节流:最多每 1s 通知一次)
     const timeSinceLastNotify = now - lastActivityNotifyRef.current;
     if (wsRef.current?.readyState === WebSocket.OPEN && timeSinceLastNotify >= activityNotifyIntervalMs) {
@@ -365,6 +360,7 @@ export function useCollaboration(
       ws.onopen = () => {
         console.log('[Collaboration] Connected to canvas:', canvasId);
         setConnected(true);
+        reconnectBlockedRef.current = false;
         
         // 重置用户活动时间
         lastUserActivityRef.current = Date.now();
@@ -459,6 +455,11 @@ export function useCollaboration(
         
         // 停止客户端空闲检测
         stopClientIdleCheck();
+        const isIdleClose =
+          event.code === 4001 ||
+          event.reason === 'Idle timeout' ||
+          event.reason === 'Client idle timeout';
+        const isAbnormalClose = event.code === 1006;
 
         // 处理不同的关闭代码
         if (event.code === 1013) {
@@ -468,7 +469,6 @@ export function useCollaboration(
         
         if (
           event.code === 4000 || // 房间已满
-          event.code === 4001 || // 空闲超时
           event.code === 4002 || // 其他错误
           event.code === 4003 || // 房间被管理员关闭
           event.code === 4004    // 用户被管理员踢出
@@ -479,7 +479,6 @@ export function useCollaboration(
           // 给用户友好的提示
           const reasons: Record<number, string> = {
             4000: '房间已满',
-            4001: '由于长时间未操作，您已被自动断开连接',
             4002: '连接错误',
             4003: '房间已被管理员关闭',
             4004: '您已被管理员移出房间'
@@ -501,6 +500,19 @@ export function useCollaboration(
         
         if (manualCloseRef.current) {
           manualCloseRef.current = false;
+          return;
+        }
+        if (isIdleClose || isAbnormalClose) {
+          wasIdleDisconnectedRef.current = true;
+          if (onMessageRef.current) {
+            onMessageRef.current({
+              type: MessageType.ERROR,
+              error: isIdleClose
+                ? '由于长时间未操作，已自动断开连接。移动鼠标即可恢复连接。'
+                : '连接已中断，操作后将自动重连。',
+              clientIdle: true,
+            } as any);
+          }
           return;
         }
 
@@ -579,13 +591,14 @@ export function useCollaboration(
     if (!enabled) return;
     
     const handleActivity = () => {
-      updateUserActivity();
-      
       // 如果是空闲断开后的重新活动,触发重连
       if (wasIdleDisconnectedRef.current && !wsRef.current && shouldReconnectRef.current) {
         console.log('[Collaboration] User activity detected after idle disconnect, reconnecting...');
+        wasIdleDisconnectedRef.current = false;
+        reconnectBlockedRef.current = false;
         connect();
       }
+      updateUserActivity();
     };
     
     // 监听各种用户交互事件（使用 capture 以覆盖画布内部 stopPropagation 场景）
@@ -715,6 +728,24 @@ export function useCollaboration(
     send({ type: MessageType.LEAVE });
   }, [send]);
 
+  const reconnect = useCallback(() => {
+    if (!enabled) {
+      return;
+    }
+    reconnectBlockedRef.current = false;
+    shouldReconnectRef.current = true;
+    wasIdleDisconnectedRef.current = false;
+    manualCloseRef.current = false;
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+      return;
+    }
+    connect();
+  }, [connect, enabled]);
+
   return {
     connected,
     seq,
@@ -729,5 +760,6 @@ export function useCollaboration(
     dragEnd,
     updatePresence,
     leave,
+    reconnect,
   };
 }

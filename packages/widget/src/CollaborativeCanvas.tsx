@@ -135,6 +135,7 @@ export function CollaborativeCanvas({
     y: number;
     nodeId: string;
   } | null>(null);
+  const [sessionBlocked, setSessionBlocked] = useState<{ message: string } | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [toasts, setToasts] = useState<
     Array<{ id: string; message: string; variant: 'info' | 'error' }>
@@ -820,6 +821,11 @@ export function CollaborativeCanvas({
           } else if ((message as any).permanent) {
             // 永久性断开连接的错误
             pushToast(message.error || 'Connection closed', 'error');
+            if ((message as any).closeCode === 4004) {
+              setSessionBlocked({
+                message: 'You have been removed from the session. Refresh the page or click "Re-enter Session" to join again.',
+              });
+            }
           }
           break;
       }
@@ -870,6 +876,11 @@ export function CollaborativeCanvas({
     }
   }, [collab, userColor, userName]);
   useEffect(() => {
+    if (sessionBlocked && collab.connected) {
+      setSessionBlocked(null);
+    }
+  }, [collab.connected, sessionBlocked]);
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) {
         return;
@@ -902,13 +913,15 @@ export function CollaborativeCanvas({
       // setNodes([]);
       // idMapRef.current.clear();
       knownUsersRef.current.clear();
-      pushToast('连接断开，正在重连...', 'error');
+      if (!sessionBlocked) {
+        pushToast('连接断开，正在重连...', 'error');
+      }
     } else if (!wasConnectedRef.current && collab.connected) {
       // 连接成功时不显示toast，因为会收到 sync_state 消息
       console.log('[Collaboration] Connected successfully');
     }
     wasConnectedRef.current = collab.connected;
-  }, [collab.connected, collabEnabled, pushToast]);
+  }, [collab.connected, collabEnabled, pushToast, sessionBlocked]);
   useEffect(() => {
     if (collabEnabled || localSeededRef.current) {
       return;
@@ -1594,6 +1607,61 @@ export function CollaborativeCanvas({
         </div>
       </header> */}
       <div style={{ flex: 1, position: 'relative' }} ref={canvasRef}>
+        {sessionBlocked && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 80,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(15, 23, 42, 0.45)',
+              backdropFilter: 'blur(10px)',
+              WebkitBackdropFilter: 'blur(10px)',
+            }}
+          >
+            <div
+              style={{
+                width: 'min(520px, 92vw)',
+                borderRadius: 16,
+                padding: '24px 22px',
+                background: 'rgba(15, 18, 22, 0.92)',
+                border: `1px solid ${FLOW_UI.panelBorder}`,
+                boxShadow: '0 18px 40px rgba(15, 23, 42, 0.35)',
+                color: '#e2e8f0',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 10 }}>
+                Session Ended
+              </div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, color: '#cbd5f5', marginBottom: 18 }}>
+                {sessionBlocked.message}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionBlocked(null);
+                  collab.reconnect();
+                }}
+                style={{
+                  minWidth: 160,
+                  padding: '10px 16px',
+                  borderRadius: 999,
+                  border: '1px solid rgba(148,163,184,0.35)',
+                  background: 'linear-gradient(135deg, rgba(94,234,212,0.2), rgba(56,189,248,0.25))',
+                  color: '#e2e8f0',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Re-enter Session
+              </button>
+            </div>
+          </div>
+        )}
         {toasts.length > 0 && (
           <div
             style={{

@@ -945,7 +945,7 @@ export class CanvasRoom implements DurableObject {
       const toClose: WebSocket[] = [];
       
       for (const [ws, info] of this.connections.entries()) {
-        const idleTime = now - info.lastActiveAt;
+        const idleTime = now - info.lastUserActionAt;
         if (idleTime > this.idleTimeoutMs) {
           console.log(JSON.stringify({
             event: 'idle_timeout',

@@ -208,7 +208,7 @@ export function useCollaboration(
     reconnectInterval = 3000,
     enabled = true,
     invisible = false,
-    clientIdleTimeout = 2 * 60 * 1000, // 默认 2 分钟
+    clientIdleTimeout = 5 * 60 * 1000, // 默认 2 分钟
   } = config;
 
   const [connected, setConnected] = useState(false);

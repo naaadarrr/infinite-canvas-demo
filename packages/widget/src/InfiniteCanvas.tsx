@@ -469,8 +469,16 @@ export function InfiniteCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialNodes]);
 
+  // 创建一个只包含需要同步属性的签名，避免因 selected 等其他属性变化触发不必要的更新
+  const syncSignature = useMemo(() => {
+    return initialNodes.map((node) => {
+      const depFocus = (node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus ?? false;
+      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}`;
+    }).join('|');
+  }, [initialNodes]);
+
   // 同步外部状态更新到 React Flow 内部状态
-  // 这个 useEffect 专门处理位置和数据属性的变化
+  // 这个 useEffect 专门处理位置和 dependencyFocus 的变化
   React.useEffect(() => {
     if (!initializedRef.current) {
       return; // 等待初始化完成
@@ -534,7 +542,7 @@ export function InfiniteCanvas({
         return node;
       });
     });
-  }, [initialNodes]);
+  }, [syncSignature, initialNodes]);
 
   React.useEffect(() => {
     setEdges(initialEdges);

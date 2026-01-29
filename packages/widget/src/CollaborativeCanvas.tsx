@@ -731,6 +731,7 @@ export function CollaborativeCanvas({
                   const { position, ...otherUpdates } = message.updates as any;
                   return { ...node, ...otherUpdates } as CanvasNodeData;
                 }
+                
                 return { ...node, ...(message.updates as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);
@@ -772,6 +773,7 @@ export function CollaborativeCanvas({
                   const { position, ...otherUpdates } = directUpdate as any;
                   return { ...node, ...otherUpdates } as CanvasNodeData;
                 }
+                
                 return { ...node, ...(directUpdate as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);

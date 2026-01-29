@@ -312,6 +312,7 @@ export function InfiniteCanvas({
           if (node.id !== id) {
             return node;
           }
+          
           const newData = {
             ...node.data,
             ...dataPatch,
@@ -342,7 +343,7 @@ export function InfiniteCanvas({
         return updatedNodes;
       });
     },
-    [emitNodesChange, requestDeleteNode]
+    [emitNodesChange, requestDeleteNode, nodes]
   );
 
   React.useEffect(() => {
@@ -424,9 +425,10 @@ export function InfiniteCanvas({
   
   // 仅在初始化或节点列表实质性变化时设置节点
   React.useEffect(() => {
-    // 计算节点 ID 列表的哈希，用于检测实质性变化
+    // 计算节点结构签名，只包含节点ID、类型等结构性属性，排除position等动态属性
+    // 这样可以避免在拖动时因position变化而触发重新初始化
     const nodeSignature = initialNodes
-      .map((node) => JSON.stringify(node))
+      .map((node) => `${node.id}:${node.type}:${node.size.width}:${node.size.height}`)
       .sort()
       .join('|');
 

@@ -227,6 +227,7 @@ export function useCollaboration(
   const idleCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wasIdleDisconnectedRef = useRef(false);
   const lastActivityNotifyRef = useRef<number>(0); // 上次通知服务端的时间
+  const activityNotifyIntervalMs = 1000; // 用户活动通知节流: 每 1s 最多一次
   
   // 使用 ref 存储 onMessage，避免它影响 connect 的依赖
   const onMessageRef = useRef(onMessage);
@@ -239,15 +240,18 @@ export function useCollaboration(
       clearInterval(idleCheckTimerRef.current);
     }
     
-    console.log(`[Collaboration] Starting client-side idle detection (timeout: ${clientIdleTimeout}ms)`);
+    console.log(`[Collaboration] Starting client-side idle detection (timeout: ${clientIdleTimeout}ms = ${clientIdleTimeout / 1000}s)`);
     
     // 每30秒检查一次
     idleCheckTimerRef.current = setInterval(() => {
       const now = Date.now();
       const idleTime = now - lastUserActivityRef.current;
+      const idleSeconds = Math.floor(idleTime / 1000);
+      
+      console.log(`[Collaboration] Idle check: ${idleSeconds}s idle (threshold: ${clientIdleTimeout / 1000}s)`);
       
       if (idleTime > clientIdleTimeout) {
-        console.log(`[Collaboration] User idle for ${Math.floor(idleTime / 1000)}s, disconnecting...`);
+        console.log(`[Collaboration] User idle for ${idleSeconds}s, disconnecting...`);
         
         // 标记为空闲断开
         wasIdleDisconnectedRef.current = true;
@@ -294,9 +298,9 @@ export function useCollaboration(
       wasIdleDisconnectedRef.current = false;
     }
     
-    // 通知服务端用户有活动(节流:最多每30秒通知一次)
+    // 通知服务端用户有活动(节流:最多每 1s 通知一次)
     const timeSinceLastNotify = now - lastActivityNotifyRef.current;
-    if (wsRef.current?.readyState === WebSocket.OPEN && timeSinceLastNotify > 30000) {
+    if (wsRef.current?.readyState === WebSocket.OPEN && timeSinceLastNotify >= activityNotifyIntervalMs) {
       wsRef.current.send(JSON.stringify({
         type: MessageType.USER_ACTIVITY,
         timestamp: now,
@@ -578,14 +582,31 @@ export function useCollaboration(
       updateUserActivity();
       
       // 如果是空闲断开后的重新活动,触发重连
-      if (!wasIdleDisconnectedRef.current && !wsRef.current && shouldReconnectRef.current) {
+      if (wasIdleDisconnectedRef.current && !wsRef.current && shouldReconnectRef.current) {
         console.log('[Collaboration] User activity detected after idle disconnect, reconnecting...');
         connect();
       }
     };
     
-    // 监听各种用户交互事件
-    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
+    // 监听各种用户交互事件（使用 capture 以覆盖画布内部 stopPropagation 场景）
+    const events = [
+      'mousemove',
+      'mousedown',
+      'mouseup',
+      'click',
+      'dblclick',
+      'wheel',
+      'pointerdown',
+      'pointermove',
+      'pointerup',
+      'touchstart',
+      'touchmove',
+      'keydown',
+      'dragstart',
+      'drag',
+      'drop',
+    ];
+    const listenerOptions: AddEventListenerOptions = { passive: true, capture: true };
     
     // 使用节流避免过于频繁更新
     let throttleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -597,13 +618,13 @@ export function useCollaboration(
       }, 1000); // 最多每秒更新一次
     };
     
-    events.forEach(event => {
-      window.addEventListener(event, throttledActivity, { passive: true });
+    events.forEach((event) => {
+      window.addEventListener(event, throttledActivity, listenerOptions);
     });
     
     return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, throttledActivity);
+      events.forEach((event) => {
+        window.removeEventListener(event, throttledActivity, listenerOptions);
       });
       if (throttleTimer) {
         clearTimeout(throttleTimer);

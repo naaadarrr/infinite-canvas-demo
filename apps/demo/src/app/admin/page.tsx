@@ -45,6 +45,7 @@ export default function AdminPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualRoomId, setManualRoomId] = useState<string>('');
+  const [manualRoomIds, setManualRoomIds] = useState<string[]>([]);
   const [showCanvas, setShowCanvas] = useState(false);
   
   // 固定的管理员 userId,避免 iframe 重新加载
@@ -69,45 +70,15 @@ export default function AdminPage() {
       
       const data = await response.json();
       const roomList: RoomInfo[] = data.rooms || [];
-      
-      // 转换为 EnrichedRoom 格式
-      const enriched: EnrichedRoom[] = roomList.map(room => ({
-        ...room,
-        isActive: false,
-        loading: true,
-        status: undefined,
-      }));
-      
-      if (!silent) {
-        setEnrichedRooms(enriched);
-      } else {
-        setEnrichedRooms(prev => {
-          const prevById = new Map(prev.map(room => [room.id, room]));
-          const merged: EnrichedRoom[] = [];
-          enriched.forEach(room => {
-            const existing = prevById.get(room.id);
-            if (existing) {
-              merged.push({
-                ...existing,
-                title: room.title,
-                latest_seq: room.latest_seq,
-                updated_at: room.updated_at,
-              });
-              prevById.delete(room.id);
-            } else {
-              merged.push(room);
-            }
-          });
-          // 保留本地手动添加但不在列表里的房间
-          prevById.forEach(room => merged.push(room));
-          return merged;
-        });
-      }
-      
-      // 并发获取所有房间的实时状态
-      const statusPromises = enriched.map(async (room) => {
+
+      const manualIdSet = new Set(manualRoomIds);
+      const statusTargetIds = new Set<string>(roomList.map(room => room.id));
+      manualRoomIds.forEach(id => statusTargetIds.add(id));
+
+      // 并发获取所有房间的实时状态(包含手动添加的房间)
+      const statusPromises = Array.from(statusTargetIds).map(async (roomId) => {
         try {
-          const statusResponse = await fetch(`${API_BASE}/admin/rooms/${room.id}`, {
+          const statusResponse = await fetch(`${API_BASE}/admin/rooms/${roomId}`, {
             headers: {
               'Authorization': `Bearer ${TOKEN}`,
             },
@@ -116,34 +87,66 @@ export default function AdminPage() {
           if (statusResponse.ok) {
             const status: RoomStatus = await statusResponse.json();
             return {
-              roomId: room.id,
+              roomId,
               status,
               isActive: status.activeConnections > 0,
             };
           }
         } catch (err) {
-          console.error(`Failed to fetch status for ${room.id}:`, err);
+          console.error(`Failed to fetch status for ${roomId}:`, err);
         }
-        return { roomId: room.id, status: undefined, isActive: false };
+        return { roomId, status: undefined, isActive: false };
       });
       
       const statuses = await Promise.all(statusPromises);
+      const statusById = new Map(statuses.map(item => [item.roomId, item.status]));
+      const activeById = new Map(statuses.map(item => [item.roomId, item.isActive]));
       
-      // 更新房间状态(无感刷新)
+      // 更新房间状态(只展示在线房间 + 手动添加)
       setEnrichedRooms(prev => {
-        const updated = prev.map(room => {
-          const statusData = statuses.find(s => s.roomId === room.id);
-          if (statusData) {
-            return {
+        const prevById = new Map(prev.map(room => [room.id, room]));
+        const next: EnrichedRoom[] = [];
+
+        roomList.forEach(room => {
+          const prevRoom = prevById.get(room.id);
+          const status = statusById.get(room.id) ?? prevRoom?.status;
+          const isActive = status
+            ? status.activeConnections > 0
+            : (prevRoom?.isActive ?? false);
+          const isManual = manualIdSet.has(room.id);
+
+          if (isActive || isManual) {
+            next.push({
               ...room,
-              status: statusData.status,
-              isActive: statusData.isActive,
+              status,
+              isActive,
               loading: false,
-            };
+            });
           }
-          return { ...room, loading: false };
         });
-        return updated;
+
+        const includedIds = new Set(next.map(room => room.id));
+        manualIdSet.forEach(roomId => {
+          if (includedIds.has(roomId)) {
+            return;
+          }
+          const prevRoom = prevById.get(roomId);
+          const status = statusById.get(roomId) ?? prevRoom?.status;
+          const isActive = status
+            ? status.activeConnections > 0
+            : (prevRoom?.isActive ?? false);
+          next.push({
+            id: roomId,
+            title: prevRoom?.title ?? roomId,
+            latest_seq: prevRoom?.latest_seq ?? status?.seq ?? 0,
+            updated_at: prevRoom?.updated_at ?? (status ? new Date(status.lastConnectionAt).toISOString() : new Date().toISOString()),
+            status,
+            isActive,
+            loading: false,
+          });
+        });
+
+        return next;
       });
       
       setError(null);
@@ -157,7 +160,7 @@ export default function AdminPage() {
         setInitialLoading(false);
       }
     }
-  }, [API_BASE, TOKEN, initialLoading]);
+  }, [API_BASE, TOKEN, initialLoading, manualRoomIds]);
 
   // 获取房间详细状态
   const fetchRoomStatus = useCallback(async (roomId: string, silent = false) => {
@@ -273,6 +276,7 @@ export default function AdminPage() {
     // 检查是否已存在
     if (enrichedRooms.some(r => r.id === roomId)) {
       alert('该房间已在列表中');
+      setManualRoomIds(prev => (prev.includes(roomId) ? prev : [roomId, ...prev]));
       handleSelectRoom(roomId);
       setManualRoomId('');
       return;
@@ -303,6 +307,7 @@ export default function AdminPage() {
       };
       
       setEnrichedRooms(prev => [newRoom, ...prev]);
+      setManualRoomIds(prev => (prev.includes(roomId) ? prev : [roomId, ...prev]));
       setSelectedRoomId(roomId);
       setSelectedRoomStatus(status);
       setManualRoomId('');

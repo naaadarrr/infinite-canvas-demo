@@ -337,7 +337,7 @@ export default function AdminPage() {
       <header className="admin-header">
         <h1>DO 管理面板</h1>
         <div className="admin-controls">
-          <button onClick={fetchRooms} className="btn-refresh">
+          <button onClick={() => fetchRooms()} className="btn-refresh">
             刷新列表
           </button>
           <select 

@@ -11,7 +11,10 @@ import {
   handleGetRoomStatus, 
   handleShutdownRoom, 
   handleKickFromRoom, 
-  handleListRooms 
+  handleListRooms,
+  handleCreateRoomRecord,
+  handleScanAndFixRooms,
+  handleHealthCheck
 } from './admin';
 
 export { CanvasRoom } from './canvasRoom';
@@ -29,6 +32,11 @@ export default {
     }
 
     try {
+      // 健康检查端点 (无需认证)
+      if (url.pathname === '/health' && request.method === 'GET') {
+        return await handleHealthCheck(request, env);
+      }
+
       // 管理API路由
       if (url.pathname.startsWith('/admin/')) {
         return await handleAdminAPI(request, env, url);
@@ -108,6 +116,16 @@ async function handleAdminAPI(request: Request, env: Env, url: URL): Promise<Res
   const kickMatch = path.match(/^\/rooms\/([^/]+)\/kick$/);
   if (kickMatch && request.method === 'POST') {
     return await handleKickFromRoom(request, env, kickMatch[1]);
+  }
+
+  // POST /admin/rooms/create-record - 创建或更新房间的 D1 记录
+  if (path === '/rooms/create-record' && request.method === 'POST') {
+    return await handleCreateRoomRecord(request, env);
+  }
+
+  // POST /admin/rooms/scan-and-fix - 批量扫描并修复房间记录
+  if (path === '/rooms/scan-and-fix' && request.method === 'POST') {
+    return await handleScanAndFixRooms(request, env);
   }
 
   return new Response('Not found', { status: 404 });

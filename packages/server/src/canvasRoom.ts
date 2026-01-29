@@ -92,6 +92,10 @@ export class CanvasRoom implements DurableObject {
   
   // D1 记录同步标记
   private d1RecordEnsured: boolean = false;
+  
+  // D1 写入指标
+  private d1WriteAttempts: number = 0;
+  private d1WriteFailures: number = 0;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -353,7 +357,7 @@ export class CanvasRoom implements DurableObject {
 
     // 确保在 D1 中有记录(用于管理面板列表)
     try {
-      await this.ensureD1Record();
+      await this.ensureD1RecordWithRetry(3);
     } catch (error) {
       console.warn(`[CanvasRoom] Failed to ensure D1 record:`, error);
       // 不阻塞初始化流程
@@ -365,6 +369,7 @@ export class CanvasRoom implements DurableObject {
 
   /**
    * 确保 D1 中有该房间的记录(用于管理面板)
+   * 增强版本: 包含结果验证和详细日志
    */
   private async ensureD1Record(): Promise<void> {
     if (!this.canvasId) return;
@@ -374,6 +379,8 @@ export class CanvasRoom implements DurableObject {
       return;
     }
 
+    this.d1WriteAttempts++;
+    
     try {
       // 检查是否已存在
       const existing = await this.env.DB.prepare(
@@ -384,29 +391,85 @@ export class CanvasRoom implements DurableObject {
 
       if (!existing) {
         // 不存在,创建新记录
-        await this.env.DB.prepare(
+        const result = await this.env.DB.prepare(
           'INSERT INTO canvases (id, title, latest_seq, created_at, updated_at) VALUES (?, ?, ?, unixepoch(), unixepoch())'
         )
           .bind(this.canvasId, this.canvasId, this.seq)
           .run();
         
-        console.log(`[CanvasRoom] Created D1 record for room ${this.canvasId}`);
+        // 验证写入是否成功
+        if (!result.success) {
+          throw new Error(`D1 insert failed: ${JSON.stringify(result)}`);
+        }
+        
+        console.log(`[CanvasRoom] ✅ Created D1 record for room ${this.canvasId} (seq: ${this.seq})`);
       } else {
         // 已存在,更新 updated_at
-        await this.env.DB.prepare(
+        const result = await this.env.DB.prepare(
           'UPDATE canvases SET updated_at = unixepoch(), latest_seq = ? WHERE id = ?'
         )
           .bind(this.seq, this.canvasId)
           .run();
         
-        console.log(`[CanvasRoom] Updated D1 record for room ${this.canvasId}`);
+        // 验证更新是否成功
+        if (!result.success) {
+          throw new Error(`D1 update failed: ${JSON.stringify(result)}`);
+        }
+        
+        console.log(`[CanvasRoom] ✅ Updated D1 record for room ${this.canvasId} (seq: ${this.seq})`);
       }
       
       // 标记已确保,避免重复调用
       this.d1RecordEnsured = true;
     } catch (error) {
-      console.error(`[CanvasRoom] Error ensuring D1 record:`, error);
+      this.d1WriteFailures++;
+      
+      // 记录详细错误信息
+      console.error(`[CanvasRoom] ❌ Error ensuring D1 record for ${this.canvasId}:`, {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        canvasId: this.canvasId,
+        seq: this.seq,
+        attempts: this.d1WriteAttempts,
+        failures: this.d1WriteFailures,
+      });
       throw error;
+    }
+  }
+
+  /**
+   * 带重试机制的 D1 记录确保方法
+   * 最多重试 3 次,使用指数退避策略
+   */
+  private async ensureD1RecordWithRetry(maxRetries: number = 3): Promise<void> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await this.ensureD1Record();
+        return; // 成功则返回
+      } catch (error) {
+        const isLastAttempt = attempt === maxRetries - 1;
+        
+        console.warn(
+          `[CanvasRoom] D1 record attempt ${attempt + 1}/${maxRetries} failed for ${this.canvasId}:`,
+          error instanceof Error ? error.message : String(error)
+        );
+        
+        if (isLastAttempt) {
+          // 最后一次重试失败,记录错误但不阻塞流程
+          console.error(
+            `[CanvasRoom] ❌ Failed to ensure D1 record after ${maxRetries} attempts for ${this.canvasId}`
+          );
+          return;
+        }
+        
+        // 等待后重试 (指数退避: 1s, 2s, 3s)
+        const delayMs = 1000 * (attempt + 1);
+        console.log(`[CanvasRoom] Retrying D1 record creation in ${delayMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        
+        // 重置标志以允许重试
+        this.d1RecordEnsured = false;
+      }
     }
   }
 
@@ -475,13 +538,13 @@ export class CanvasRoom implements DurableObject {
     if (this.connections.size === 1) {
       this.startIdleCheck();
       
-      // 第一个用户加入时,立即确保 D1 记录存在
+      // 第一个用户加入时,立即确保 D1 记录存在(带重试)
       // 这样管理面板刷新时就能立即看到这个房间
-      try {
-        await this.ensureD1Record();
-      } catch (error) {
-        console.warn(`[CanvasRoom] Failed to ensure D1 record on first join:`, error);
-        // 不阻塞用户加入
+      if (!this.d1RecordEnsured) {
+        this.ensureD1RecordWithRetry(3).catch(error => {
+          console.warn(`[CanvasRoom] Failed to ensure D1 record on first join:`, error);
+          // 不阻塞用户加入
+        });
       }
     }
   }
@@ -1071,6 +1134,15 @@ export class CanvasRoom implements DurableObject {
         lastUserActionAt: conn.lastUserActionAt,
         idleSeconds: Math.floor((now - conn.lastUserActionAt) / 1000), // 基于用户操作时间
       })),
+      // D1 写入指标
+      metrics: {
+        d1RecordEnsured: this.d1RecordEnsured,
+        d1WriteAttempts: this.d1WriteAttempts,
+        d1WriteFailures: this.d1WriteFailures,
+        d1WriteSuccessRate: this.d1WriteAttempts > 0 
+          ? ((this.d1WriteAttempts - this.d1WriteFailures) / this.d1WriteAttempts * 100).toFixed(2) + '%'
+          : 'N/A',
+      },
     };
 
     return new Response(JSON.stringify(status), {
@@ -1766,9 +1838,16 @@ export class CanvasRoom implements DurableObject {
       );
 
       // 同时更新 D1 记录(不阻塞主流程)
-      this.updateD1Record().catch(err => {
-        console.warn(`[CanvasRoom] Failed to update D1 record:`, err);
-      });
+      // 如果 D1 记录还未创建,先尝试创建
+      if (!this.d1RecordEnsured) {
+        this.ensureD1RecordWithRetry(3).catch(err => {
+          console.warn(`[CanvasRoom] Failed to ensure D1 record during flush:`, err);
+        });
+      } else {
+        this.updateD1Record().catch(err => {
+          console.warn(`[CanvasRoom] Failed to update D1 record:`, err);
+        });
+      }
     } catch (error) {
       console.error(`[CanvasRoom] Error flushing state:`, error);
       // 保持 isDirty = true,下次定时器会重试

@@ -10,6 +10,7 @@ import { createWidgetEvent, widgetBridge } from './bridge';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PanModeIcon, TextModeIcon } from './icons';
+import { CanvasRoleProvider } from './CanvasRoleContext';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
@@ -56,6 +57,8 @@ export interface CollaborativeCanvasProps {
   minHeight?: string | number;
   /** 隐形模式,不在用户列表中显示 */
   invisible?: boolean;
+  /** 用户角色，分 viewer、editor 和 owner */
+  role?: 'viewer' | 'editor' | 'owner';
 }
 
 export function CollaborativeCanvas({
@@ -76,7 +79,11 @@ export function CollaborativeCanvas({
   minWidth,
   minHeight,
   invisible = false,
+  role,
 }: CollaborativeCanvasProps) {
+  const resolvedRole = role ?? (invisible ? 'viewer' : 'editor');
+  const isViewer = resolvedRole === 'viewer';
+  const canEdit = !isViewer;
   const resolvedLayout = useMemo<LayoutConfig>(
     () => ({
       columns: 4,
@@ -130,6 +137,8 @@ export function CollaborativeCanvas({
   const [activeTool, setActiveTool] = useState<'select' | 'text'>('select');
   const [toolMode, setToolMode] = useState<'pan' | 'edit'>('pan');
   const [isLocked, setIsLocked] = useState(false);
+  const effectiveToolMode = canEdit ? toolMode : 'pan';
+  const effectiveActiveTool = canEdit ? activeTool : 'select';
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -885,6 +894,9 @@ export function CollaborativeCanvas({
       if (event.defaultPrevented) {
         return;
       }
+      if (!canEdit) {
+        return;
+      }
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
       if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) {
@@ -901,7 +913,7 @@ export function CollaborativeCanvas({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [canEdit]);
   useEffect(() => {
     if (!collabEnabled) {
       return;
@@ -1056,7 +1068,7 @@ export function CollaborativeCanvas({
 
   const handlePaneClick = useCallback(
     (position: { x: number; y: number }) => {
-      if (isLocked || toolMode !== 'edit' || activeTool !== 'text') {
+      if (!canEdit || isLocked || toolMode !== 'edit' || activeTool !== 'text') {
         return;
       }
       const tempId = `temp_${generateId()}`;
@@ -1106,7 +1118,7 @@ export function CollaborativeCanvas({
       collab.createNode(newNode, tempId);
       setActiveTool('select');
     },
-    [activeTool, collab, isLocked, toolMode]
+    [activeTool, canEdit, collab, isLocked, toolMode]
   );
 
   const handleNodesChange = useCallback(
@@ -1374,7 +1386,7 @@ export function CollaborativeCanvas({
   const handleNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: { id: string }) => {
       event.preventDefault();
-      if (isLocked || toolMode !== 'edit') {
+      if (!canEdit || isLocked || toolMode !== 'edit') {
         return;
       }
       const targetNode = nodesRef.current.find((item) => item.id === node.id);
@@ -1388,7 +1400,7 @@ export function CollaborativeCanvas({
         nodeId: node.id,
       });
     },
-    [isLocked, toolMode]
+    [canEdit, isLocked, toolMode]
   );
 
   const sortNodesByLayer = useCallback((list: CanvasNodeData[]) => {
@@ -1522,6 +1534,15 @@ export function CollaborativeCanvas({
     setContextMenu(null);
   }, [contextMenu]);
 
+  useEffect(() => {
+    if (!isViewer) {
+      return;
+    }
+    setToolMode('pan');
+    setActiveTool('select');
+    setContextMenu(null);
+  }, [isViewer]);
+
   return (
     <main
       className={className}
@@ -1532,6 +1553,7 @@ export function CollaborativeCanvas({
         flexDirection: 'column',
         ...style,
       }}
+      onContextMenu={isViewer ? (event) => event.preventDefault() : undefined}
     >
       {/* <header
         style={{
@@ -1811,112 +1833,123 @@ export function CollaborativeCanvas({
             );
           })}
         </div>
-        <div
-          style={{
-            position: 'absolute',
-            left: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            zIndex: 5,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            padding: 4,
-            width: 40,
-            borderRadius: 12,
-            background: FLOW_UI.panelBg,
-            border: `1px solid ${FLOW_UI.panelBorder}`,
-            boxShadow: FLOW_UI.panelShadow,
-          }}
-        >
-         
+        {canEdit && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              zIndex: 5,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              padding: 4,
+              width: 40,
+              borderRadius: 12,
+              background: FLOW_UI.panelBg,
+              border: `1px solid ${FLOW_UI.panelBorder}`,
+              boxShadow: FLOW_UI.panelShadow,
+            }}
+          >
+            {/* Edit 模式按钮 */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) return;
+                setToolMode('edit');
+                setActiveTool('select');
+              }}
+              title="Edit mode (V)"
+              style={getToolButtonStyle(toolMode === 'edit', isLocked)}
+              disabled={isLocked}
+            >
+              <EditModeIcon size={16} />
+            </button>
 
-          {/* Edit 模式按钮 */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isLocked) return;
-              setToolMode('edit');
-              setActiveTool('select');
-            }}
-            title="Edit mode (V)"
-            style={getToolButtonStyle(toolMode === 'edit', isLocked)}
-            disabled={isLocked}
-          >
-            <EditModeIcon size={16} />
-          </button>
-
-          {/* Pan 模式按钮 */}
-          <button
-            type="button"
-            onClick={() => {
-              if (isLocked) return;
-              setToolMode('pan');
-              setActiveTool('select');
-            }}
-            title="Pan mode (H)"
-            style={getToolButtonStyle(toolMode === 'pan', isLocked)}
-            disabled={isLocked}
-          >
-            <PanModeIcon size={16} />
-          </button>
-           {/* 文本工具按钮 */}
-          <button
-            type="button"
-            onClick={() => {
-              if (toolMode === 'pan' || isLocked) {
-                return;
-              }
-              setActiveTool(activeTool === 'text' ? 'select' : 'text');
-            }}
-            title="Add Text (T)"
-            style={getToolButtonStyle(activeTool === 'text', toolMode === 'pan' || isLocked)}
-            disabled={toolMode === 'pan' || isLocked}
-          >
-            <TextModeIcon size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsLocked((prev) => !prev)}
-            title={isLocked ? 'Unlock the board' : 'Lock the board'}
-            aria-pressed={isLocked}
-            style={getToolButtonStyle(isLocked, false)}
-          >
-            <LockModeIcon size={16} locked={isLocked} />
-          </button>
-        </div>
+            {/* Pan 模式按钮 */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isLocked) return;
+                setToolMode('pan');
+                setActiveTool('select');
+              }}
+              title="Pan mode (H)"
+              style={getToolButtonStyle(toolMode === 'pan', isLocked)}
+              disabled={isLocked}
+            >
+              <PanModeIcon size={16} />
+            </button>
+            {/* 文本工具按钮 */}
+            <button
+              type="button"
+              onClick={() => {
+                if (toolMode === 'pan' || isLocked) {
+                  return;
+                }
+                setActiveTool(activeTool === 'text' ? 'select' : 'text');
+              }}
+              title="Add Text (T)"
+              style={getToolButtonStyle(activeTool === 'text', toolMode === 'pan' || isLocked)}
+              disabled={toolMode === 'pan' || isLocked}
+            >
+              <TextModeIcon size={16} />
+            </button>
+            {/* <button
+              type="button"
+              onClick={() => setIsLocked((prev) => !prev)}
+              title={isLocked ? 'Unlock the board' : 'Lock the board'}
+              aria-pressed={isLocked}
+              style={getToolButtonStyle(isLocked, false)}
+            >
+              <LockModeIcon size={16} locked={isLocked} />
+            </button> */}
+          </div>
+        )}
         <div style={{ width: '100%', height: '100%' }}>
-          <DependencyFocusProvider
-            value={{ activeNodeId: dependencyFocusNodeId, toggleNode: toggleDependencyFocus }}
-          >
-            <InfiniteCanvas
-              nodes={nodes}
-              edges={dependencyEdges}
-              onNodesChange={handleNodesChange}
-              backgroundColor={backgroundColor}
-              onPaneClick={handlePaneClick}
-              onNodeDragStart={handleNodeDragStart}
-              onNodeDrag={handleNodeDrag}
-              onNodeDragEnd={handleNodeDragEnd}
-              onNodeContextMenu={handleNodeContextMenu}
-              onPaneMouseMove={handlePaneMouseMove}
-              onViewportChange={handleViewportChange}
-              paneCursor={isLocked ? 'not-allowed' : toolMode === 'pan' ? 'grab' : activeTool === 'text' ? 'text' : undefined}
-              nodesDraggable={!isLocked && toolMode === 'edit'}
-              elementsSelectable={!isLocked && toolMode === 'edit'}
-              selectionOnDrag={!isLocked && toolMode === 'edit'}
-              panOnDrag={isLocked ? [] : toolMode === 'pan' ? [0, 1, 2] : [1, 2]}
-              onLockChange={setIsLocked}
-              isLocked={isLocked}
-              config={canvasConfig}
-              width={width}
-              height={height}
-              minWidth={minWidth}
-              minHeight={minHeight}
-            />
-          </DependencyFocusProvider>
+          <CanvasRoleProvider value={resolvedRole}>
+            <DependencyFocusProvider
+              value={{ activeNodeId: dependencyFocusNodeId, toggleNode: toggleDependencyFocus }}
+            >
+              <InfiniteCanvas
+                nodes={nodes}
+                edges={dependencyEdges}
+                onNodesChange={handleNodesChange}
+                backgroundColor={backgroundColor}
+                onPaneClick={handlePaneClick}
+                onNodeDragStart={handleNodeDragStart}
+                onNodeDrag={handleNodeDrag}
+                onNodeDragEnd={handleNodeDragEnd}
+                onNodeContextMenu={canEdit ? handleNodeContextMenu : undefined}
+                onPaneMouseMove={handlePaneMouseMove}
+                onViewportChange={handleViewportChange}
+                paneCursor={
+                  isLocked
+                    ? 'not-allowed'
+                    : effectiveToolMode === 'pan'
+                      ? 'grab'
+                      : effectiveActiveTool === 'text'
+                        ? 'text'
+                        : undefined
+                }
+                nodesDraggable={!isLocked && effectiveToolMode === 'edit'}
+                elementsSelectable={!isLocked && effectiveToolMode === 'edit'}
+                selectionOnDrag={!isLocked && effectiveToolMode === 'edit'}
+                panOnDrag={isLocked ? [] : effectiveToolMode === 'pan' ? [0, 1, 2] : [1, 2]}
+                onLockChange={setIsLocked}
+                isLocked={isLocked}
+                showControls={canEdit}
+                config={canvasConfig}
+                width={width}
+                height={height}
+                minWidth={minWidth}
+                minHeight={minHeight}
+              />
+            </DependencyFocusProvider>
+          </CanvasRoleProvider>
         </div>
-        {contextMenu && (
+        {contextMenu && canEdit && (
           <div
             style={{
               position: 'fixed',

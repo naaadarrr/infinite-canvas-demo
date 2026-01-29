@@ -80,6 +80,28 @@ export default function AdminPage() {
       
       if (!silent) {
         setEnrichedRooms(enriched);
+      } else {
+        setEnrichedRooms(prev => {
+          const prevById = new Map(prev.map(room => [room.id, room]));
+          const merged: EnrichedRoom[] = [];
+          enriched.forEach(room => {
+            const existing = prevById.get(room.id);
+            if (existing) {
+              merged.push({
+                ...existing,
+                title: room.title,
+                latest_seq: room.latest_seq,
+                updated_at: room.updated_at,
+              });
+              prevById.delete(room.id);
+            } else {
+              merged.push(room);
+            }
+          });
+          // 保留本地手动添加但不在列表里的房间
+          prevById.forEach(room => merged.push(room));
+          return merged;
+        });
       }
       
       // 并发获取所有房间的实时状态
@@ -335,7 +357,7 @@ export default function AdminPage() {
   return (
     <div className="admin-panel">
       <header className="admin-header">
-        <h1>DO 管理面板</h1>
+        <h1>Board 协作画布管控面板</h1>
         <div className="admin-controls">
           <button onClick={() => fetchRooms()} className="btn-refresh">
             刷新列表

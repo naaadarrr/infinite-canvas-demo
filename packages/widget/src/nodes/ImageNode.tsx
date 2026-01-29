@@ -8,8 +8,12 @@ import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
+import { useCanvasRole } from '../CanvasRoleContext';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
+  const role = useCanvasRole();
+  const canEdit = role !== 'viewer';
+  const canDeleteFailed = canEdit;
   const nodeData = data as unknown as ImageNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<ImageNodeData, 'type'>>) => void;
   };
@@ -120,11 +124,14 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   ];
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (!canDeleteFailed) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
     },
-    [nodeData]
+    [canDeleteFailed, nodeData]
   );
 
   const handleScaleStart = (
@@ -246,7 +253,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       {isSuccess && (
         <NodeRatingBadge
           rating={(nodeData as any).rating ?? rawItem?.rating}
-          onChange={handleRatingChange}
+          onChange={canEdit ? handleRatingChange : undefined}
         />
       )}
       <div
@@ -273,6 +280,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600 }}>Failed to generate image</div>
+          {canDeleteFailed && (
             <button
               type="button"
               onClick={handleDelete}
@@ -291,7 +299,8 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
             >
               Delete
             </button>
-          </div>
+          )}
+        </div>
         ) : isSkeleton ? (
           <MediaSkeleton />
         ) : (

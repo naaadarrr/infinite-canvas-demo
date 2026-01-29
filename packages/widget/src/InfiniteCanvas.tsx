@@ -111,6 +111,7 @@ export interface InfiniteCanvasProps {
   panOnDrag?: number[];
   onLockChange?: (locked: boolean) => void;
   isLocked?: boolean;
+  showControls?: boolean;
   className?: string;
   style?: React.CSSProperties;
   backgroundColor?: string;
@@ -144,6 +145,7 @@ export function InfiniteCanvas({
   panOnDrag = [1, 2],
   onLockChange,
   isLocked = false,
+  showControls = true,
   className,
   style,
   backgroundColor = '#121417',
@@ -763,11 +765,13 @@ export function InfiniteCanvas({
           hideAttribution: true,
         }}
       >
-        <CanvasControls
-          position="bottom-left"
-          isLocked={isLocked}
-          onLockChange={onLockChange}
-        />
+        {showControls && (
+          <CanvasControls
+            position="bottom-left"
+            isLocked={isLocked}
+            onLockChange={onLockChange}
+          />
+        )}
         <MiniMap />
       </ReactFlow>
       {snapLines && (

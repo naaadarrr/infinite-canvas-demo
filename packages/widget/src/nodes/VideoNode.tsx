@@ -8,8 +8,12 @@ import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
+import { useCanvasRole } from '../CanvasRoleContext';
 
 export function VideoNode({ data, selected, dragging }: NodeProps) {
+  const role = useCanvasRole();
+  const canEdit = role !== 'viewer';
+  const canDeleteFailed = canEdit;
   const nodeData = data as unknown as VideoNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<VideoNodeData, 'type'>>) => void;
   };
@@ -96,11 +100,14 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   ];
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
+      if (!canDeleteFailed) {
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
     },
-    [nodeData]
+    [canDeleteFailed, nodeData]
   );
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
@@ -268,7 +275,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       {isSuccess && (
         <NodeRatingBadge
           rating={(nodeData as any).rating ?? rawItem?.rating}
-          onChange={handleRatingChange}
+          onChange={canEdit ? handleRatingChange : undefined}
         />
       )}
       {showHighlight && (
@@ -326,24 +333,26 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
             }}
           >
             <div style={{ fontSize: 14, fontWeight: 600 }}>Failed to generate video</div>
-            <button
-              type="button"
-              onClick={handleDelete}
-              onPointerDown={(event) => event.stopPropagation()}
-              style={{
-                padding: '6px 14px',
-                borderRadius: 6,
-                border: '1px solid #ef4444',
-                background: '#fee2e2',
-                color: '#b91c1c',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-            >
-              Delete
-            </button>
+            {canDeleteFailed && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                onPointerDown={(event) => event.stopPropagation()}
+                style={{
+                  padding: '6px 14px',
+                  borderRadius: 6,
+                  border: '1px solid #ef4444',
+                  background: '#fee2e2',
+                  color: '#b91c1c',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
+                }}
+              >
+                Delete
+              </button>
+            )}
           </div>
         ) : isSkeleton ? (
           <MediaSkeleton />

@@ -52,7 +52,7 @@ export default function AdminPage() {
 
   const API_BASE = process.env.NEXT_PUBLIC_WS_BASE?.replace('wss://', 'https://').replace('ws://', 'http://') || 
                    'https://infinite-canvas-collab-server.buzzbus.workers.dev';
-  const TOKEN = process.env.NEXT_PUBLIC_USER_TOKEN || 'admin_token';
+  const TOKEN = process.env.NEXT_PUBLIC_USER_TOKEN || 'user_admin';
 
   // 获取房间列表并加载实时状态
   const fetchRooms = useCallback(async (silent = false) => {

@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:pages": "next build && next-on-pages",
-    "deploy:pages": "pnpm run build:pages && cp wrangler.toml .vercel/output/static/ && cd .vercel/output/static && npx wrangler pages deploy . --project-name infinite-canvas-demo",
+    "deploy:pages": "node scripts/deploy-pages-prod.js",
     "start": "next start",
     "lint": "next lint"
   },

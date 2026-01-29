@@ -1,4 +1,5 @@
-name = "infinite-canvas-collab-server"
+account_id = "5b6c981ebeb77b3e3566ffc9ba8be751"
+name = "infinite-canvas-collab-worker"
 main = "src/index.ts"
 compatibility_date = "2024-12-31"
 
@@ -18,7 +19,7 @@ new_sqlite_classes = ["CanvasRoom"]
 [[d1_databases]]
 binding = "DB"
 database_name = "canvas_db"
-database_id = "58c42c3b-2d31-4b00-bc14-428fba215697"
+database_id = "437f4ae4-487e-4d00-a5db-4cb4852b4942"
 
 # R2 对象存储绑定（需先在 Cloudflare 控制台创建 bucket）
 [[r2_buckets]]

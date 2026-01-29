@@ -548,6 +548,11 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     onNodeDataChange?: (id: string, patch: Partial<Omit<TextNodeData, 'type'>>) => void;
     autoEdit?: boolean;
   };
+  // 使用 useStore 获取 React Flow 中的实际节点位置
+  const nodePosition = useStore((state) => {
+    const node = state.nodeLookup?.get(nodeData.id);
+    return node?.position ?? nodeData.position;
+  });
   const showHighlight = selected || dragging;
   const [content, setContent] = React.useState(nodeData.content || 'Add some text..');
   const [isEditing, setIsEditing] = React.useState(false);
@@ -810,8 +815,9 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       startFontSize: fontSize,
       startWidth: nodeData.size.width,
       startHeight: nodeData.size.height,
-      startPosX: nodeData.position.x,
-      startPosY: nodeData.position.y,
+      // 使用 React Flow 的实际位置，而不是 nodeData.position
+      startPosX: nodePosition.x,
+      startPosY: nodePosition.y,
       corner,
     };
 
@@ -887,7 +893,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     widthResizeRef.current = {
       startX: event.clientX,
       startWidth: nodeData.size.width,
-      startPosX: nodeData.position.x,
+      // 使用 React Flow 的实际位置，而不是 nodeData.position
+      startPosX: nodePosition.x,
       side,
     };
 

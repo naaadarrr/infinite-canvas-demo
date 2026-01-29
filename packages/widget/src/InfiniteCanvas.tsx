@@ -226,6 +226,7 @@ export function InfiniteCanvas({
               ...nodeData,
               position: node.position,
               zIndex: node.zIndex,
+              selected: node.selected, // 保留节点选择状态
             } as CanvasNodeData;
           });
           onNodesChangeCallback(canvasNodes);
@@ -466,6 +467,73 @@ export function InfiniteCanvas({
     
     setNodes(flowNodes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialNodes]);
+
+  // 同步外部状态更新到 React Flow 内部状态
+  // 这个 useEffect 专门处理位置和数据属性的变化
+  React.useEffect(() => {
+    if (!initializedRef.current) {
+      return; // 等待初始化完成
+    }
+    
+    // 使用 setNodes 的函数形式来访问当前状态，避免 nodes 作为依赖项导致循环
+    setNodes((currentNodes) => {
+      const nodeUpdates: Array<{ id: string; position: { x: number; y: number }; initialNode: CanvasNodeData }> = [];
+      
+      initialNodes.forEach((initialNode) => {
+        const flowNode = currentNodes.find((n) => n.id === initialNode.id);
+        if (flowNode) {
+          // 如果节点当前正在被拖动，完全跳过（避免干扰用户操作）
+          if (flowNode.dragging) {
+            return;
+          }
+          
+          // 检查位置变化
+          const dx = Math.abs(flowNode.position.x - initialNode.position.x);
+          const dy = Math.abs(flowNode.position.y - initialNode.position.y);
+          const posChanged = dx > 0.1 || dy > 0.1;
+          
+          // 检查 dependencyFocus 变化
+          const flowDependencyFocus = (flowNode.data as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus;
+          const initialDependencyFocus = (initialNode as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus;
+          const dependencyFocusChanged = flowDependencyFocus !== initialDependencyFocus;
+          
+          // 注意：不同步 selected 状态，因为这会干扰本地的选择操作
+          // selected 状态由 React Flow 内部管理，通过 onNodesChange 回调同步
+          
+          if (posChanged || dependencyFocusChanged) {
+            nodeUpdates.push({
+              id: initialNode.id,
+              position: initialNode.position,
+              initialNode: initialNode,
+            });
+          }
+        }
+      });
+      
+      if (nodeUpdates.length === 0) {
+        return currentNodes; // 没有变化，返回原数组避免重渲染
+      }
+      
+      return currentNodes.map((node) => {
+        const update = nodeUpdates.find((u) => u.id === node.id);
+        if (update) {
+          // 保留现有 data 中的回调函数（如 onNodeDataChange），只更新需要同步的属性
+          const existingData = node.data as CanvasNodeData & { onNodeDataChange?: unknown };
+          const { onNodeDataChange } = existingData;
+          return {
+            ...node,
+            position: update.position,
+            // 保留当前的 selected 状态，不从 initialNodes 同步
+            data: {
+              ...update.initialNode,
+              onNodeDataChange, // 保留回调函数
+            } as CanvasNodeData,
+          };
+        }
+        return node;
+      });
+    });
   }, [initialNodes]);
 
   React.useEffect(() => {

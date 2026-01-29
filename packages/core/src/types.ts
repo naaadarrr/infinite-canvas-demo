@@ -34,6 +34,7 @@ export interface BaseNodeData extends Record<string, unknown> {
   size: Size;
   zIndex?: number;
   rotation?: number;
+  selected?: boolean;
 }
 
 /**

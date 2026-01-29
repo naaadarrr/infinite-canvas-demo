@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, NodeProps, Position } from '@xyflow/react';
+import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { Info, Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
@@ -17,6 +17,11 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as ImageNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<ImageNodeData, 'type'>>) => void;
   };
+  // 使用 useStore 获取 React Flow 中的实际节点位置
+  const nodePosition = useStore((state) => {
+    const node = state.nodeLookup?.get(nodeData.id);
+    return node?.position ?? nodeData.position;
+  });
   const rawItem = (nodeData as ImageNodeData & { raw?: RawDataItem }).raw;
   const rawResult = rawItem?.result ?? undefined;
   const status = String(rawItem?.status ?? '').toLowerCase();
@@ -156,8 +161,10 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       startDist,
       startWidth: nodeData.size.width,
       startHeight: nodeData.size.height,
-      startPosX: nodeData.position.x,
-      startPosY: nodeData.position.y,
+      // 使用 React Flow 的实际位置，而不是 nodeData.position
+      // 这样可以避免在拖动后立即拉伸时位置跳回旧值
+      startPosX: nodePosition.x,
+      startPosY: nodePosition.y,
       corner,
     };
 

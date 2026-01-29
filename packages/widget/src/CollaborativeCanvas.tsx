@@ -463,15 +463,14 @@ export function CollaborativeCanvas({
       setDependencyEdges([]);
       return;
     }
-    if (draggingNodesRef.current.size > 0) {
-      return;
-    }
+    // 使用节点结构签名来检测是否需要重新计算，包含位置信息以支持拖动时的更新
     const signature = nodes
       .map((node) => {
         const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
         const inputPath = getInputImagePath(raw) ?? '';
         const outputPaths = getNodeOutputPaths(node).sort().join(',');
-        return `${node.id}:${inputPath}:${outputPaths}`;
+        // 包含取整后的位置，既能跟随拖动更新，又不会过于频繁触发
+        return `${node.id}:${inputPath}:${outputPaths}:${Math.round(node.position.x)}:${Math.round(node.position.y)}`;
       })
       .sort()
       .join('|');
@@ -722,33 +721,10 @@ export function CollaborativeCanvas({
           setNodes((prevNodes) =>
             prevNodes.map((node) => {
               if (node.id === message.nodeId) {
-                // 如果节点正在被当前用户拖动,跳过位置更新
-                if (
-                  draggingNodesRef.current.has(node.id) &&
-                  message.updates &&
-                  'position' in message.updates
-                ) {
-                  const { position, ...otherUpdates } = message.updates as any;
-                  return { ...node, ...otherUpdates } as CanvasNodeData;
-                }
-                
                 return { ...node, ...(message.updates as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);
               if (mappedId && mappedId === message.nodeId) {
-                // 如果节点正在被当前用户拖动,跳过位置更新
-                if (
-                  draggingNodesRef.current.has(node.id) &&
-                  message.updates &&
-                  'position' in message.updates
-                ) {
-                  const { position, ...otherUpdates } = message.updates as any;
-                  return {
-                    ...node,
-                    id: message.nodeId,
-                    ...otherUpdates,
-                  } as CanvasNodeData;
-                }
                 return {
                   ...node,
                   id: message.nodeId,
@@ -765,30 +741,16 @@ export function CollaborativeCanvas({
             const updateMap = new Map(
               message.updates.map((update) => [update.nodeId, update.updates])
             );
-            return prevNodes.map((node) => {
+            
+            const nextNodes = prevNodes.map((node) => {
               const directUpdate = updateMap.get(node.id);
               if (directUpdate) {
-                // 如果节点正在拖动，跳过位置更新
-                if (draggingNodesRef.current.has(node.id) && 'position' in directUpdate) {
-                  const { position, ...otherUpdates } = directUpdate as any;
-                  return { ...node, ...otherUpdates } as CanvasNodeData;
-                }
-                
                 return { ...node, ...(directUpdate as Partial<CanvasNodeData>) } as CanvasNodeData;
               }
               const mappedId = idMapRef.current.get(node.id);
               if (mappedId) {
                 const mappedUpdate = updateMap.get(mappedId);
                 if (mappedUpdate) {
-                  // 如果节点正在拖动，跳过位置更新
-                  if (draggingNodesRef.current.has(node.id) && 'position' in mappedUpdate) {
-                    const { position, ...otherUpdates } = mappedUpdate as any;
-                    return {
-                      ...node,
-                      id: mappedId,
-                      ...otherUpdates,
-                    } as CanvasNodeData;
-                  }
                   return {
                     ...node,
                     id: mappedId,
@@ -798,6 +760,8 @@ export function CollaborativeCanvas({
               }
               return node;
             });
+            
+            return nextNodes;
           });
           break;
 
@@ -1199,6 +1163,7 @@ export function CollaborativeCanvas({
           return acc;
         }
         const updates: Partial<CanvasNodeData> = {};
+        let hasSizeChange = false;
         (Object.keys(node) as Array<keyof CanvasNodeData>).forEach((key) => {
           if (key === 'id' || key === 'type' || key === 'position') {
             return;
@@ -1208,6 +1173,9 @@ export function CollaborativeCanvas({
           if (typeof nextValue === 'object' && nextValue !== null) {
             if (JSON.stringify(nextValue) !== JSON.stringify(prevValue)) {
               updates[key] = nextValue as CanvasNodeData[typeof key];
+              if (key === 'size') {
+                hasSizeChange = true;
+              }
             }
             return;
           }
@@ -1215,6 +1183,13 @@ export function CollaborativeCanvas({
             updates[key] = nextValue as CanvasNodeData[typeof key];
           }
         });
+        
+        // 如果 size 变化了，同时包含 position 以确保同步更新
+        // 这样观察者能看到一致的调整尺寸动画
+        if (hasSizeChange) {
+          updates.position = node.position;
+        }
+        
         if (Object.keys(updates).length === 0) {
           return acc;
         }
@@ -1247,6 +1222,7 @@ export function CollaborativeCanvas({
     (nodeId: string, position: { x: number; y: number }, selectedNodeIds?: string[]) => {
       // 批量拖动
       if (selectedNodeIds && selectedNodeIds.length > 1) {
+        
         // 首次批量拖动时,为所有节点发送 DRAG_START 以锁定
         selectedNodeIds.forEach((id) => {
           if (!draggingNodesRef.current.has(id)) {
@@ -1262,6 +1238,7 @@ export function CollaborativeCanvas({
 
         // 批量发送位置更新
         const currentNodes = nodesRef.current;
+        
         const updates = selectedNodeIds
           .map((id) => {
             const node = currentNodes.find((n) => n.id === id);

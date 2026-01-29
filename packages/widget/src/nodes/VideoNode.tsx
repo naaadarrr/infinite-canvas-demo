@@ -1,5 +1,5 @@
 import React from 'react';
-import { Handle, NodeProps, Position } from '@xyflow/react';
+import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
 import { Info, Paintbrush, RefreshCw, Shuffle, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
@@ -17,6 +17,11 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const nodeData = data as unknown as VideoNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<VideoNodeData, 'type'>>) => void;
   };
+  // 使用 useStore 获取 React Flow 中的实际节点位置
+  const nodePosition = useStore((state) => {
+    const node = state.nodeLookup?.get(nodeData.id);
+    return node?.position ?? nodeData.position;
+  });
   const rawItem = (nodeData as VideoNodeData & { raw?: RawDataItem }).raw;
   const status = String(rawItem?.status ?? '').toLowerCase();
   const rawResult = rawItem?.result ?? undefined;
@@ -143,8 +148,9 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       startDist,
       startWidth: nodeData.size.width,
       startHeight: nodeData.size.height,
-      startPosX: nodeData.position.x,
-      startPosY: nodeData.position.y,
+      // 使用 React Flow 的实际位置，而不是 nodeData.position
+      startPosX: nodePosition.x,
+      startPosY: nodePosition.y,
       corner,
     };
 

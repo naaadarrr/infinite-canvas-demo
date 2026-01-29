@@ -23,10 +23,8 @@ import type {
   DragStartMessage,
   DragMoveMessage,
   DragEndMessage,
-  PongMessage,
   UpdatePresenceMessage,
   SyncStateMessage,
-  PingMessage,
   NodeCreatedMessage,
   NodeDeletedMessage,
   NodeUpdatedMessage,
@@ -78,12 +76,22 @@ export class CanvasRoom implements DurableObject {
   private lastSnapshotSeq: number = 0;
   private lastSnapshotTime: number = Date.now();
   private maxRoomUsers: number = 10;
-  private heartbeatInterval: number = 30000; // 30 秒
-  private heartbeatMissLimit: number = 3;
   
-  // 心跳和清理
-  private heartbeatTimer?: number;
+  // 空闲检测配置
+  private readonly idleTimeoutMs: number;
+  private idleCheckTimer?: number;
+  
+  // 空房间检测配置
+  private roomCreatedAt: number = 0;
+  private lastConnectionAt: number = 0;
+  private emptyRoomTimer?: number;
+  private readonly emptyRoomTimeoutMs: number;
+  
+  // 清理定时器
   private cleanupTimer?: number;
+  
+  // D1 记录同步标记
+  private d1RecordEnsured: boolean = false;
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -96,6 +104,17 @@ export class CanvasRoom implements DurableObject {
         this.maxRoomUsers = max;
       }
     }
+    
+    // DO优化配置
+    this.idleTimeoutMs = env.IDLE_TIMEOUT_MS 
+      ? parseInt(env.IDLE_TIMEOUT_MS, 10) 
+      : 5 * 60 * 1000; // 默认5分钟
+    
+    this.emptyRoomTimeoutMs = env.EMPTY_ROOM_TIMEOUT_MS
+      ? parseInt(env.EMPTY_ROOM_TIMEOUT_MS, 10)
+      : 60 * 1000; // 默认1分钟
+    
+    console.log(`[CanvasRoom] Initialized with idleTimeout=${this.idleTimeoutMs}ms, emptyRoomTimeout=${this.emptyRoomTimeoutMs}ms`);
   }
 
   /**
@@ -120,6 +139,19 @@ export class CanvasRoom implements DurableObject {
     // HTTP API（可选）
     if (url.pathname === '/state') {
       return this.handleGetState();
+    }
+
+    // 管理API
+    if (url.pathname === '/status' && request.method === 'GET') {
+      return this.handleGetStatus();
+    }
+
+    if (url.pathname === '/shutdown' && request.method === 'POST') {
+      return this.handleShutdown();
+    }
+
+    if (url.pathname === '/kick' && request.method === 'POST') {
+      return this.handleKickUser(request);
     }
 
     return new Response('Not found', { status: 404 });
@@ -228,6 +260,14 @@ export class CanvasRoom implements DurableObject {
     }
     
     this.canvasId = canvasId;
+    this.roomCreatedAt = Date.now();
+    this.lastConnectionAt = Date.now();
+    
+    console.log(JSON.stringify({
+      event: 'room_created',
+      roomId: canvasId,
+      timestamp: this.roomCreatedAt,
+    }));
     console.log(`[CanvasRoom] Initializing canvas ${canvasId}`);
 
     try {
@@ -311,15 +351,70 @@ export class CanvasRoom implements DurableObject {
       console.error(`[CanvasRoom] Error loading state:`, error);
     }
 
+    // 确保在 D1 中有记录(用于管理面板列表)
+    try {
+      await this.ensureD1Record();
+    } catch (error) {
+      console.warn(`[CanvasRoom] Failed to ensure D1 record:`, error);
+      // 不阻塞初始化流程
+    }
+
     // 启动定期持久化(防止重复启动)
     this.startFlushTimer();
+  }
+
+  /**
+   * 确保 D1 中有该房间的记录(用于管理面板)
+   */
+  private async ensureD1Record(): Promise<void> {
+    if (!this.canvasId) return;
+
+    // 如果已经确保过,跳过(避免重复写入)
+    if (this.d1RecordEnsured) {
+      return;
+    }
+
+    try {
+      // 检查是否已存在
+      const existing = await this.env.DB.prepare(
+        'SELECT id FROM canvases WHERE id = ?'
+      )
+        .bind(this.canvasId)
+        .first();
+
+      if (!existing) {
+        // 不存在,创建新记录
+        await this.env.DB.prepare(
+          'INSERT INTO canvases (id, title, latest_seq, created_at, updated_at) VALUES (?, ?, ?, unixepoch(), unixepoch())'
+        )
+          .bind(this.canvasId, this.canvasId, this.seq)
+          .run();
+        
+        console.log(`[CanvasRoom] Created D1 record for room ${this.canvasId}`);
+      } else {
+        // 已存在,更新 updated_at
+        await this.env.DB.prepare(
+          'UPDATE canvases SET updated_at = unixepoch(), latest_seq = ? WHERE id = ?'
+        )
+          .bind(this.seq, this.canvasId)
+          .run();
+        
+        console.log(`[CanvasRoom] Updated D1 record for room ${this.canvasId}`);
+      }
+      
+      // 标记已确保,避免重复调用
+      this.d1RecordEnsured = true;
+    } catch (error) {
+      console.error(`[CanvasRoom] Error ensuring D1 record:`, error);
+      throw error;
+    }
   }
 
   /**
    * 处理客户端加入
    */
   private async handleJoin(ws: WebSocket, message: JoinMessage): Promise<void> {
-    const { userId, userName, lastSeq } = message;
+    const { userId, userName, lastSeq, invisible } = message;
 
     const activeUsers = new Set(Array.from(this.connections.values()).map((info) => info.userId));
     if (activeUsers.size >= this.maxRoomUsers && !activeUsers.has(userId)) {
@@ -333,23 +428,31 @@ export class CanvasRoom implements DurableObject {
     }
 
     // 注册连接
+    const now = Date.now();
+    this.lastConnectionAt = now;
     this.connections.set(ws, {
       userId,
       userName,
-      joinedAt: Date.now(),
-      lastPongAt: Date.now(),
-      missedHeartbeats: 0,
+      joinedAt: now,
+      lastActiveAt: now,
+      lastUserActionAt: now, // 初始化用户操作时间
+      invisible: invisible || false,
     });
+    
+    // 停止空房间检查(有新连接了)
+    this.stopEmptyRoomCheck();
 
-    // 初始化 presence
-    this.presences.set(userId, {
-      userId,
-      userName,
-      lastUpdate: Date.now(),
-    });
+    // 只有非隐形用户才添加到 presence
+    if (!invisible) {
+      this.presences.set(userId, {
+        userId,
+        userName,
+        lastUpdate: Date.now(),
+      });
+    }
 
     console.log(
-      `[CanvasRoom] User ${userId} joined canvas ${this.canvasId} (state source: ${this.lastStateSource})`
+      `[CanvasRoom] User ${userId} joined canvas ${this.canvasId} (state source: ${this.lastStateSource}, invisible: ${invisible || false})`
     );
 
     // 发送完整状态同步
@@ -363,10 +466,24 @@ export class CanvasRoom implements DurableObject {
     
     this.send(ws, syncMessage);
 
-    // 广播新用户加入
-    this.broadcastPresenceUpdate(userId, this.presences.get(userId)!);
+    // 只有非隐形用户才广播加入消息
+    if (!invisible) {
+      this.broadcastPresenceUpdate(userId, this.presences.get(userId)!);
+    }
 
-    this.startHeartbeat();
+    // 启动空闲检查(如果是第一个连接)
+    if (this.connections.size === 1) {
+      this.startIdleCheck();
+      
+      // 第一个用户加入时,立即确保 D1 记录存在
+      // 这样管理面板刷新时就能立即看到这个房间
+      try {
+        await this.ensureD1Record();
+      } catch (error) {
+        console.warn(`[CanvasRoom] Failed to ensure D1 record on first join:`, error);
+        // 不阻塞用户加入
+      }
+    }
   }
 
   /**
@@ -376,7 +493,22 @@ export class CanvasRoom implements DurableObject {
     const conn = this.connections.get(ws);
     if (!conn) return;
 
+    const now = Date.now();
+    // 更新最后活动时间(任何消息)
+    conn.lastActiveAt = now;
+    
+    // 只有用户主动操作才更新 lastUserActionAt
+    const userActionTypes = ['create_node', 'delete_node', 'update_node', 'update_nodes', 
+                             'drag_start', 'drag_move', 'drag_end', 'lock', 'unlock',
+                             'user_activity']; // 包括用户活动通知
+    if (userActionTypes.includes(message.type)) {
+      conn.lastUserActionAt = now;
+    }
+
     switch (message.type) {
+      case 'user_activity':
+        // 用户活动通知,只更新时间戳,不需要其他处理
+        return;
       case 'create_node':
         await this.handleCreateNode(conn.userId, message as CreateNodeMessage);
         break;
@@ -407,10 +539,6 @@ export class CanvasRoom implements DurableObject {
 
       case 'leave':
         await this.handleLeave(conn.userId, ws, message as LeaveMessage);
-        break;
-
-      case 'pong':
-        await this.handlePong(ws, message as PongMessage);
         break;
       
       case 'update_presence':
@@ -694,21 +822,14 @@ export class CanvasRoom implements DurableObject {
   }
 
   /**
-   * 处理心跳响应
-   */
-  private async handlePong(ws: WebSocket, _message: PongMessage): Promise<void> {
-    const conn = this.connections.get(ws);
-    if (!conn) return;
-    conn.lastPongAt = Date.now();
-    conn.missedHeartbeats = 0;
-  }
-
-  /**
    * 更新 presence
    */
   private async handleUpdatePresence(userId: string, message: UpdatePresenceMessage): Promise<void> {
     const presence = this.presences.get(userId);
-    if (!presence) return;
+    if (!presence) {
+      // 隐形用户没有 presence,直接返回
+      return;
+    }
 
     // 合并更新
     Object.assign(presence, message.presence, {
@@ -771,8 +892,8 @@ export class CanvasRoom implements DurableObject {
     const conn = this.connections.get(ws);
     if (!conn) return;
 
-    const { userId } = conn;
-    console.log(`[CanvasRoom] User ${userId} disconnected from canvas ${this.canvasId}`);
+    const { userId, invisible } = conn;
+    console.log(`[CanvasRoom] User ${userId} disconnected from canvas ${this.canvasId} (invisible: ${invisible || false})`);
 
     // 释放该用户锁定的所有节点
     for (const [nodeId, lockUserId] of this.lockedNodes.entries()) {
@@ -792,8 +913,8 @@ export class CanvasRoom implements DurableObject {
     const hasOtherConnections = Array.from(this.connections.values())
       .some(info => info.userId === userId);
 
-    if (!hasOtherConnections) {
-      // 移除 presence
+    if (!hasOtherConnections && !invisible) {
+      // 只有非隐形用户才移除 presence 并广播
       this.presences.delete(userId);
       this.broadcastPresenceUpdate(userId, null);
     }
@@ -803,45 +924,106 @@ export class CanvasRoom implements DurableObject {
       console.log(`[CanvasRoom] No more connections, flushing final state`);
       this.flushToStorage('final').catch(console.error); // 立即持久化
       this.stopFlushTimer(); // 停止定时器
-      this.stopHeartbeat();
+      this.stopIdleCheck(); // 停止空闲检查
+      this.startEmptyRoomCheck(); // 启动空房间检查
     }
   }
 
   /**
-   * 心跳检测
+   * 启动空闲连接检查
    */
-  private startHeartbeat(): void {
-    if (this.heartbeatTimer) {
+  private startIdleCheck(): void {
+    if (this.idleCheckTimer) {
       return;
     }
-    this.heartbeatTimer = setInterval(() => {
+
+    console.log(`[CanvasRoom] Starting idle check for room ${this.canvasId}`);
+    
+    // 每60秒检查一次
+    this.idleCheckTimer = setInterval(() => {
       const now = Date.now();
+      const toClose: WebSocket[] = [];
+      
       for (const [ws, info] of this.connections.entries()) {
-        if (ws.readyState !== 1) {
-          ws.close(4001, 'Heartbeat timeout');
-          continue;
+        const idleTime = now - info.lastActiveAt;
+        if (idleTime > this.idleTimeoutMs) {
+          console.log(JSON.stringify({
+            event: 'idle_timeout',
+            roomId: this.canvasId,
+            userId: info.userId,
+            idleSeconds: Math.floor(idleTime / 1000),
+            timestamp: now,
+          }));
+          toClose.push(ws);
         }
-        if (now - info.lastPongAt > this.heartbeatInterval) {
-          info.missedHeartbeats += 1;
-        } else {
-          info.missedHeartbeats = 0;
-        }
-        if (info.missedHeartbeats >= this.heartbeatMissLimit) {
-          ws.close(4001, 'Heartbeat timeout');
-          continue;
-        }
-        const ping: PingMessage = { type: MessageType.PING, ts: now };
-        this.send(ws, ping);
       }
-    }, this.heartbeatInterval) as unknown as number;
+      
+      toClose.forEach(ws => {
+        ws.close(4001, 'Idle timeout');
+      });
+    }, 60000) as unknown as number;
   }
 
-  private stopHeartbeat(): void {
-    if (!this.heartbeatTimer) {
+  /**
+   * 停止空闲连接检查
+   */
+  private stopIdleCheck(): void {
+    if (this.idleCheckTimer) {
+      clearInterval(this.idleCheckTimer);
+      this.idleCheckTimer = undefined;
+      console.log(`[CanvasRoom] Stopped idle check for room ${this.canvasId}`);
+    }
+  }
+
+  /**
+   * 启动空房间检查
+   */
+  private startEmptyRoomCheck(): void {
+    if (this.emptyRoomTimer) {
       return;
     }
-    clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = undefined;
+    
+    console.log(`[CanvasRoom] Starting empty room check for ${this.canvasId}`);
+    
+    this.emptyRoomTimer = setTimeout(() => {
+      if (this.connections.size === 0) {
+        const emptyDuration = Date.now() - this.lastConnectionAt;
+        console.log(JSON.stringify({
+          event: 'empty_room_shutdown',
+          roomId: this.canvasId,
+          emptyDurationMs: emptyDuration,
+          timestamp: Date.now(),
+        }));
+        console.log(`[CanvasRoom] Room ${this.canvasId} empty for ${emptyDuration}ms, shutting down`);
+        
+        // 最终持久化
+        this.flushToStorage('final').then(() => {
+          // 清理所有定时器
+          this.stopAllTimers();
+          console.log(`[CanvasRoom] Room ${this.canvasId} cleanup complete`);
+        }).catch(console.error);
+      }
+    }, this.emptyRoomTimeoutMs) as unknown as number;
+  }
+
+  /**
+   * 停止空房间检查
+   */
+  private stopEmptyRoomCheck(): void {
+    if (this.emptyRoomTimer) {
+      clearTimeout(this.emptyRoomTimer);
+      this.emptyRoomTimer = undefined;
+      console.log(`[CanvasRoom] Stopped empty room check for ${this.canvasId}`);
+    }
+  }
+
+  /**
+   * 停止所有定时器
+   */
+  private stopAllTimers(): void {
+    this.stopFlushTimer();
+    this.stopIdleCheck();
+    this.stopEmptyRoomCheck();
   }
 
   /**
@@ -860,6 +1042,92 @@ export class CanvasRoom implements DurableObject {
         headers: { 'Content-Type': 'application/json' },
       }
     );
+  }
+
+  /**
+   * 获取详细状态（管理API）
+   */
+  private handleGetStatus(): Response {
+    const now = Date.now();
+    const status = {
+      roomId: this.canvasId,
+      createdAt: this.roomCreatedAt,
+      lastConnectionAt: this.lastConnectionAt,
+      activeConnections: this.connections.size,
+      activeUsers: new Set(Array.from(this.connections.values()).map(c => c.userId)).size,
+      nodeCount: this.nodes.size,
+      seq: this.seq,
+      lockedNodesCount: this.lockedNodes.size,
+      presenceCount: this.presences.size,
+      lastStateSource: this.lastStateSource,
+      idleSeconds: this.connections.size === 0 
+        ? Math.floor((now - this.lastConnectionAt) / 1000) 
+        : 0,
+      connections: Array.from(this.connections.values()).map(conn => ({
+        userId: conn.userId,
+        userName: conn.userName,
+        joinedAt: conn.joinedAt,
+        lastActiveAt: conn.lastActiveAt,
+        lastUserActionAt: conn.lastUserActionAt,
+        idleSeconds: Math.floor((now - conn.lastUserActionAt) / 1000), // 基于用户操作时间
+      })),
+    };
+
+    return new Response(JSON.stringify(status), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /**
+   * 强制关闭房间（管理API）
+   */
+  private async handleShutdown(): Promise<Response> {
+    console.log(`[CanvasRoom] Forced shutdown for room ${this.canvasId}`);
+    
+    // 关闭所有连接
+    for (const ws of this.connections.keys()) {
+      ws.close(4003, 'Room shutdown by admin');
+    }
+    
+    // 持久化并清理
+    await this.flushToStorage('final');
+    this.stopAllTimers();
+    
+    return new Response(JSON.stringify({ success: true }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  /**
+   * 踢出指定用户（管理API）
+   */
+  private async handleKickUser(request: Request): Promise<Response> {
+    try {
+      const body = await request.json<{ userId: string }>();
+      if (!body.userId) {
+        return new Response(JSON.stringify({ error: 'Missing userId' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      
+      let kicked = 0;
+      for (const [ws, info] of this.connections.entries()) {
+        if (info.userId === body.userId) {
+          ws.close(4004, 'Kicked by admin');
+          kicked++;
+        }
+      }
+      
+      return new Response(JSON.stringify({ success: true, kicked }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Invalid request' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
   }
 
   private applyExternalCommand(command: ExternalCommandEnvelope) {
@@ -1496,9 +1764,32 @@ export class CanvasRoom implements DurableObject {
       console.log(
         `[CanvasRoom] Flush completed successfully for canvas ${this.canvasId} v${this.CURRENT_STATE_VERSION} at seq ${this.seq}`
       );
+
+      // 同时更新 D1 记录(不阻塞主流程)
+      this.updateD1Record().catch(err => {
+        console.warn(`[CanvasRoom] Failed to update D1 record:`, err);
+      });
     } catch (error) {
       console.error(`[CanvasRoom] Error flushing state:`, error);
       // 保持 isDirty = true,下次定时器会重试
+    }
+  }
+
+  /**
+   * 更新 D1 中的记录
+   */
+  private async updateD1Record(): Promise<void> {
+    if (!this.canvasId) return;
+
+    try {
+      await this.env.DB.prepare(
+        'UPDATE canvases SET updated_at = unixepoch(), latest_seq = ? WHERE id = ?'
+      )
+        .bind(this.seq, this.canvasId)
+        .run();
+    } catch (error) {
+      // 静默失败,不影响主流程
+      console.warn(`[CanvasRoom] Failed to update D1:`, error);
     }
   }
 

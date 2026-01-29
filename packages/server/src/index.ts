@@ -7,6 +7,12 @@ import type { Env } from './types';
 import { extractToken, verifyToken } from './utils/auth';
 // import { authenticateExternalRequest, isSourceAllowed } from './utils/externalAuth';
 import { parseExternalCommand } from './utils/externalCommands';
+import { 
+  handleGetRoomStatus, 
+  handleShutdownRoom, 
+  handleKickFromRoom, 
+  handleListRooms 
+} from './admin';
 
 export { CanvasRoom } from './canvasRoom';
 
@@ -23,6 +29,11 @@ export default {
     }
 
     try {
+      // 管理API路由
+      if (url.pathname.startsWith('/admin/')) {
+        return await handleAdminAPI(request, env, url);
+      }
+
       // API 路由
       if (url.pathname.startsWith('/api/')) {
         return await handleAPI(request, env, url);
@@ -69,6 +80,38 @@ export default {
     }
   },
 };
+
+/**
+ * 处理管理API请求
+ */
+async function handleAdminAPI(request: Request, env: Env, url: URL): Promise<Response> {
+  const path = url.pathname.replace('/admin', '');
+
+  // GET /admin/rooms - 列出所有活跃房间
+  if (path === '/rooms' && request.method === 'GET') {
+    return await handleListRooms(request, env);
+  }
+
+  // GET /admin/rooms/:id - 获取特定房间状态
+  const roomMatch = path.match(/^\/rooms\/([^/]+)$/);
+  if (roomMatch && request.method === 'GET') {
+    return await handleGetRoomStatus(request, env, roomMatch[1]);
+  }
+
+  // POST /admin/rooms/:id/shutdown - 关闭房间
+  const shutdownMatch = path.match(/^\/rooms\/([^/]+)\/shutdown$/);
+  if (shutdownMatch && request.method === 'POST') {
+    return await handleShutdownRoom(request, env, shutdownMatch[1]);
+  }
+
+  // POST /admin/rooms/:id/kick - 踢出用户
+  const kickMatch = path.match(/^\/rooms\/([^/]+)\/kick$/);
+  if (kickMatch && request.method === 'POST') {
+    return await handleKickFromRoom(request, env, kickMatch[1]);
+  }
+
+  return new Response('Not found', { status: 404 });
+}
 
 /**
  * 处理 API 请求

@@ -54,6 +54,8 @@ export interface CollaborativeCanvasProps {
   minWidth?: string | number;
   /** 最小高度，默认 '400px' */
   minHeight?: string | number;
+  /** 隐形模式,不在用户列表中显示 */
+  invisible?: boolean;
 }
 
 export function CollaborativeCanvas({
@@ -73,6 +75,7 @@ export function CollaborativeCanvas({
   height,
   minWidth,
   minHeight,
+  invisible = false,
 }: CollaborativeCanvasProps) {
   const resolvedLayout = useMemo<LayoutConfig>(
     () => ({
@@ -814,6 +817,9 @@ export function CollaborativeCanvas({
         case 'error':
           if (message.code === 'ROOM_FULL') {
             pushToast('The session is full, please try again later', 'error');
+          } else if ((message as any).permanent) {
+            // 永久性断开连接的错误
+            pushToast(message.error || 'Connection closed', 'error');
           }
           break;
       }
@@ -827,6 +833,7 @@ export function CollaborativeCanvas({
       userId,
       userName,
       enabled: collabEnabled,
+      invisible,
     },
     handleMessage
   );

@@ -17,13 +17,29 @@ export default function Home() {
     []
   );
 
-  const userId = useMemo(() => `user_${Math.random().toString(36).slice(2, 8)}`, []);
+  const userId = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return `user_${Math.random().toString(36).slice(2, 8)}`;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const urlUserId = params.get('userId');
+    return urlUserId || `user_${Math.random().toString(36).slice(2, 8)}`;
+  }, []);
+  
   const canvasId = useMemo(() => {
     if (typeof window === 'undefined') {
       return null;
     }
     const params = new URLSearchParams(window.location.search);
     return params.get('canvasId');
+  }, []);
+  
+  const invisible = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    const params = new URLSearchParams(window.location.search);
+    return params.get('adminMode') === 'true';
   }, []);
 
   useEffect(() => {
@@ -55,6 +71,7 @@ export default function Home() {
       rawData={[]}
       layoutConfig={layoutConfig}
       dependencyEdgesVisible={true}
+      invisible={invisible}
     />
   );
 }

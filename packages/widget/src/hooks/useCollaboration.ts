@@ -16,8 +16,6 @@ export enum MessageType {
   JOIN = 'join',
   LEAVE = 'leave',
   SYNC_STATE = 'sync_state',
-  PING = 'ping',
-  PONG = 'pong',
   CREATE_NODE = 'create_node',
   UPDATE_NODE = 'update_node',
   UPDATE_NODES = 'update_nodes',
@@ -26,6 +24,7 @@ export enum MessageType {
   DRAG_MOVE = 'drag_move',
   DRAG_END = 'drag_end',
   UPDATE_PRESENCE = 'update_presence',
+  USER_ACTIVITY = 'user_activity',
   NODE_CREATED = 'node_created',
   NODE_UPDATED = 'node_updated',
   NODES_UPDATED = 'nodes_updated',
@@ -72,11 +71,6 @@ export interface SyncStateMessage {
   nodes: CanvasNodeData[];
   presences: Record<string, UserPresence>;
   lockedNodes: Record<string, string>;
-}
-
-export interface PingMessage {
-  type: MessageType.PING;
-  ts: number;
 }
 
 export interface NodeUpdatedMessage {
@@ -131,7 +125,6 @@ export interface ErrorMessage {
 
 export type ServerMessage =
   | SyncStateMessage
-  | PingMessage
   | NodeCreatedMessage
   | NodeUpdatedMessage
   | NodesUpdatedMessage
@@ -151,6 +144,8 @@ export interface CollaborationConfig {
   autoReconnect?: boolean;
   reconnectInterval?: number;
   enabled?: boolean;
+  invisible?: boolean; // 隐形模式,不在用户列表中显示
+  clientIdleTimeout?: number; // 客户端空闲超时(毫秒),默认 2 分钟
 }
 
 // Hook 返回值
@@ -211,6 +206,8 @@ export function useCollaboration(
     autoReconnect = true,
     reconnectInterval = 3000,
     enabled = true,
+    invisible = false,
+    clientIdleTimeout = 2 * 60 * 1000, // 默认 2 分钟
   } = config;
 
   const [connected, setConnected] = useState(false);
@@ -225,9 +222,89 @@ export function useCollaboration(
   const manualCloseRef = useRef(false);
   const shouldReconnectRef = useRef(true);
   
+  // 客户端空闲检测
+  const lastUserActivityRef = useRef<number>(Date.now());
+  const idleCheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wasIdleDisconnectedRef = useRef(false);
+  const lastActivityNotifyRef = useRef<number>(0); // 上次通知服务端的时间
+  
   // 使用 ref 存储 onMessage，避免它影响 connect 的依赖
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
+
+  // 启动客户端空闲检测
+  const startClientIdleCheck = useCallback(() => {
+    // 清除旧的定时器
+    if (idleCheckTimerRef.current) {
+      clearInterval(idleCheckTimerRef.current);
+    }
+    
+    console.log(`[Collaboration] Starting client-side idle detection (timeout: ${clientIdleTimeout}ms)`);
+    
+    // 每30秒检查一次
+    idleCheckTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      const idleTime = now - lastUserActivityRef.current;
+      
+      if (idleTime > clientIdleTimeout) {
+        console.log(`[Collaboration] User idle for ${Math.floor(idleTime / 1000)}s, disconnecting...`);
+        
+        // 标记为空闲断开
+        wasIdleDisconnectedRef.current = true;
+        
+        // 主动关闭连接
+        if (wsRef.current) {
+          manualCloseRef.current = true;
+          wsRef.current.close(1000, 'Client idle timeout');
+          wsRef.current = null;
+        }
+        
+        setConnected(false);
+        stopClientIdleCheck();
+        
+        // 通知UI层
+        if (onMessageRef.current) {
+          onMessageRef.current({
+            type: MessageType.ERROR,
+            error: '由于长时间未操作，已自动断开连接。移动鼠标即可恢复连接。',
+            clientIdle: true
+          } as any);
+        }
+      }
+    }, 30000); // 每30秒检查一次
+  }, [clientIdleTimeout]);
+  
+  // 停止客户端空闲检测
+  const stopClientIdleCheck = useCallback(() => {
+    if (idleCheckTimerRef.current) {
+      clearInterval(idleCheckTimerRef.current);
+      idleCheckTimerRef.current = null;
+      console.log('[Collaboration] Stopped client-side idle detection');
+    }
+  }, []);
+
+  // 更新用户活动时间
+  const updateUserActivity = useCallback(() => {
+    const now = Date.now();
+    lastUserActivityRef.current = now;
+    
+    // 标记不再是空闲断开状态
+    // 实际的重连会在下面的 useEffect 中触发
+    if (wasIdleDisconnectedRef.current) {
+      wasIdleDisconnectedRef.current = false;
+    }
+    
+    // 通知服务端用户有活动(节流:最多每30秒通知一次)
+    const timeSinceLastNotify = now - lastActivityNotifyRef.current;
+    if (wsRef.current?.readyState === WebSocket.OPEN && timeSinceLastNotify > 30000) {
+      wsRef.current.send(JSON.stringify({
+        type: MessageType.USER_ACTIVITY,
+        timestamp: now,
+      }));
+      lastActivityNotifyRef.current = now;
+      console.log('[Collaboration] Notified server of user activity');
+    }
+  }, []);
 
   // 发送消息
   const send = useCallback((message: any) => {
@@ -284,6 +361,12 @@ export function useCollaboration(
       ws.onopen = () => {
         console.log('[Collaboration] Connected to canvas:', canvasId);
         setConnected(true);
+        
+        // 重置用户活动时间
+        lastUserActivityRef.current = Date.now();
+        
+        // 启动客户端空闲检测
+        startClientIdleCheck();
 
         // 发送 JOIN 消息
         try {
@@ -293,6 +376,7 @@ export function useCollaboration(
               userId,
               userName,
               lastSeq: lastSeqRef.current,
+              invisible,
             })
           );
         } catch (error) {
@@ -312,12 +396,6 @@ export function useCollaboration(
 
           // 处理特殊消息
           switch (message.type) {
-            case MessageType.PING:
-              // 直接发送 PONG，不使用 send 函数避免循环依赖
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: MessageType.PONG }));
-              }
-              break;
             case MessageType.SYNC_STATE:
               setPresences(new Map(Object.entries(message.presences)));
               setLockedNodes(new Map(Object.entries(message.lockedNodes)));
@@ -374,19 +452,55 @@ export function useCollaboration(
         if (wsRef.current === ws) {
           wsRef.current = null;
         }
+        
+        // 停止客户端空闲检测
+        stopClientIdleCheck();
 
+        // 处理不同的关闭代码
         if (event.code === 1013) {
+          // 服务器拒绝
           reconnectBlockedRef.current = true;
         }
-        if (event.code === 4000 || event.code === 4002) {
+        
+        if (
+          event.code === 4000 || // 房间已满
+          event.code === 4001 || // 空闲超时
+          event.code === 4002 || // 其他错误
+          event.code === 4003 || // 房间被管理员关闭
+          event.code === 4004    // 用户被管理员踢出
+        ) {
           shouldReconnectRef.current = false;
+          reconnectBlockedRef.current = true;
+          
+          // 给用户友好的提示
+          const reasons: Record<number, string> = {
+            4000: '房间已满',
+            4001: '由于长时间未操作，您已被自动断开连接',
+            4002: '连接错误',
+            4003: '房间已被管理员关闭',
+            4004: '您已被管理员移出房间'
+          };
+          
+          const reason = reasons[event.code] || event.reason || '连接已关闭';
+          console.warn(`[Collaboration] 连接关闭: ${reason}，请刷新页面重新连接`);
+          
+          // 可以触发一个回调通知UI层
+          if (onMessageRef.current) {
+            onMessageRef.current({
+              type: MessageType.ERROR,
+              error: reason,
+              permanent: true, // 标识这是永久性断开，不会自动重连
+              closeCode: event.code // WebSocket close code
+            } as any);
+          }
         }
+        
         if (manualCloseRef.current) {
           manualCloseRef.current = false;
           return;
         }
 
-        // 自动重连
+        // 自动重连（只在允许重连的情况下）
         if (
           enabled &&
           autoReconnect &&
@@ -452,8 +566,50 @@ export function useCollaboration(
         wsRef.current.close();
         wsRef.current = null;
       }
+      stopClientIdleCheck();
     };
-  }, [connect, enabled]);
+  }, [connect, enabled, stopClientIdleCheck]);
+  
+  // 监听用户活动 (鼠标移动、键盘输入、点击等)
+  useEffect(() => {
+    if (!enabled) return;
+    
+    const handleActivity = () => {
+      updateUserActivity();
+      
+      // 如果是空闲断开后的重新活动,触发重连
+      if (!wasIdleDisconnectedRef.current && !wsRef.current && shouldReconnectRef.current) {
+        console.log('[Collaboration] User activity detected after idle disconnect, reconnecting...');
+        connect();
+      }
+    };
+    
+    // 监听各种用户交互事件
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'click'];
+    
+    // 使用节流避免过于频繁更新
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    const throttledActivity = () => {
+      if (throttleTimer) return;
+      throttleTimer = setTimeout(() => {
+        handleActivity();
+        throttleTimer = null;
+      }, 1000); // 最多每秒更新一次
+    };
+    
+    events.forEach(event => {
+      window.addEventListener(event, throttledActivity, { passive: true });
+    });
+    
+    return () => {
+      events.forEach(event => {
+        window.removeEventListener(event, throttledActivity);
+      });
+      if (throttleTimer) {
+        clearTimeout(throttleTimer);
+      }
+    };
+  }, [enabled, updateUserActivity, connect]);
 
   // API 方法
   const createNode = useCallback(

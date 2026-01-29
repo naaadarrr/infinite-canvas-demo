@@ -74,8 +74,6 @@ export enum MessageType {
   JOIN = 'join',
   LEAVE = 'leave',
   SYNC_STATE = 'sync_state',
-  PING = 'ping',
-  PONG = 'pong',
   
   // 节点操作
   CREATE_NODE = 'create_node',
@@ -91,6 +89,9 @@ export enum MessageType {
   // Presence
   UPDATE_PRESENCE = 'update_presence',
   PRESENCE_UPDATE = 'presence_update',
+  
+  // 用户活动通知
+  USER_ACTIVITY = 'user_activity',
   
   // 节点更新广播
   NODE_CREATED = 'node_created',
@@ -111,14 +112,11 @@ export interface JoinMessage {
   userId: string;
   userName?: string;
   lastSeq?: number; // 客户端已知的最后序号，用于增量同步
+  invisible?: boolean; // 是否隐形(不在用户列表中显示,不广播presence)
 }
 
 export interface LeaveMessage {
   type: MessageType.LEAVE;
-}
-
-export interface PongMessage {
-  type: MessageType.PONG;
 }
 
 export interface CreateNodeMessage {
@@ -166,10 +164,14 @@ export interface UpdatePresenceMessage {
   presence: Partial<UserPresence>;
 }
 
+export interface UserActivityMessage {
+  type: MessageType.USER_ACTIVITY;
+  timestamp?: number; // 可选:客户端时间戳
+}
+
 export type ClientMessage =
   | JoinMessage
   | LeaveMessage
-  | PongMessage
   | CreateNodeMessage
   | DeleteNodeMessage
   | UpdateNodeMessage
@@ -177,7 +179,8 @@ export type ClientMessage =
   | DragStartMessage
   | DragMoveMessage
   | DragEndMessage
-  | UpdatePresenceMessage;
+  | UpdatePresenceMessage
+  | UserActivityMessage;
 
 // 服务器 -> 客户端消息
 
@@ -187,11 +190,6 @@ export interface SyncStateMessage {
   nodes: CanvasNodeData[];
   presences: Record<string, UserPresence>;
   lockedNodes: Record<string, string>; // nodeId -> userId
-}
-
-export interface PingMessage {
-  type: MessageType.PING;
-  ts: number;
 }
 
 export interface NodeCreatedMessage {
@@ -246,7 +244,6 @@ export interface ErrorMessage {
 
 export type ServerMessage =
   | SyncStateMessage
-  | PingMessage
   | NodeCreatedMessage
   | NodeDeletedMessage
   | NodeUpdatedMessage
@@ -307,6 +304,10 @@ export interface Env {
   EXTERNAL_API_RATE_LIMIT_COUNT?: string;
   EXTERNAL_API_RATE_LIMIT_WINDOW_SEC?: string;
   EXTERNAL_API_NONCE_TTL_SEC?: string;
+  // DO优化配置
+  IDLE_TIMEOUT_MS?: string;
+  EMPTY_ROOM_TIMEOUT_MS?: string;
+  IDLE_CHECK_INTERVAL_MS?: string;
 }
 
 // ============ Durable Object 状态类型 ============
@@ -326,8 +327,9 @@ export interface ConnectionInfo {
   userId: string;
   userName?: string;
   joinedAt: number;
-  lastPongAt: number;
-  missedHeartbeats: number;
+  lastActiveAt: number; // 最后活动时间(任何消息)
+  lastUserActionAt: number; // 用户主动操作时间(不包括 update_presence)
+  invisible?: boolean; // 是否隐形
 }
 
 // ============ External Command API 类型 ============

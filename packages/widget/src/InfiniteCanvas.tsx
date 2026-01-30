@@ -473,7 +473,8 @@ export function InfiniteCanvas({
   const syncSignature = useMemo(() => {
     return initialNodes.map((node) => {
       const depFocus = (node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus ?? false;
-      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}`;
+      const zIndex = typeof node.zIndex === 'number' ? node.zIndex : 0;
+      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}:${zIndex}`;
     }).join('|');
   }, [initialNodes]);
 
@@ -506,10 +507,15 @@ export function InfiniteCanvas({
           const initialDependencyFocus = (initialNode as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus;
           const dependencyFocusChanged = flowDependencyFocus !== initialDependencyFocus;
           
+          // 检查 zIndex 变化
+          const flowZIndex = typeof flowNode.zIndex === 'number' ? flowNode.zIndex : 0;
+          const initialZIndex = typeof initialNode.zIndex === 'number' ? initialNode.zIndex : 0;
+          const zIndexChanged = flowZIndex !== initialZIndex;
+          
           // 注意：不同步 selected 状态，因为这会干扰本地的选择操作
           // selected 状态由 React Flow 内部管理，通过 onNodesChange 回调同步
           
-          if (posChanged || dependencyFocusChanged) {
+          if (posChanged || dependencyFocusChanged || zIndexChanged) {
             nodeUpdates.push({
               id: initialNode.id,
               position: initialNode.position,
@@ -532,6 +538,7 @@ export function InfiniteCanvas({
           return {
             ...node,
             position: update.position,
+            zIndex: update.initialNode.zIndex, // 同步 zIndex
             // 保留当前的 selected 状态，不从 initialNodes 同步
             data: {
               ...update.initialNode,

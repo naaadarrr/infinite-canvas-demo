@@ -1411,54 +1411,68 @@ export function CollaborativeCanvas({
 
   const applyLayerAction = useCallback(
     (nodeId: string, action: 'forward' | 'backward' | 'front' | 'back') => {
-      let pendingUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
-      setNodes((prevNodes) => {
-        if (prevNodes.length < 2) {
-          return prevNodes;
+      const prevNodes = nodesRef.current;
+      if (prevNodes.length < 2) {
+        setContextMenu(null);
+        return;
+      }
+      
+      const ordered = sortNodesByLayer(prevNodes);
+      const index = ordered.findIndex((node) => node.id === nodeId);
+      
+      if (index === -1) {
+        setContextMenu(null);
+        return;
+      }
+      
+      const nextOrder = [...ordered];
+      if (action === 'forward') {
+        if (index === ordered.length - 1) {
+          setContextMenu(null);
+          return;
         }
-        const ordered = sortNodesByLayer(prevNodes);
-        const index = ordered.findIndex((node) => node.id === nodeId);
-        if (index === -1) {
-          return prevNodes;
+        [nextOrder[index], nextOrder[index + 1]] = [nextOrder[index + 1], nextOrder[index]];
+      } else if (action === 'backward') {
+        if (index === 0) {
+          setContextMenu(null);
+          return;
         }
-        const nextOrder = [...ordered];
-        if (action === 'forward') {
-          if (index === ordered.length - 1) {
-            return prevNodes;
-          }
-          [nextOrder[index], nextOrder[index + 1]] = [nextOrder[index + 1], nextOrder[index]];
-        } else if (action === 'backward') {
-          if (index === 0) {
-            return prevNodes;
-          }
-          [nextOrder[index], nextOrder[index - 1]] = [nextOrder[index - 1], nextOrder[index]];
-        } else if (action === 'front') {
-          if (index === ordered.length - 1) {
-            return prevNodes;
-          }
-          const [node] = nextOrder.splice(index, 1);
-          nextOrder.push(node);
-        } else if (action === 'back') {
-          if (index === 0) {
-            return prevNodes;
-          }
-          const [node] = nextOrder.splice(index, 1);
-          nextOrder.unshift(node);
+        [nextOrder[index], nextOrder[index - 1]] = [nextOrder[index - 1], nextOrder[index]];
+      } else if (action === 'front') {
+        if (index === ordered.length - 1) {
+          setContextMenu(null);
+          return;
         }
-        const zIndexMap = new Map(nextOrder.map((node, idx) => [node.id, idx]));
-        const nextNodes = prevNodes.map((node) => {
-          const nextZIndex = zIndexMap.get(node.id);
-          if (nextZIndex === undefined || nextZIndex === node.zIndex) {
-            return node;
-          }
-          pendingUpdates.push({
-            nodeId: idMapRef.current.get(node.id) ?? node.id,
-            updates: { zIndex: nextZIndex },
-          });
-          return { ...node, zIndex: nextZIndex };
+        const [node] = nextOrder.splice(index, 1);
+        nextOrder.push(node);
+      } else if (action === 'back') {
+        if (index === 0) {
+          setContextMenu(null);
+          return;
+        }
+        const [node] = nextOrder.splice(index, 1);
+        nextOrder.unshift(node);
+      }
+      
+      const zIndexMap = new Map(nextOrder.map((node, idx) => [node.id, idx]));
+      const pendingUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+      
+      const nextNodes = prevNodes.map((node) => {
+        const nextZIndex = zIndexMap.get(node.id);
+        if (nextZIndex === undefined || nextZIndex === node.zIndex) {
+          return node;
+        }
+        const mappedId = idMapRef.current.get(node.id) ?? node.id;
+        
+        pendingUpdates.push({
+          nodeId: mappedId,
+          updates: { zIndex: nextZIndex },
         });
-        return nextNodes;
+        return { ...node, zIndex: nextZIndex };
       });
+      
+      setNodes(nextNodes);
+      
       if (pendingUpdates.length > 0) {
         collab.updateNodes(pendingUpdates);
       }

@@ -182,6 +182,8 @@ export function CollaborativeCanvas({
   const anchoredSubCanvasesRef = useRef<Map<string, SubCanvasInfo>>(new Map());
   const subCanvasByIdRef = useRef<Map<string, SubCanvasInfo>>(new Map());
   const readyForRawMergeRef = useRef(false);
+  // 跟踪本地正在操作的节点（用于过滤服务器回显）
+  const localOperatingNodesRef = useRef<Map<string, number>>(new Map());
   const userColor = useMemo(() => {
     const palette = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0f766e'];
     const hash = Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
@@ -451,7 +453,8 @@ export function CollaborativeCanvas({
       });
       setNodes(nextNodes);
       if (updates.length > 0) {
-        collabRef.current?.updateNodes(updates);
+        // 依赖关系焦点是UI状态，应立即同步
+        collabRef.current?.updateNodes(updates, true);
       }
     },
     []
@@ -737,9 +740,20 @@ export function CollaborativeCanvas({
           break;
 
         case 'nodes_updated':
+          // 过滤掉本地正在操作的节点的更新（防止回显造成抖动）
+          const filteredUpdates = message.updates.filter(update => {
+            // 如果节点正在本地操作中，跳过服务器的更新
+            const isLocallyOperating = localOperatingNodesRef.current.has(update.nodeId);
+            return !isLocallyOperating;
+          });
+          
+          if (filteredUpdates.length === 0) {
+            break;
+          }
+          
           setNodes((prevNodes) => {
             const updateMap = new Map(
-              message.updates.map((update) => [update.nodeId, update.updates])
+              filteredUpdates.map((update) => [update.nodeId, update.updates])
             );
             
             const nextNodes = prevNodes.map((node) => {
@@ -1090,7 +1104,6 @@ export function CollaborativeCanvas({
   const handleNodesChange = useCallback(
     (nextNodes: CanvasNodeData[]) => {
       const prevNodes = nodesRef.current;
-
       setNodes(nextNodes);
 
       // 检测被删除的节点
@@ -1170,6 +1183,7 @@ export function CollaborativeCanvas({
           }
           const nextValue = node[key];
           const prevValue = prev[key];
+          
           if (typeof nextValue === 'object' && nextValue !== null) {
             if (JSON.stringify(nextValue) !== JSON.stringify(prevValue)) {
               updates[key] = nextValue as CanvasNodeData[typeof key];
@@ -1201,7 +1215,24 @@ export function CollaborativeCanvas({
       }, []);
 
       if (dataUpdates.length > 0) {
-        collab.updateNodes(dataUpdates);
+        // 标记这些节点正在本地操作中（用于过滤服务器回显）
+        const now = Date.now();
+        dataUpdates.forEach(update => {
+          localOperatingNodesRef.current.set(update.nodeId, now);
+        });
+        
+        // 对于数据更新（如 rating, content, status 等），立即发送，不使用节流
+        collab.updateNodes(dataUpdates, true);
+        
+        // 500ms 后清除标记（足够时间接收服务器回显）
+        setTimeout(() => {
+          dataUpdates.forEach(update => {
+            const timestamp = localOperatingNodesRef.current.get(update.nodeId);
+            if (timestamp === now) {
+              localOperatingNodesRef.current.delete(update.nodeId);
+            }
+          });
+        }, 500);
       }
     },
     [collab, markSubCanvasRead, rawData]
@@ -1213,6 +1244,10 @@ export function CollaborativeCanvas({
       draggingNodesRef.current.add(nodeId);
 
       const mappedId = idMapRef.current.get(nodeId) ?? nodeId;
+      
+      // 标记节点正在本地操作中（用于过滤服务器回显）
+      localOperatingNodesRef.current.set(mappedId, Date.now());
+      
       collab.dragStart(mappedId, position);
     },
     [collab]
@@ -1279,6 +1314,16 @@ export function CollaborativeCanvas({
         const node = nodesRef.current.find((n) => n.id === id);
         if (node) {
           collab.dragEnd(mappedId, node.position);
+          
+          // 拖动结束后延迟清除操作标记（500ms后）
+          const timestamp = Date.now();
+          localOperatingNodesRef.current.set(mappedId, timestamp);
+          setTimeout(() => {
+            const currentTimestamp = localOperatingNodesRef.current.get(mappedId);
+            if (currentTimestamp === timestamp) {
+              localOperatingNodesRef.current.delete(mappedId);
+            }
+          }, 500);
         }
       });
     },
@@ -1474,7 +1519,8 @@ export function CollaborativeCanvas({
       setNodes(nextNodes);
       
       if (pendingUpdates.length > 0) {
-        collab.updateNodes(pendingUpdates);
+        // zIndex 调整应立即同步
+        collab.updateNodes(pendingUpdates, true);
       }
       setContextMenu(null);
     },

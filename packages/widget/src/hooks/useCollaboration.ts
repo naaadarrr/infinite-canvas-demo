@@ -158,7 +158,7 @@ export interface CollaborationState {
   // 发送消息的方法
   createNode: (nodeData: Partial<CanvasNodeData>, tempId?: string) => void;
   updateNode: (nodeId: string, updates: Partial<CanvasNodeData>) => void;
-  updateNodes: (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => void;
+  updateNodes: (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>, immediate?: boolean) => void;
   deleteNode: (nodeId: string) => void;
   dragStart: (nodeId: string, position: Position) => void;
   dragMove: (nodeId: string, position: Position) => void;
@@ -669,13 +669,22 @@ export function useCollaboration(
   );
 
   const updateNodes = useCallback(
-    (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => {
+    (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>, immediate = false) => {
       if (updates.length === 0) {
         return;
       }
-      throttledUpdateNodes(updates);
+      if (immediate) {
+        // 立即发送，不使用节流
+        send({
+          type: MessageType.UPDATE_NODES,
+          updates,
+        });
+      } else {
+        // 使用节流（用于拖动等高频更新）
+        throttledUpdateNodes(updates);
+      }
     },
-    [throttledUpdateNodes]
+    [throttledUpdateNodes, send]
   );
 
   const deleteNode = useCallback(

@@ -339,12 +339,12 @@ export function InfiniteCanvas({
           }
           return updatedNode;
         });
-        // 不需要再调用 syncNodeDataSize，因为我们已经同步了尺寸
+        
         emitNodesChange(updatedNodes);
         return updatedNodes;
       });
     },
-    [emitNodesChange, requestDeleteNode, nodes]
+    [emitNodesChange, requestDeleteNode]
   );
 
   React.useEffect(() => {
@@ -474,7 +474,28 @@ export function InfiniteCanvas({
     return initialNodes.map((node) => {
       const depFocus = (node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus ?? false;
       const zIndex = typeof node.zIndex === 'number' ? node.zIndex : 0;
-      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}:${zIndex}`;
+      // 添加需要同步的属性到签名中
+      const nodeAny = node as CanvasNodeData & { 
+        rating?: number;
+        fontSize?: number;
+        fontWeight?: string;
+        textAlign?: string;
+        backgroundColor?: string;
+        backgroundOpacity?: number;
+        fontFamily?: string;
+        color?: string;
+        content?: string;
+      };
+      const rating = nodeAny.rating ?? 0;
+      const fontSize = nodeAny.fontSize ?? 0;
+      const fontWeight = nodeAny.fontWeight ?? '';
+      const textAlign = nodeAny.textAlign ?? '';
+      const backgroundColor = nodeAny.backgroundColor ?? '';
+      const backgroundOpacity = nodeAny.backgroundOpacity ?? 1;
+      const fontFamily = nodeAny.fontFamily ?? '';
+      const color = nodeAny.color ?? '';
+      const content = nodeAny.content ?? '';
+      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}:${zIndex}:${rating}:${fontSize}:${fontWeight}:${textAlign}:${backgroundColor}:${backgroundOpacity}:${fontFamily}:${color}:${content}`;
     }).join('|');
   }, [initialNodes]);
 
@@ -512,10 +533,36 @@ export function InfiniteCanvas({
           const initialZIndex = typeof initialNode.zIndex === 'number' ? initialNode.zIndex : 0;
           const zIndexChanged = flowZIndex !== initialZIndex;
           
+          // 检查 rating 变化
+          const flowRating = (flowNode.data as CanvasNodeData & { rating?: number }).rating ?? 0;
+          const initialRating = (initialNode as CanvasNodeData & { rating?: number }).rating ?? 0;
+          const ratingChanged = flowRating !== initialRating;
+          
+          // 检查文本样式属性变化
+          const flowData = flowNode.data as CanvasNodeData & { 
+            fontSize?: number; fontWeight?: string; textAlign?: string; 
+            backgroundColor?: string; backgroundOpacity?: number; 
+            fontFamily?: string; color?: string; content?: string;
+          };
+          const initialData = initialNode as CanvasNodeData & { 
+            fontSize?: number; fontWeight?: string; textAlign?: string; 
+            backgroundColor?: string; backgroundOpacity?: number; 
+            fontFamily?: string; color?: string; content?: string;
+          };
+          const textStyleChanged = 
+            (flowData.fontSize ?? 0) !== (initialData.fontSize ?? 0) ||
+            (flowData.fontWeight ?? '') !== (initialData.fontWeight ?? '') ||
+            (flowData.textAlign ?? '') !== (initialData.textAlign ?? '') ||
+            (flowData.backgroundColor ?? '') !== (initialData.backgroundColor ?? '') ||
+            (flowData.backgroundOpacity ?? 1) !== (initialData.backgroundOpacity ?? 1) ||
+            (flowData.fontFamily ?? '') !== (initialData.fontFamily ?? '') ||
+            (flowData.color ?? '') !== (initialData.color ?? '') ||
+            (flowData.content ?? '') !== (initialData.content ?? '');
+          
           // 注意：不同步 selected 状态，因为这会干扰本地的选择操作
           // selected 状态由 React Flow 内部管理，通过 onNodesChange 回调同步
           
-          if (posChanged || dependencyFocusChanged || zIndexChanged) {
+          if (posChanged || dependencyFocusChanged || zIndexChanged || ratingChanged || textStyleChanged) {
             nodeUpdates.push({
               id: initialNode.id,
               position: initialNode.position,

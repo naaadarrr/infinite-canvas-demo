@@ -741,10 +741,18 @@ export function CollaborativeCanvas({
 
         case 'nodes_updated':
           // 过滤掉本地正在操作的节点的更新（防止回显造成抖动）
+          // 只过滤最近150ms内标记的节点，避免过滤其他用户的合法更新
+          const now = Date.now();
           const filteredUpdates = message.updates.filter(update => {
-            // 如果节点正在本地操作中，跳过服务器的更新
-            const isLocallyOperating = localOperatingNodesRef.current.has(update.nodeId);
-            return !isLocallyOperating;
+            const markTimestamp = localOperatingNodesRef.current.get(update.nodeId);
+            if (!markTimestamp) {
+              return true; // 没有标记，正常接收
+            }
+            
+            const age = now - markTimestamp;
+            const isRecentLocalOperation = age < 150; // 只过滤最近150ms的操作
+            
+            return !isRecentLocalOperation;
           });
           
           if (filteredUpdates.length === 0) {
@@ -1224,7 +1232,7 @@ export function CollaborativeCanvas({
         // 对于数据更新（如 rating, content, status 等），立即发送，不使用节流
         collab.updateNodes(dataUpdates, true);
         
-        // 500ms 后清除标记（足够时间接收服务器回显）
+        // 100ms 后清除标记（缩短时间窗口，减少对其他用户的影响）
         setTimeout(() => {
           dataUpdates.forEach(update => {
             const timestamp = localOperatingNodesRef.current.get(update.nodeId);
@@ -1232,7 +1240,7 @@ export function CollaborativeCanvas({
               localOperatingNodesRef.current.delete(update.nodeId);
             }
           });
-        }, 500);
+        }, 100);
       }
     },
     [collab, markSubCanvasRead, rawData]

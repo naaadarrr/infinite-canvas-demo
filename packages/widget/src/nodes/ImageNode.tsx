@@ -6,6 +6,7 @@ import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
+import { MediaLoading } from './MediaLoading';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
@@ -354,6 +355,8 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         </div>
         ) : isSkeleton ? (
           <MediaSkeleton />
+        ) : !nodeData.url ? (
+          <MediaLoading />
         ) : (
           <img
             src={nodeData.url}

@@ -6,6 +6,7 @@ import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
+import { MediaLoading } from './MediaLoading';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
@@ -33,6 +34,8 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       ? `${Math.round(actualWidth)} x ${Math.round(actualHeight)}`
       : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
+  const [preloadProgress, setPreloadProgress] = React.useState(0);
+  const [isPreloaded, setIsPreloaded] = React.useState(false);
   const isSkeleton = status === 'init';
   const isFailed = status === 'fail';
   const isSuccess = status === 'success';
@@ -256,6 +259,91 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     };
   }, []);
 
+  // 视频预加载 - 获得URL后立即开始下载
+  React.useEffect(() => {
+    if (!nodeData.url) {
+      setPreloadProgress(0);
+      setIsPreloaded(false);
+      return undefined;
+    }
+
+    // 使用 AbortController 支持取消
+    const abortController = new AbortController();
+    let cancelled = false;
+
+    const preloadVideo = async () => {
+      try {
+        const response = await fetch(nodeData.url, {
+          signal: abortController.signal,
+          // 使用 cors 模式，如果服务器不支持则回退
+          mode: 'cors',
+          credentials: 'omit',
+        });
+
+        if (!response.ok || cancelled) {
+          return;
+        }
+
+        const contentLength = response.headers.get('content-length');
+        const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+        if (!response.body) {
+          // 如果没有 body stream，至少触发浏览器缓存
+          setIsPreloaded(true);
+          setPreloadProgress(100);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        let receivedLength = 0;
+        const chunks: BlobPart[] = [];
+
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          chunks.push(value);
+          receivedLength += value.length;
+
+          // 更新进度
+          if (total > 0) {
+            setPreloadProgress(Math.round((receivedLength / total) * 100));
+          } else {
+            // 如果没有 content-length，使用估算进度
+            setPreloadProgress(Math.min(90, Math.round(receivedLength / 10000)));
+          }
+        }
+
+        if (!cancelled) {
+          setIsPreloaded(true);
+          setPreloadProgress(100);
+          
+          // 创建 Blob URL 并预热浏览器缓存（可选，但有助于即时播放）
+          // 注意：这里不替换原 URL，只是确保数据已在内存中
+          const blob = new Blob(chunks);
+          // 触发浏览器内部缓存机制
+          URL.createObjectURL(blob);
+        }
+      } catch (error) {
+        if (!cancelled && (error as Error).name !== 'AbortError') {
+          console.warn('[VideoNode] Preload failed, will use streaming:', error);
+          // 预加载失败不影响正常播放，浏览器会在播放时流式加载
+        }
+      }
+    };
+
+    // 延迟一点开始预加载，避免阻塞渲染
+    const timer = setTimeout(() => {
+      void preloadVideo();
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      clearTimeout(timer);
+    };
+  }, [nodeData.url]);
+
   const togglePlayback = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -406,12 +494,15 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           </div>
         ) : isSkeleton ? (
           <MediaSkeleton />
+        ) : !nodeData.url ? (
+          <MediaLoading />
         ) : (
           <>
             <video
               ref={videoRef}
               src={nodeData.url}
               poster={nodeData.poster}
+              preload="auto"
               autoPlay={false}
               loop={nodeData.loop}
               muted={nodeData.muted}
@@ -423,23 +514,33 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 display: 'block',
                 pointerEvents: 'none',
               }}
-              // poster={nodeData.poster}
             />
-            {/* {!isPlaying && nodeData.poster && (
-              <img
-                src={nodeData.poster}
-                alt=""
-                draggable={false}
+            {/* 预加载进度指示器 - 仅在未完成预加载且未播放时显示 */}
+            {!isPreloaded && !isPlaying && preloadProgress > 0 && preloadProgress < 100 && (
+              <div
                 style={{
                   position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  pointerEvents: 'none',
+                  bottom: 8,
+                  left: 8,
+                  right: 8,
+                  height: 3,
+                  backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                  borderRadius: 2,
+                  overflow: 'hidden',
                 }}
-              />
-            )} */}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${preloadProgress}%`,
+                    backgroundColor: 'rgba(0, 255, 200, 0.8)',
+                    borderRadius: 2,
+                    transition: 'width 0.2s ease-out',
+                    boxShadow: '0 0 6px rgba(0, 255, 200, 0.6)',
+                  }}
+                />
+              </div>
+            )}
             <button
               type="button"
               className="nodrag nopan nowheel"

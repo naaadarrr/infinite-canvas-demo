@@ -2209,7 +2209,7 @@ export function CollaborativeCanvas({
                         : undefined
                 }
                 nodesDraggable={!isLocked && effectiveToolMode === 'edit'}
-                elementsSelectable={!isLocked && effectiveToolMode === 'edit'}
+                elementsSelectable={!isLocked}
                 selectionOnDrag={!isLocked && effectiveToolMode === 'edit'}
                 panOnDrag={isLocked ? [] : effectiveToolMode === 'pan' ? [0, 1, 2] : [1, 2]}
                 onLockChange={setIsLocked}

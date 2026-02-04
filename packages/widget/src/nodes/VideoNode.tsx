@@ -6,7 +6,6 @@ import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
-import { MediaLoading } from './MediaLoading';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
@@ -450,12 +449,74 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           width: '100%',
           height: '100%',
           overflow: 'hidden',
-          backgroundColor: '#000',
         }}
       >
+        {/* 动画背景层 - 始终存在，被内容覆盖 */}
+        {!isFailed && (
+          <>
+            <style>
+              {`
+                @keyframes video-node-stripe {
+                  0% { background-position: 0 0; }
+                  100% { background-position: 60px 60px; }
+                }
+                @keyframes video-node-glow {
+                  0% { filter: hue-rotate(0deg) brightness(1); }
+                  50% { filter: hue-rotate(60deg) brightness(1.2); }
+                  100% { filter: hue-rotate(0deg) brightness(1); }
+                }
+              `}
+            </style>
+            {/* 霓虹条纹动画背景 */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: '#1a1a1a',
+              }}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: `repeating-linear-gradient(
+                    45deg,
+                    rgba(0, 255, 255, 0.12) 0px,
+                    rgba(0, 255, 255, 0.12) 10px,
+                    rgba(255, 0, 255, 0.12) 10px,
+                    rgba(255, 0, 255, 0.12) 20px,
+                    rgba(0, 255, 128, 0.12) 20px,
+                    rgba(0, 255, 128, 0.12) 30px,
+                    rgba(255, 128, 0, 0.10) 30px,
+                    rgba(255, 128, 0, 0.10) 40px,
+                    rgba(128, 0, 255, 0.12) 40px,
+                    rgba(128, 0, 255, 0.12) 50px,
+                    rgba(0, 128, 255, 0.12) 50px,
+                    rgba(0, 128, 255, 0.12) 60px
+                  )`,
+                  backgroundSize: '84.85px 84.85px',
+                  animation: 'video-node-stripe 1.5s linear infinite, video-node-glow 4s ease-in-out infinite',
+                }}
+              />
+              {/* 磨砂玻璃遮罩 */}
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(30, 30, 30, 0.5)',
+                  backdropFilter: 'blur(4px)',
+                  WebkitBackdropFilter: 'blur(4px)',
+                }}
+              />
+            </div>
+          </>
+        )}
+        
+        {/* 内容层 */}
         {isFailed ? (
           <div
             style={{
+              position: 'relative',
               width: '100%',
               height: '100%',
               display: 'flex',
@@ -466,7 +527,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
               textAlign: 'center',
               padding: 16,
               color: '#b91c1c',
-              background: '#fff',
+              background: '#1a1a1a',
               pointerEvents: 'none',
             }}
           >
@@ -494,9 +555,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           </div>
         ) : isSkeleton ? (
           <MediaSkeleton />
-        ) : !nodeData.url ? (
-          <MediaLoading />
-        ) : (
+        ) : nodeData.url ? (
           <>
             <video
               ref={videoRef}
@@ -508,6 +567,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
               muted={nodeData.muted}
               playsInline
               style={{
+                position: 'relative',
                 width: '100%',
                 height: '100%',
                 objectFit: 'cover',
@@ -569,7 +629,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
               {isPlaying ? <Pause size={24} /> : <Play size={24} />}
             </button>
           </>
-        )}
+        ) : null}
       </div>
       {showToolbar && <QuickActionToolbar actions={quickActions} />}
       {showToolbar && (

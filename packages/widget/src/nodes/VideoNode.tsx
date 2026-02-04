@@ -1,7 +1,7 @@
 import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
-import { Info, Paintbrush, RefreshCw, Shuffle, Play, Pause } from 'lucide-react';
+import { Info, Play, Pause, Pen } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
@@ -41,25 +41,6 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const { activeNodeId, toggleNode } = useDependencyFocus();
   const isDependencyFocus = activeNodeId === nodeData.id;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
-  const handleQuickAction = React.useCallback(
-    (actionId: string, actionLabel: string) => {
-      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
-      widgetBridge.emit(
-        createWidgetEvent(
-          'NODE_QUICK_ACTION',
-          {
-            nodeId: nodeData.id,
-            nodeType: nodeData.type,
-            actionId,
-            actionLabel,
-            node: nodeSnapshot,
-          },
-          { source: 'ui' }
-        )
-      );
-    },
-    [nodeData]
-  );
   const handleRatingChange = React.useCallback(
     (nextRating: number) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -81,28 +62,46 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
-  const quickActions: QuickAction[] = [
-    { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
-    {
-      id: 'avatar',
-      label: 'AI Avatar',
-      icon: Paintbrush,
-      onClick: () => handleQuickAction('avatar', 'AI Avatar'),
-    },
-    {
-      id: 'upscale',
-      label: 'Upscale',
-      icon: Shuffle,
-      onClick: () => handleQuickAction('upscale', 'Upscale'),
-    },
-    {
+  // 构建快捷操作菜单
+  const quickActions: QuickAction[] = React.useMemo(() => {
+    const actions: QuickAction[] = [];
+    
+    // Re-edit 按钮 - 仅当 toolType 不是 "user-upload" 时显示
+    if (rawItem?.toolType !== 'user-upload') {
+      actions.push({
+        id: 'edit',
+        label: 'Re-edit',
+        icon: Pen,
+        onClick: () => {
+          const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+          widgetBridge.emit(
+            createWidgetEvent(
+              'NODE_QUICK_ACTION',
+              {
+                nodeId: nodeData.id,
+                nodeType: nodeData.type,
+                actionId: 'edit',
+                actionLabel: 'Re-edit',
+                node: nodeSnapshot,
+              },
+              { source: 'ui' }
+            )
+          );
+        },
+      });
+    }
+    
+    // 依赖关系线开关按钮
+    actions.push({
       id: 'dependency',
       label: 'Related Nodes',
       icon: Info,
       onClick: () => toggleNode(nodeData.id),
       active: isDependencyFocus,
-    },
-  ];
+    });
+    
+    return actions;
+  }, [rawItem?.toolType, nodeData, toggleNode, isDependencyFocus]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -266,6 +265,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         backgroundColor: 'transparent',
       }}
     >
+      {/* 顶部/底部依赖连接点 */}
       <Handle
         id="dep-source"
         type="source"
@@ -276,6 +276,32 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         id="dep-target"
         type="target"
         position={Position.Bottom}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      {/* 左侧依赖连接点（用于 firstFrame） */}
+      <Handle
+        id="dep-source-left"
+        type="source"
+        position={Position.Left}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        id="dep-target-left"
+        type="target"
+        position={Position.Left}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      {/* 右侧依赖连接点（用于 lastFrame） */}
+      <Handle
+        id="dep-source-right"
+        type="source"
+        position={Position.Right}
+        style={{ opacity: 0, pointerEvents: 'none' }}
+      />
+      <Handle
+        id="dep-target-right"
+        type="target"
+        position={Position.Right}
         style={{ opacity: 0, pointerEvents: 'none' }}
       />
       {isSuccess && (

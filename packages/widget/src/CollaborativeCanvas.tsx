@@ -264,7 +264,13 @@ export function CollaborativeCanvas({
     return raw.taskId;
   }, []);
 
-  const getInputImagePaths = useCallback((item?: BoardTaskItem): string[] => {
+  // 输入依赖项类型，包含路径和名称（用于区分 firstFrame/lastFrame）
+  type InputDependency = {
+    path: string;
+    name?: string; // 'firstFrame' | 'lastFrame' | undefined
+  };
+
+  const getInputDependencies = useCallback((item?: BoardTaskItem): InputDependency[] => {
     if (!item) {
       return [];
     }
@@ -272,23 +278,34 @@ export function CollaborativeCanvas({
     if (!Array.isArray(inputImages) || inputImages.length === 0) {
       return [];
     }
-    const paths: string[] = [];
-    const first = inputImages[0] as unknown;
-    if (typeof first === 'string') {
-      paths.push(first);
-    } else if (first && typeof first === 'object') {
-      // 提取所有可能的输入路径标识
-      const obj = first as Record<string, unknown>;
-      const possibleKeys = ['inputImageS3Path', 'url', 'filePath', 'resourceId', 'path'];
-      possibleKeys.forEach((key) => {
-        const value = obj[key];
-        if (typeof value === 'string' && value.length > 0) {
-          paths.push(value);
+    const dependencies: InputDependency[] = [];
+    const possibleKeys = ['inputImageS3Path', 'url', 'filePath', 'resourceId', 'path'];
+    
+    // 遍历所有 inputImages，而不只是第一个
+    inputImages.forEach((inputImage) => {
+      if (typeof inputImage === 'string') {
+        dependencies.push({ path: inputImage });
+      } else if (inputImage && typeof inputImage === 'object') {
+        const obj = inputImage as Record<string, unknown>;
+        const name = typeof obj.name === 'string' ? obj.name : undefined;
+        
+        // 找到第一个有效的路径
+        for (const key of possibleKeys) {
+          const value = obj[key];
+          if (typeof value === 'string' && value.length > 0) {
+            dependencies.push({ path: value, name });
+            break;
+          }
         }
-      });
-    }
-    return paths;
+      }
+    });
+    return dependencies;
   }, []);
+
+  // 向后兼容：仅返回路径数组
+  const getInputImagePaths = useCallback((item?: BoardTaskItem): string[] => {
+    return getInputDependencies(item).map((dep) => dep.path);
+  }, [getInputDependencies]);
 
   // 保持向后兼容的单路径版本
   const getInputImagePath = useCallback((item?: BoardTaskItem) => {
@@ -580,31 +597,53 @@ export function CollaborativeCanvas({
       });
     });
 
-    const buildEdge = (sourceId: string, targetId: string, suffix: string): Edge => ({
-      id: `dep_${sourceId}_${targetId}_${suffix}`,
-      source: sourceId,
-      target: targetId,
-      sourceHandle: 'dep-source',
-      targetHandle: 'dep-target',
-      type: 'bezier',
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(210, 210, 210)' },
-      style: {
-        stroke: 'rgb(210, 210, 210)',
-        strokeWidth: 2,
-        strokeDasharray: '6 6',
-      },
-      className: 'dependency-edge-animated',
-    });
+    // 根据依赖名称确定使用的 handle
+    // firstFrame -> 左侧连接, lastFrame -> 右侧连接, 其他 -> 顶部连接
+    const getHandleForDependencyName = (name?: string): { sourceHandle: string; targetHandle: string } => {
+      if (name === 'firstFrame') {
+        return { sourceHandle: 'dep-source-left', targetHandle: 'dep-target-right' };
+      }
+      if (name === 'lastFrame') {
+        return { sourceHandle: 'dep-source-right', targetHandle: 'dep-target-left' };
+      }
+      return { sourceHandle: 'dep-source', targetHandle: 'dep-target' };
+    };
+
+    const buildEdge = (
+      sourceId: string,
+      targetId: string,
+      suffix: string,
+      dependencyName?: string
+    ): Edge => {
+      const handles = getHandleForDependencyName(dependencyName);
+      return {
+        id: `dep_${sourceId}_${targetId}_${suffix}`,
+        source: sourceId,
+        target: targetId,
+        sourceHandle: handles.sourceHandle,
+        targetHandle: handles.targetHandle,
+        type: 'bezier',
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'rgb(210, 210, 210)' },
+        style: {
+          stroke: 'rgb(210, 210, 210)',
+          strokeWidth: 2,
+          strokeDasharray: '6 6',
+        },
+        className: 'dependency-edge-animated',
+      };
+    };
 
     const edges: Edge[] = [];
     const focusRaw = (focusNode as CanvasNodeData & { raw?: RawDataItem }).raw;
-    const focusInputPath = getInputImagePath(focusRaw);
-    if (focusInputPath) {
-      const targetId = outputPathToNodeId.get(focusInputPath);
+    
+    // 获取所有输入依赖（包含名称信息）
+    const focusInputDeps = getInputDependencies(focusRaw);
+    focusInputDeps.forEach((dep, index) => {
+      const targetId = outputPathToNodeId.get(dep.path);
       if (targetId && targetId !== focusNode.id) {
-        edges.push(buildEdge(focusNode.id, targetId, 'prev'));
+        edges.push(buildEdge(focusNode.id, targetId, `prev_${index}`, dep.name));
       }
-    }
+    });
 
     const focusOutputs = new Set(getNodeOutputPaths(focusNode));
     if (focusOutputs.size > 0) {
@@ -613,15 +652,18 @@ export function CollaborativeCanvas({
           return;
         }
         const raw = (node as CanvasNodeData & { raw?: RawDataItem }).raw;
-        const inputPath = getInputImagePath(raw);
-        if (inputPath && focusOutputs.has(inputPath)) {
-          edges.push(buildEdge(node.id, focusNode.id, 'next'));
-        }
+        // 获取该节点的所有输入依赖
+        const nodeDeps = getInputDependencies(raw);
+        nodeDeps.forEach((dep, depIndex) => {
+          if (focusOutputs.has(dep.path)) {
+            edges.push(buildEdge(node.id, focusNode.id, `next_${node.id}_${depIndex}`, dep.name));
+          }
+        });
       });
     }
 
     setDependencyEdges(edges);
-  }, [dependencyEdgesVisible, dependencyFocusNodeId, getInputImagePath, getNodeOutputPaths, nodes]);
+  }, [dependencyEdgesVisible, dependencyFocusNodeId, getInputDependencies, getNodeOutputPaths, nodes]);
 
   const applyGridOffset = useCallback(
     (items: CanvasNodeData[], startIndex: number) => {
@@ -1138,6 +1180,30 @@ export function CollaborativeCanvas({
       });
     };
 
+    // 跟踪是否已经为本批次启用了依赖关系线
+    let dependencyFocusEnabled = false;
+
+    // 如果要添加有依赖的新节点，先清除现有节点的 dependencyFocus
+    if (anchoredGroups.size > 0) {
+      const updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+      setNodes((prevNodes) => {
+        return prevNodes.map((node) => {
+          const hasFocus = Boolean((node as CanvasNodeData & { dependencyFocus?: boolean }).dependencyFocus);
+          if (hasFocus) {
+            updates.push({
+              nodeId: idMapRef.current.get(node.id) ?? node.id,
+              updates: { dependencyFocus: false } as Partial<CanvasNodeData>,
+            });
+            return { ...node, dependencyFocus: false } as CanvasNodeData;
+          }
+          return node;
+        });
+      });
+      if (updates.length > 0) {
+        collabRef.current?.updateNodes(updates, true);
+      }
+    }
+
     anchoredGroups.forEach(({ anchor, items }, inputPath) => {
       const subCanvas = getAnchoredSubCanvas(inputPath, anchor);
       const existingNodes = nodes.filter(
@@ -1152,7 +1218,16 @@ export function CollaborativeCanvas({
         return;
       }
       const compactNodes = layoutDependentNodes(positionedNodes, subCanvas, existingNodes);
-      const newNodes = compactNodes.map((node) => ({ ...node, subCanvasId: subCanvas.id }));
+      // 新节点有依赖，自动打开依赖关系线（只为第一个节点开启）
+      const newNodes = compactNodes.map((node, index) => ({
+        ...node,
+        subCanvasId: subCanvas.id,
+        // 只为本批次第一个有依赖的节点启用 dependencyFocus
+        dependencyFocus: !dependencyFocusEnabled && index === 0 ? true : undefined,
+      }));
+      if (newNodes.length > 0 && !dependencyFocusEnabled) {
+        dependencyFocusEnabled = true;
+      }
       appendNodes(newNodes);
       markProcessed(newNodes);
     });

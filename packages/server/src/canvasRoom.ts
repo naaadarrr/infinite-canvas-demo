@@ -1812,7 +1812,7 @@ export class CanvasRoom implements DurableObject {
     if (!expiresAt) {
       return false;
     }
-    return Date.now() + 30_000 >= expiresAt;
+    return Date.now() + 120_000 >= expiresAt;
   }
 
   private getUrlExpiresAt(url: string): number | undefined {

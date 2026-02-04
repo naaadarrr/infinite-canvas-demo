@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { isDev } from '../utils/env';
 
 declare const process:
   | {
@@ -689,6 +690,9 @@ export function useCollaboration(
 
   const deleteNode = useCallback(
     (nodeId: string) => {
+      if (isDev()) {
+        console.log('[Collaboration] send delete_node', { nodeId });
+      }
       send({
         type: MessageType.DELETE_NODE,
         nodeId,

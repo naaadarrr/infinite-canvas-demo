@@ -7,6 +7,7 @@ import type { CollaborationState, ServerMessage, UserPresence } from './hooks';
 import { useCollaboration } from './hooks';
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
+import { isDev } from './utils/env';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PanModeIcon, TextModeIcon } from './icons';
@@ -1135,6 +1136,12 @@ export function CollaborativeCanvas({
       // 同步删除操作到服务器
       deletedNodes.forEach((node) => {
         const mappedId = idMapRef.current.get(node.id) ?? node.id;
+        if (isDev()) {
+          console.log('[CollaborativeCanvas] local delete detected, send collab delete', {
+            id: node.id,
+            mappedId,
+          });
+        }
         collab.deleteNode(mappedId);
         // 清理 idMap
         idMapRef.current.delete(node.id);
@@ -1566,6 +1573,12 @@ export function CollaborativeCanvas({
     if (!target) {
       setContextMenu(null);
       return;
+    }
+    if (isDev()) {
+      console.log('[CollaborativeCanvas] context menu delete', {
+        id: target.id,
+        type: target.type,
+      });
     }
     widgetBridge.emit(
       createWidgetEvent(

@@ -2,6 +2,7 @@ import React from 'react';
 import { NodeProps, useStore } from '@xyflow/react';
 import type { TextNodeData, TextAlign } from '@tc/infinite-core';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { isDev } from '../utils/env';
 
 // 工具栏组件
 interface TextToolbarProps {
@@ -14,7 +15,7 @@ interface TextToolbarProps {
   onFontSizeChange: (size: number) => void;
   onFontWeightChange: (weight: 'normal' | 'bold') => void;
   onTextAlignChange: (align: TextAlign) => void;
-  onBackgroundColorChange: (color: string | undefined) => void;
+  onBackgroundColorChange: (color: string) => void;
   onBackgroundOpacityChange: (opacity: number) => void;
 }
 
@@ -35,8 +36,8 @@ const TextToolbar = React.memo(function TextToolbar({
   const [isExpanded, setIsExpanded] = React.useState(false);
   const [hoveredTooltip, setHoveredTooltip] = React.useState<string | null>(null);
   const fontSizes = [12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48, 56, 64, 72, 96, 128];
-  const backgroundOptions: Array<{ value: string | undefined; label: string; swatch: string }> = [
-    { value: undefined, label: '透明', swatch: 'transparent' },
+  const backgroundOptions: Array<{ value: string; label: string; swatch: string }> = [
+    { value: 'transparent', label: '透明', swatch: 'transparent' },
     { value: '#ffffff', label: '白色', swatch: '#ffffff' },
     { value: '#000000', label: '黑色', swatch: '#000000' },
     { value: '#f5f5f5', label: '灰色', swatch: '#f5f5f5' },
@@ -417,7 +418,7 @@ const TextToolbar = React.memo(function TextToolbar({
           {/* 背景色按钮组 */}
           <div style={{ display: 'flex', gap: 4 }}>
             {backgroundOptions.map((option) => {
-              const isActive = (backgroundColor ?? undefined) === option.value;
+              const isActive = (backgroundColor ?? 'transparent') === option.value;
               return (
                 <TooltipWrapper key={option.label} id={`bg-${option.label}`} label={option.label}>
                   <button
@@ -448,7 +449,7 @@ const TextToolbar = React.memo(function TextToolbar({
                       position: 'relative',
                     }}
                   >
-                    {option.value === undefined && (
+                    {option.value === 'transparent' && (
                       <span
                         style={{
                           position: 'absolute',
@@ -727,6 +728,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   };
 
   const handleBlur = (event: React.FocusEvent<HTMLTextAreaElement>) => {
+    const nextValue = event.currentTarget.value;
     // 延迟检查，给工具栏按钮点击事件时间执行
     setTimeout(() => {
       // 检查是否点击了工具栏，如果是则不失焦
@@ -739,7 +741,12 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
       
       setIsEditing(false);
       // 如果内容为空（去除空格后），触发删除
-      if (!content.trim()) {
+      if (!nextValue.trim()) {
+        if (isDev()) {
+          console.log('[TextNode] Empty content on blur, request delete', {
+            id: nodeData.id,
+          });
+        }
         nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
       }
     }, 0);
@@ -757,10 +764,11 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     nodeData.onNodeDataChange?.(nodeData.id, { textAlign: newAlign });
   }, [nodeData]);
 
-  const handleBackgroundColorChange = React.useCallback((newColor: string | undefined) => {
+  const handleBackgroundColorChange = React.useCallback((newColor: string) => {
+    const normalizedColor = !newColor || newColor === 'transparent' ? 'transparent' : newColor;
     // 根据新背景色自动设置文字颜色
     let textColor: string;
-    const raw = (newColor || '').toLowerCase();
+    const raw = normalizedColor.toLowerCase();
     
     // 透明背景使用白色字体
     if (!raw || raw === 'transparent') {
@@ -783,7 +791,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     }
     
     nodeData.onNodeDataChange?.(nodeData.id, { 
-      backgroundColor: newColor,
+      backgroundColor: normalizedColor,
       color: textColor 
     });
   }, [nodeData]);
@@ -954,7 +962,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   // 渲染文本内容，保留换行
   const renderTextContent = () => {
     if (!content) {
-      return <span style={{ opacity: 0.4 }}>输入文字...</span>;
+      return <span style={{ opacity: 0.4 }}>Add some text..</span>;
     }
     return content;
   };
@@ -1110,6 +1118,32 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={handleCompositionEnd}
           onBlur={handleBlur}
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              textareaRef.current?.blur();
+              return;
+            }
+            if (event.key !== 'Delete' && event.key !== 'Backspace') {
+              return;
+            }
+            const nextValue = event.currentTarget.value;
+            if (!nextValue.trim()) {
+              event.preventDefault();
+              event.stopPropagation();
+              if (isDev()) {
+                console.log('[TextNode] Empty content on key delete, request delete', {
+                  id: nodeData.id,
+                  key: event.key,
+                });
+              }
+              nodeData.onNodeDataChange?.(nodeData.id, { _delete: true } as any);
+            }
+          }}
         />
       )}
 

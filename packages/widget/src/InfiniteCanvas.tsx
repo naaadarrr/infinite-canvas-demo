@@ -18,6 +18,7 @@ import './styles.css';
 import type { CanvasNodeData, CanvasConfig, RawDataItem } from '@tc/infinite-core';
 import { ImageNode, VideoNode, AudioNode, TextNode } from './nodes';
 import { createWidgetEvent, widgetBridge } from './bridge';
+import { isDev } from './utils/env';
 import { CanvasControls } from './CanvasControls';
 
 type SnapLines = { x?: number; y?: number } | null;
@@ -241,6 +242,12 @@ export function InfiniteCanvas({
       return;
     }
     pendingDeleteRef.current.add(targetNode.id);
+    if (isDev()) {
+      console.log('[InfiniteCanvas] request delete', {
+        id: targetNode.id,
+        type: targetNode.data?.type,
+      });
+    }
     const { onNodeDataChange: _ignore, ...nodeSnapshot } = targetNode.data as CanvasNodeData & {
       onNodeDataChange?: unknown;
     };
@@ -262,8 +269,14 @@ export function InfiniteCanvas({
       setNodes((prevNodes) => {
         const nextNodes = prevNodes.filter((node) => node.id !== nodeId);
         if (nextNodes.length === prevNodes.length) {
+          if (isDev()) {
+            console.warn('[InfiniteCanvas] confirm delete but node not found', { nodeId });
+          }
           pendingDeleteRef.current.delete(nodeId);
           return prevNodes;
+        }
+        if (isDev()) {
+          console.log('[InfiniteCanvas] confirm delete', { nodeId });
         }
         emitNodesChange(nextNodes);
         pendingDeleteRef.current.delete(nodeId);
@@ -298,6 +311,9 @@ export function InfiniteCanvas({
     (id: string, dataPatch: CanvasNodeDataPatch) => {
       // 检查是否是删除操作
       if ((dataPatch as any)._delete) {
+        if (isDev()) {
+          console.log('[InfiniteCanvas] nodeData delete patch', { id });
+        }
         setNodes((prevNodes) => {
           const target = prevNodes.find((node) => node.id === id);
           if (target) {
@@ -369,6 +385,9 @@ export function InfiniteCanvas({
         const nodeId = typeof payload === 'string' ? payload : payload.nodeId;
         if (typeof nodeId !== 'string') {
           return;
+        }
+        if (isDev()) {
+          console.log('[InfiniteCanvas] received NODE_DELETE_CONFIRM', { nodeId });
         }
         confirmDeleteNode(nodeId);
       }

@@ -1,3 +1,5 @@
+import { isDev } from './utils/env';
+
 export type WidgetEventSource = 'ui' | 'agent' | 'system';
 
 export interface WidgetEvent<T = any> {
@@ -17,6 +19,14 @@ export class WidgetBridge {
 
   emit<T>(event: WidgetEvent<T>) {
     const set = this.handlers.get(event.type);
+    if (isDev() && event.type === 'NODE_DELETE_REQUEST') {
+      const count = set?.size ?? 0;
+      if (count === 0) {
+        console.warn('[WidgetBridge] NODE_DELETE_REQUEST has no listeners');
+      } else {
+        console.log('[WidgetBridge] NODE_DELETE_REQUEST listeners:', count);
+      }
+    }
     set?.forEach((handler) => handler(event));
   }
 

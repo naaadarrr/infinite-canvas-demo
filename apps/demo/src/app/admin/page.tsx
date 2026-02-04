@@ -52,7 +52,7 @@ export default function AdminPage() {
   const adminUserId = useMemo(() => `admin_${Math.random().toString(36).slice(2, 9)}`, []);
 
   const API_BASE = process.env.NEXT_PUBLIC_WS_BASE?.replace('wss://', 'https://').replace('ws://', 'http://') || 
-                   'https://infinite-canvas-collab-server.buzzbus.workers.dev';
+                   'https://infinite-canvas-collab-worker.topviewai.app';
   const TOKEN = process.env.NEXT_PUBLIC_USER_TOKEN || 'user_admin';
 
   // 获取房间列表并加载实时状态
@@ -368,6 +368,7 @@ export default function AdminPage() {
             刷新列表
           </button>
           <select 
+            title="自动刷新间隔"
             value={refreshInterval} 
             onChange={e => setRefreshInterval(+e.target.value)}
             className="refresh-select"

@@ -66,6 +66,7 @@ export interface MediaResourceInfo {
     duration?: number;
     coverPath?: string;
     resourceId?: string;
+    coverUrl?: string;
   }
 
   /** 任务结果输出 */
@@ -104,11 +105,11 @@ export interface BoardTaskItem {
     status: TaskStatus | string;
     mediaType: MediaType | string;
     rating: number;
-    parameters: TaskParameters;
+    parameters: TaskParameters | null;
     result?: TaskResultOutput | null;
     creditsCost: number;
-    creditsPayerUid: string;
-    creditsPayerName: string;
+    creditsPayerUid?: string | null;
+    creditsPayerName?: string | null;
     gmtCreate: string;
     gmtModify: string;
     completedAt: string | null;
@@ -117,6 +118,10 @@ export interface BoardTaskItem {
     // ===== 前端扩展字段（后端可选返回） =====
     /** 错误信息 */
     errorMessage?: string | null;
+    /** 错误码 */
+    errorCode?: string | null;
     /** 置顶前的原始排序权重（用于取消置顶时恢复） */
     pinnedOriginalSortWeight?: number | null;
+    /** 任务分组 */
+    groupIds?: string[];
   }

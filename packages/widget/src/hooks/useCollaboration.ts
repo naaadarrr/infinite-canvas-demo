@@ -203,7 +203,7 @@ export function useCollaboration(
     canvasId,
     userId,
     userName,
-    wsUrl = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_WS_BASE) || 'wss://infinite-canvas-collab-worker.topviewai.app',
+    wsUrl = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_WS_BASE) || 'ws://localhost:8787',
     token = (typeof process !== 'undefined' && process?.env?.NEXT_PUBLIC_USER_TOKEN) || `user_${userId}`,
     autoReconnect = true,
     reconnectInterval = 3000,

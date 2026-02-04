@@ -304,6 +304,8 @@ export interface Env {
   EXTERNAL_API_RATE_LIMIT_COUNT?: string;
   EXTERNAL_API_RATE_LIMIT_WINDOW_SEC?: string;
   EXTERNAL_API_NONCE_TTL_SEC?: string;
+  MEDIA_URL_ENDPOINT?: string;
+  MEDIA_URL_CACHE_TTL_MS?: string;
   // DO优化配置
   IDLE_TIMEOUT_MS?: string;
   EMPTY_ROOM_TIMEOUT_MS?: string;
@@ -357,6 +359,7 @@ export interface MediaResourceInfo {
   duration?: number;
   coverPath?: string;
   resourceId?: string;
+  coverUrl?: string;
 }
 
 export interface TaskResultOutput {
@@ -385,17 +388,19 @@ export interface BoardTaskItem {
   status: string;
   mediaType: string;
   rating: number;
-  parameters: TaskParameters;
+  parameters: TaskParameters | null;
   result?: TaskResultOutput | null;
   creditsCost: number;
-  creditsPayerUid: string;
-  creditsPayerName: string;
+  creditsPayerUid?: string | null;
+  creditsPayerName?: string | null;
   gmtCreate: string;
   gmtModify: string;
   completedAt: string | null;
   isPinned?: boolean;
   errorMessage?: string | null;
+  errorCode?: string | null;
   pinnedOriginalSortWeight?: number | null;
+  groupIds?: string[];
 }
 
 export type ExternalCommandType =

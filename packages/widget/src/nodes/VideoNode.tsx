@@ -379,8 +379,9 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 display: 'block',
                 pointerEvents: 'none',
               }}
+              // poster={nodeData.poster}
             />
-            {!isPlaying && nodeData.poster && (
+            {/* {!isPlaying && nodeData.poster && (
               <img
                 src={nodeData.poster}
                 alt=""
@@ -394,7 +395,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                   pointerEvents: 'none',
                 }}
               />
-            )}
+            )} */}
             <button
               type="button"
               onClick={togglePlayback}

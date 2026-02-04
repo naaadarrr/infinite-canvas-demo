@@ -244,12 +244,12 @@ export function parseRawData(
             resolveTitle(item.parameters?.fileName) ??
             resolveTitle(item.title) ??
             '音频文件';
-          const size = { width: layoutSide, height: 120 };
+          const size = { width: layoutSide, height: layoutSide };
           node = {
             id: generateId(),
             type: 'audio' as NodeType.AUDIO,
             position: resolveCenteredPosition(cellX, cellY, layoutSide, layoutSide, size),
-            size, // 音频节点高度较小
+            size, // 音频节点固定为正方形
             url: audioUrl ?? '',
             title,
             zIndex: 1,

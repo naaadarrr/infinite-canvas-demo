@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
-import { Info, RefreshCw } from 'lucide-react';
+import { Info, RefreshCw, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
@@ -9,6 +9,12 @@ import { MediaSkeleton } from './MediaSkeleton';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
+
+// 默认波形高度
+const defaultWaveformHeights = [
+  6, 8, 12, 16, 18, 22, 20, 24, 22, 18, 20, 24, 26, 22, 18, 14, 16, 20, 18, 14,
+  10, 12, 8, 6, 8, 10, 14, 12, 8, 6
+];
 
 export function AudioNode({ data, selected, dragging }: NodeProps) {
   const role = useCanvasRole();
@@ -31,6 +37,111 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
   const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
   const { activeNodeId, toggleNode } = useDependencyFocus();
   const isDependencyFocus = activeNodeId === nodeData.id;
+
+  // 音频播放状态
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [hasError, setHasError] = useState(false);
+
+  // 处理播放/暂停
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio || hasError) return;
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play().catch((error) => {
+        console.error('Audio play error:', {
+          error,
+          name: error.name,
+          message: error.message,
+          url: nodeData.url,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+        });
+        setHasError(true);
+        setIsPlaying(false);
+      });
+      setIsPlaying(true);
+    }
+  };
+
+  // 更新进度和错误处理
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => {
+      if (audio.duration) {
+        setProgress((audio.currentTime / audio.duration) * 100);
+      }
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setProgress(0);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+      setHasError(false);
+    };
+
+    const handleError = () => {
+      const error = audio.error;
+      const errorDetails = {
+        code: error?.code,
+        message: error?.message,
+        url: nodeData.url,
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      };
+      
+      // 错误代码说明
+      const errorMessages: Record<number, string> = {
+        1: 'MEDIA_ERR_ABORTED - 加载被中止',
+        2: 'MEDIA_ERR_NETWORK - 网络错误',
+        3: 'MEDIA_ERR_DECODE - 解码错误',
+        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - 不支持的音频格式或源',
+      };
+      
+      console.error('Audio loading error:', {
+        ...errorDetails,
+        errorType: error?.code ? errorMessages[error.code] : 'Unknown error',
+      });
+      
+      setHasError(true);
+      setIsPlaying(false);
+    };
+
+    const handleLoadedMetadata = () => {
+      setHasError(false);
+    };
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('pause', handlePause);
+    audio.addEventListener('play', handlePlay);
+    audio.addEventListener('error', handleError);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('pause', handlePause);
+      audio.removeEventListener('play', handlePlay);
+      audio.removeEventListener('error', handleError);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, []);
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -300,52 +411,244 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
       ) : isSkeleton ? (
         <MediaSkeleton />
       ) : (
-        <>
-          {/* 可拖拽区域 - 标题和艺术家 */}
-          <div style={{ flex: 1, minHeight: 0 }}>
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'linear-gradient(135deg, #252525 0%, #1e1e1e 50%, #181818 100%)',
+            overflow: 'hidden',
+          }}
+        >
+          {/* 纹理叠加 */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              opacity: 0.3,
+              backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 0%, transparent 70%)',
+            }}
+          />
+
+          {/* 环境光晕 */}
+          <div
+            style={{
+              position: 'absolute',
+              width: 128,
+              height: 128,
+              borderRadius: '50%',
+              filter: 'blur(48px)',
+              background: isPlaying ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)',
+              transform: isPlaying ? 'scale(1.1)' : 'scale(1)',
+              transition: 'all 0.7s ease',
+            }}
+          />
+
+          {/* 紧凑的中心布局 */}
+          <div
+            style={{
+              position: 'relative',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 16,
+            }}
+          >
+            {/* 波形 */}
             <div
               style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: '#333',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'flex-end',
+                justifyContent: 'center',
+                gap: 2,
+                height: 28,
               }}
             >
-              🎵 {nodeData.title || '音频文件'}
+              {defaultWaveformHeights.map((h, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: 2,
+                    height: h,
+                    borderRadius: 1,
+                    background: 'rgba(255,255,255,0.5)',
+                    transformOrigin: 'bottom',
+                    ...(isPlaying ? {
+                      animationName: 'wave',
+                      animationDuration: '1.5s',
+                      animationTimingFunction: 'ease-in-out',
+                      animationIterationCount: 'infinite',
+                      animationDelay: `${i * 50}ms`,
+                    } : {}),
+                  }}
+                />
+              ))}
             </div>
-            {nodeData.artist && (
+
+            {/* 圆形进度容器 */}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {/* 脉冲环动画 */}
+              {isPlaying && (
+                <>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: 112,
+                      height: 112,
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      animationName: 'ping',
+                      animationDuration: '2s',
+                      animationTimingFunction: 'cubic-bezier(0, 0, 0.2, 1)',
+                      animationIterationCount: 'infinite',
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: 96,
+                      height: 96,
+                      borderRadius: '50%',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      animationName: 'ping',
+                      animationDuration: '2.5s',
+                      animationTimingFunction: 'cubic-bezier(0, 0, 0.2, 1)',
+                      animationIterationCount: 'infinite',
+                      animationDelay: '0.5s',
+                    }}
+                  />
+                </>
+              )}
+
+              {/* 进度环 SVG */}
+              <svg
+                style={{
+                  position: 'absolute',
+                  width: 80,
+                  height: 80,
+                  transform: 'rotate(-90deg)',
+                }}
+                viewBox="0 0 80 80"
+              >
+                {/* 背景圆 */}
+                <circle
+                  cx="40"
+                  cy="40"
+                  r="36"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.06)"
+                  strokeWidth="1.5"
+                />
+                {/* 进度弧 */}
+                <circle
+                  cx="40"
+                  cy="40"
+                  r="36"
+                  fill="none"
+                  stroke="rgba(255,255,255,0.5)"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 36}`}
+                  strokeDashoffset={`${2 * Math.PI * 36 * (1 - progress / 100)}`}
+                  style={{ transition: 'stroke-dashoffset 0.1s' }}
+                />
+              </svg>
+
+              {/* 播放/暂停按钮 - 使用 nodrag 防止拖拽冲突 */}
+              <button
+                className="nodrag nopan nowheel"
+                onClick={togglePlay}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                disabled={hasError || !nodeData.url}
+                style={{
+                  position: 'relative',
+                  zIndex: 10,
+                  display: 'flex',
+                  height: 56,
+                  width: 56,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '50%',
+                  transition: 'all 0.3s',
+                  border: hasError 
+                    ? '1px solid rgba(239, 68, 68, 0.3)' 
+                    : isPlaying 
+                      ? '1px solid rgba(255,255,255,0.2)' 
+                      : '1px solid rgba(255,255,255,0.1)',
+                  background: hasError
+                    ? 'rgba(239, 68, 68, 0.1)'
+                    : isPlaying 
+                      ? 'rgba(255,255,255,0.15)' 
+                      : 'rgba(255,255,255,0.05)',
+                  boxShadow: isPlaying ? '0 10px 15px -3px rgba(0,0,0,0.3)' : 'none',
+                  cursor: hasError || !nodeData.url ? 'not-allowed' : 'pointer',
+                  opacity: hasError || !nodeData.url ? 0.5 : 1,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isPlaying && !hasError && nodeData.url) {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isPlaying && !hasError && nodeData.url) {
+                    e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                    e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)';
+                  }
+                }}
+              >
+                {isPlaying ? (
+                  <Pause style={{ height: 20, width: 20, color: 'rgba(255,255,255,0.9)' }} />
+                ) : (
+                  <Play style={{ height: 20, width: 20, color: hasError ? 'rgba(239, 68, 68, 0.7)' : 'rgba(255,255,255,0.7)', marginLeft: 2 }} />
+                )}
+              </button>
+            </div>
+
+            {/* 音频名称和类型 */}
+            <div style={{ padding: '0 16px', textAlign: 'center' }}>
               <div
                 style={{
                   fontSize: 12,
-                  color: '#666',
+                  color: hasError ? 'rgba(239, 68, 68, 0.7)' : 'rgba(255,255,255,0.7)',
+                  fontWeight: 500,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
+                  maxWidth: nodeData.size.width - 32,
+                  letterSpacing: '0.025em',
                 }}
               >
-                {nodeData.artist}
+                {hasError ? '无法加载音频' : nodeData.title || '音频文件'}
               </div>
-            )}
+              <div
+                style={{
+                  marginTop: 4,
+                  fontSize: 10,
+                  color: hasError ? 'rgba(239, 68, 68, 0.5)' : 'rgba(255,255,255,0.3)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.1em',
+                }}
+              >
+                {hasError ? 'Error' : nodeData.artist || 'Audio'}
+              </div>
+            </div>
           </div>
-          {/* 音频控件 - 使用 nodrag 阻止拖拽 */}
-          <div
-            className="nodrag nopan nowheel"
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onMouseDownCapture={(e) => e.stopPropagation()}
-          >
+
+          {/* 隐藏的音频元素 */}
+          {nodeData.url && (
             <audio
+              ref={audioRef}
               src={nodeData.url}
-              autoPlay={nodeData.autoplay}
               loop={nodeData.loop}
-              controls
-              style={{
-                width: '100%',
-              }}
+              preload="metadata"
+              style={{ display: 'none' }}
             />
-          </div>
-        </>
+          )}
+        </div>
       )}
       {showToolbar && <QuickActionToolbar actions={quickActions} />}
     </div>

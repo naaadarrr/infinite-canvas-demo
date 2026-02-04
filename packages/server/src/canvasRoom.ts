@@ -71,6 +71,9 @@ export class CanvasRoom implements DurableObject {
     startY: 100,
   };
   private readonly externalCdnBaseUrl = 'https://dr1coeak04nbk.cloudfront.net';
+  private readonly mediaUrlEndpoint: string;
+  private readonly mediaUrlCacheTtlMs: number;
+  private readonly mediaUrlCache: Map<string, { url: string; expiresAt: number }> = new Map();
   
   // 旧快照配置(已废弃,保留用于迁移)
   private lastSnapshotSeq: number = 0;
@@ -100,6 +103,14 @@ export class CanvasRoom implements DurableObject {
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
     this.env = env;
+
+    this.mediaUrlEndpoint = env.MEDIA_URL_ENDPOINT || 'http://backend.topview.ai/s3/file/url';
+    if (env.MEDIA_URL_CACHE_TTL_MS) {
+      const ttl = parseInt(env.MEDIA_URL_CACHE_TTL_MS, 10);
+      this.mediaUrlCacheTtlMs = !Number.isNaN(ttl) && ttl > 0 ? ttl : 5 * 60 * 1000;
+    } else {
+      this.mediaUrlCacheTtlMs = 5 * 60 * 1000;
+    }
     
     // 从环境变量读取配置
     if (env.MAX_ROOM_USERS) {
@@ -301,6 +312,10 @@ export class CanvasRoom implements DurableObject {
           console.log(
             `[CanvasRoom] Restored from DO storage v${version}: ${storedData.nodes.length} nodes, seq ${this.seq}`
           );
+          // #region agent log
+          const nodesSample = storedData.nodes.slice(0,3).map((n:any)=>({id:n.id,type:n.type,url:n.url,poster:n.poster}));
+          fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:initialize:fromDOStorage',message:'Loaded nodes from DO Storage',data:{nodeCount:storedData.nodes.length,seq:this.seq,nodesSample},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
         } else {
           this.lastStateSource = 'do_storage';
           console.warn(
@@ -938,8 +953,12 @@ export class CanvasRoom implements DurableObject {
     console.log(
       `[CanvasRoom] External command received id=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
     );
+    // #region agent log
+    const nodesSampleExt = parsed.command.payload.nodes.slice(0,2).map((n:any)=>({taskId:n.taskId,mediaType:n.mediaType,status:n.status,result:n.result}));
+    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:handleExternalCommand',message:'External command received',data:{commandId:parsed.command.id,type:parsed.command.type,nodeCount:parsed.command.payload.nodes.length,nodesSample:nodesSampleExt},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
 
-    const result = this.applyExternalCommand(parsed.command);
+    const result = await this.applyExternalCommand(parsed.command);
     console.log(
       `[CanvasRoom] External command result id=${parsed.command.id} status=${result.status} created=${result.created} updated=${result.updated} deleted=${result.deleted} ignored=${result.ignored} seq=${result.seq}`
     );
@@ -1202,7 +1221,7 @@ export class CanvasRoom implements DurableObject {
     }
   }
 
-  private applyExternalCommand(command: ExternalCommandEnvelope) {
+  private async applyExternalCommand(command: ExternalCommandEnvelope) {
     const now = Date.now();
     this.pruneCommandIds(now);
     this.pruneTombstones(now);
@@ -1250,7 +1269,7 @@ export class CanvasRoom implements DurableObject {
           }
 
           const nodeId = this.getTaskNodeId(item.taskId);
-          const createdNode = this.buildNodeFromTaskItem(item, nodeId, source);
+          const createdNode = await this.buildNodeFromTaskItem(item, nodeId, source);
           if (!createdNode) {
             summary.ignored += 1;
             continue;
@@ -1287,12 +1306,16 @@ export class CanvasRoom implements DurableObject {
 
           const existingRaw = (existing as CanvasNodeData & { raw?: BoardTaskItem }).raw;
           const mergedRaw = this.mergeTaskItem(existingRaw, item);
-          if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw)) {
+          const normalizedType = this.resolveTaskNodeType(item.mediaType, existing);
+          const shouldRefreshMedia = normalizedType
+            ? this.shouldRefreshMedia(existing, normalizedType)
+            : false;
+          if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw) && !shouldRefreshMedia) {
             summary.ignored += 1;
             continue;
           }
 
-          const updates = this.buildTaskItemUpdates(mergedRaw, existing, source);
+          const updates = await this.buildTaskItemUpdates(mergedRaw, existing, source);
           if (!updates || Object.keys(updates).length === 0) {
             summary.ignored += 1;
             continue;
@@ -1356,7 +1379,11 @@ export class CanvasRoom implements DurableObject {
     return summary;
   }
 
-  private buildNodeFromTaskItem(item: BoardTaskItem, nodeId: string, source: string): CanvasNodeData | null {
+  private async buildNodeFromTaskItem(
+    item: BoardTaskItem,
+    nodeId: string,
+    source: string
+  ): Promise<CanvasNodeData | null> {
     const normalizedType = this.normalizeTaskMediaType(item.mediaType);
     if (!normalizedType) {
       return null;
@@ -1364,7 +1391,7 @@ export class CanvasRoom implements DurableObject {
 
     const size = this.getTaskDefaultSize(item, normalizedType);
     const position = this.nextAutoPosition(size);
-    const derived = this.buildTaskNodeData(item, normalizedType);
+    const derived = await this.buildTaskNodeData(item, normalizedType);
 
     return ({
       id: nodeId,
@@ -1385,17 +1412,17 @@ export class CanvasRoom implements DurableObject {
     } as unknown) as CanvasNodeData;
   }
 
-  private buildTaskItemUpdates(
+  private async buildTaskItemUpdates(
     item: BoardTaskItem,
     existing: CanvasNodeData,
     source: string
-  ): Partial<CanvasNodeData> | null {
+  ): Promise<Partial<CanvasNodeData> | null> {
     const normalizedType = this.resolveTaskNodeType(item.mediaType, existing);
     if (!normalizedType) {
       return null;
     }
 
-    const derived = this.buildTaskNodeData(item, normalizedType);
+    const derived = await this.buildTaskNodeData(item, normalizedType);
     const updates: Partial<CanvasNodeData> = {
       raw: item,
       taskId: item.taskId,
@@ -1412,6 +1439,15 @@ export class CanvasRoom implements DurableObject {
       updates.type = normalizedType;
     }
 
+    // 自动修正音频节点尺寸为 300x300 正方形（迁移逻辑）
+    if (normalizedType === NodeType.AUDIO && existing.size) {
+      const { width, height } = existing.size;
+      // 如果尺寸不是 300x300，则修正
+      if (width !== 300 || height !== 300) {
+        updates.size = { width: 300, height: 300 };
+      }
+    }
+
     for (const [key, value] of Object.entries(derived)) {
       if (!this.isDeepEqual((existing as Record<string, unknown>)[key], value)) {
         (updates as Record<string, unknown>)[key] = value;
@@ -1421,23 +1457,35 @@ export class CanvasRoom implements DurableObject {
     return updates;
   }
 
-  private buildTaskNodeData(item: BoardTaskItem, type: NodeType): Partial<CanvasNodeData> {
+  private async buildTaskNodeData(
+    item: BoardTaskItem,
+    type: NodeType
+  ): Promise<Partial<CanvasNodeData>> {
     const result = item.result ?? undefined;
+
+    // #region agent log
+    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:buildTaskNodeData',message:'Building task node data',data:{taskId:item.taskId,type,hasResult:!!result,originVideo:result?.originVideo,originImage:result?.originImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+    // #endregion
 
     switch (type) {
       case NodeType.IMAGE: {
-        const url = this.resolveMediaUrlFrom([result?.originImage, result?.compressedImage]) ?? '';
+        const url =
+          (await this.resolveMediaUrlFrom([result?.originImage, result?.compressedImage])) ?? '';
         return { url };
       }
       case NodeType.VIDEO: {
-        const url = this.resolveMediaUrlFrom([result?.originVideo, result?.originImage]) ?? '';
+        const url =
+          (await this.resolveMediaUrlFrom([result?.originVideo, result?.originImage])) ?? '';
         const poster =
-          this.resolveCoverUrl(result?.originVideo) ??
-          this.resolveCoverUrl(result?.originImage);
+          (await this.resolveCoverUrl(result?.originVideo)) ??
+          (await this.resolveCoverUrl(result?.originImage));
+        // #region agent log
+        fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:buildTaskNodeData:VIDEO',message:'Video node data built',data:{taskId:item.taskId,url,poster,hasOriginVideo:!!result?.originVideo,hasOriginImage:!!result?.originImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
+        // #endregion
         return { url, poster, loop: true, muted: true };
       }
       case NodeType.AUDIO: {
-        const url = this.resolveMediaUrl(result?.originAudio) ?? '';
+        const url = (await this.resolveMediaUrl(result?.originAudio)) ?? '';
         const title =
           this.resolveTitle(item.parameters?.fileName) ??
           this.resolveTitle(item.title) ??
@@ -1516,7 +1564,11 @@ export class CanvasRoom implements DurableObject {
 
   private getTaskDefaultSize(item: BoardTaskItem, type: NodeType): Size {
     const { nodeWidth, nodeHeight } = this.externalLayoutConfig;
-    if (type === NodeType.AUDIO || type === NodeType.TEXT) {
+    if (type === NodeType.AUDIO) {
+      // 音频节点固定为 300x300 正方形
+      return { width: 300, height: 300 };
+    }
+    if (type === NodeType.TEXT) {
       return { width: nodeWidth, height: 120 };
     }
 
@@ -1546,9 +1598,18 @@ export class CanvasRoom implements DurableObject {
     return { width: nodeHeight * aspectRatio, height: nodeHeight };
   }
 
-  private resolveMediaUrl(resource?: MediaResourceInfo): string | undefined {
+  private async resolveMediaUrl(resource?: MediaResourceInfo): Promise<string | undefined> {
+    // #region agent log
+    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveMediaUrl',message:'Resolving media URL',data:{hasResource:!!resource,filePath:resource?.filePath,url:resource?.url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
+    // #endregion
     if (!resource) {
       return undefined;
+    }
+    if (resource.filePath) {
+      const signedUrl = await this.resolveSignedUrl(resource.filePath);
+      if (signedUrl) {
+        return signedUrl;
+      }
     }
     if (resource.url) {
       return this.resolveUrl(resource.url);
@@ -1556,9 +1617,11 @@ export class CanvasRoom implements DurableObject {
     return this.resolveUrl(resource.filePath);
   }
 
-  private resolveMediaUrlFrom(resources: Array<MediaResourceInfo | undefined>): string | undefined {
+  private async resolveMediaUrlFrom(
+    resources: Array<MediaResourceInfo | undefined>
+  ): Promise<string | undefined> {
     for (const resource of resources) {
-      const url = this.resolveMediaUrl(resource);
+      const url = await this.resolveMediaUrl(resource);
       if (url) {
         return url;
       }
@@ -1566,11 +1629,101 @@ export class CanvasRoom implements DurableObject {
     return undefined;
   }
 
-  private resolveCoverUrl(resource?: MediaResourceInfo): string | undefined {
-    if (!resource?.coverPath) {
+  private async resolveCoverUrl(resource?: MediaResourceInfo): Promise<string | undefined> {
+    // #region agent log
+    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveCoverUrl',message:'Resolving cover URL',data:{hasResource:!!resource,coverPath:resource?.coverPath,coverUrl:resource?.coverUrl,filePath:resource?.filePath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
+    // #endregion
+    if (!resource) {
       return undefined;
     }
-    return this.resolveUrl(resource.coverPath);
+    if (resource.coverPath) {
+      const signedUrl = await this.resolveSignedUrl(resource.coverPath);
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveCoverUrl:afterSignedUrl',message:'After resolveSignedUrl for coverPath',data:{coverPath:resource.coverPath,signedUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
+      // #endregion
+      if (signedUrl) {
+        return signedUrl;
+      }
+    }
+    if (!resource.coverUrl) {
+      return undefined;
+    }
+    return this.resolveUrl(resource.coverUrl);
+  }
+
+  private getCachedMediaUrl(filePath: string): string | undefined {
+    const entry = this.mediaUrlCache.get(filePath);
+    if (!entry) {
+      return undefined;
+    }
+    if (Date.now() > entry.expiresAt) {
+      this.mediaUrlCache.delete(filePath);
+      return undefined;
+    }
+    return entry.url;
+  }
+
+  private async resolveSignedUrl(filePath: string): Promise<string | undefined> {
+    // #region agent log
+    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:entry',message:'Entry resolveSignedUrl',data:{filePath,isAbsoluteUrl:ABSOLUTE_URL_PATTERN.test(filePath||''),mediaUrlEndpoint:this.mediaUrlEndpoint},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
+    // #endregion
+    if (!filePath) {
+      return undefined;
+    }
+    if (ABSOLUTE_URL_PATTERN.test(filePath)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:absoluteUrl',message:'filePath is already absolute URL, returning as-is',data:{filePath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      return filePath;
+    }
+    const cached = this.getCachedMediaUrl(filePath);
+    if (cached) {
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:cached',message:'Returning cached URL',data:{filePath,cached},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      return cached;
+    }
+    try {
+      const url = new URL(this.mediaUrlEndpoint);
+      url.searchParams.set('filePath', filePath);
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:beforeFetch',message:'About to fetch from backend API',data:{filePath,fetchUrl:url.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      const response = await fetch(url.toString(), { method: 'GET' });
+      if (!response.ok) {
+        console.warn('[CanvasRoom] resolveSignedUrl bad response', {
+          filePath,
+          status: response.status,
+        });
+        // #region agent log
+        fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:badResponse',message:'Backend API returned bad response',data:{filePath,status:response.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+        return undefined;
+      }
+      const data = (await response.json()) as {
+        code?: string | number;
+        result?: { fileUrl?: string };
+      };
+      const fileUrl = data?.result?.fileUrl;
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:afterFetch',message:'Backend API response received',data:{filePath,code:data?.code,fileUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      if (typeof fileUrl !== 'string' || fileUrl.length === 0) {
+        console.warn('[CanvasRoom] resolveSignedUrl missing fileUrl', { filePath, code: data?.code });
+        return undefined;
+      }
+      this.mediaUrlCache.set(filePath, {
+        url: fileUrl,
+        expiresAt: Date.now() + this.mediaUrlCacheTtlMs,
+      });
+      return fileUrl;
+    } catch (error) {
+      console.warn('[CanvasRoom] resolveSignedUrl failed', { filePath, error });
+      // #region agent log
+      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:error',message:'Backend API fetch failed',data:{filePath,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      return undefined;
+    }
   }
 
   private resolveUrl(value?: string): string | undefined {
@@ -1593,6 +1746,51 @@ export class CanvasRoom implements DurableObject {
     }
     const trimmed = value.trim();
     return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  private shouldRefreshUrl(url?: string): boolean {
+    if (!url) {
+      return true;
+    }
+    if (!ABSOLUTE_URL_PATTERN.test(url)) {
+      return true;
+    }
+    const expiresAt = this.getUrlExpiresAt(url);
+    if (!expiresAt) {
+      return false;
+    }
+    return Date.now() + 30_000 >= expiresAt;
+  }
+
+  private getUrlExpiresAt(url: string): number | undefined {
+    if (!ABSOLUTE_URL_PATTERN.test(url)) {
+      return undefined;
+    }
+    try {
+      const parsed = new URL(url);
+      const expires = parsed.searchParams.get('Expires');
+      if (!expires) {
+        return undefined;
+      }
+      const seconds = Number(expires);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        return undefined;
+      }
+      return seconds * 1000;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  private shouldRefreshMedia(node: CanvasNodeData, type: NodeType): boolean {
+    if (type === NodeType.IMAGE) {
+      return this.shouldRefreshUrl((node as CanvasNodeData & { url?: string }).url);
+    }
+    if (type === NodeType.VIDEO) {
+      const video = node as CanvasNodeData & { url?: string; poster?: string };
+      return this.shouldRefreshUrl(video.url) || this.shouldRefreshUrl(video.poster);
+    }
+    return false;
   }
 
   private resolveAspectRatioFromParameters(parameters?: BoardTaskItem['parameters']): number | undefined {

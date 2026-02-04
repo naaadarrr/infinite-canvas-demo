@@ -239,6 +239,11 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   };
 
   React.useEffect(() => {
+    if (!nodeData.url) {
+      setIsPlaying(false);
+      return undefined;
+    }
+
     const video = videoRef.current;
     if (!video) {
       return undefined;
@@ -247,6 +252,9 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
+
+    // Sync initial state for videos that mount after a task finishes.
+    setIsPlaying(!video.paused && !video.ended);
 
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
@@ -257,7 +265,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
     };
-  }, []);
+  }, [nodeData.url]);
 
   // 视频预加载 - 获得URL后立即开始下载
   React.useEffect(() => {

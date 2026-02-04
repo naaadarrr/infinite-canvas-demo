@@ -2011,6 +2011,7 @@ export function CollaborativeCanvas({
         </div>
         {contextMenu && canEdit && (
           <div
+            className="widget-context-menu"
             style={{
               position: 'fixed',
               left: contextMenu.x,
@@ -2025,6 +2026,30 @@ export function CollaborativeCanvas({
             }}
             onClick={(event) => event.stopPropagation()}
           >
+            <style>
+              {`
+                .widget-context-menu .widget-context-item {
+                  width: 100%;
+                  text-align: left;
+                  padding: 8px 10px;
+                  border: none;
+                  background: transparent;
+                  cursor: pointer;
+                  font-size: 13px;
+                  border-radius: 8px;
+                  transition: background-color 120ms ease;
+                }
+                .widget-context-menu .widget-context-item:disabled {
+                  cursor: not-allowed;
+                }
+                .widget-context-menu .widget-context-item:not(:disabled):hover {
+                  background: rgba(255, 255, 255, 0.08);
+                }
+                .widget-context-menu .widget-context-item.danger:not(:disabled):hover {
+                  background: rgba(239, 68, 68, 0.16);
+                }
+              `}
+            </style>
             {(() => {
               const targetNode = nodesRef.current.find((node) => node.id === contextMenu.nodeId);
               const raw = (targetNode as CanvasNodeData & { raw?: RawDataItem } | undefined)?.raw;
@@ -2037,16 +2062,10 @@ export function CollaborativeCanvas({
                     <>
                       <button
                         type="button"
+                        className="widget-context-item"
                         disabled={layerInfo.isTop}
                         onClick={() => applyLayerAction(contextMenu.nodeId, 'forward')}
                         style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
-                          fontSize: 13,
                           color: layerInfo.isTop ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
@@ -2054,16 +2073,10 @@ export function CollaborativeCanvas({
                       </button>
                       <button
                         type="button"
+                        className="widget-context-item"
                         disabled={layerInfo.isBottom}
                         onClick={() => applyLayerAction(contextMenu.nodeId, 'backward')}
                         style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
-                          fontSize: 13,
                           color: layerInfo.isBottom ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
@@ -2071,16 +2084,10 @@ export function CollaborativeCanvas({
                       </button>
                       <button
                         type="button"
+                        className="widget-context-item"
                         disabled={layerInfo.isTop}
                         onClick={() => applyLayerAction(contextMenu.nodeId, 'front')}
                         style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: layerInfo.isTop ? 'not-allowed' : 'pointer',
-                          fontSize: 13,
                           color: layerInfo.isTop ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
@@ -2088,16 +2095,10 @@ export function CollaborativeCanvas({
                       </button>
                       <button
                         type="button"
+                        className="widget-context-item"
                         disabled={layerInfo.isBottom}
                         onClick={() => applyLayerAction(contextMenu.nodeId, 'back')}
                         style={{
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '8px 10px',
-                          border: 'none',
-                          background: 'transparent',
-                          cursor: layerInfo.isBottom ? 'not-allowed' : 'pointer',
-                          fontSize: 13,
                           color: layerInfo.isBottom ? FLOW_UI.panelTextDisabled : FLOW_UI.panelText,
                         }}
                       >
@@ -2114,15 +2115,9 @@ export function CollaborativeCanvas({
                   )}
                   <button
                     type="button"
+                    className="widget-context-item danger"
                     onClick={handleDeleteNode}
                     style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '8px 10px',
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      fontSize: 13,
                       color: FLOW_UI.danger,
                     }}
                   >

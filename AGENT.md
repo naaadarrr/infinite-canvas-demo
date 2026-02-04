@@ -24,6 +24,31 @@
 - State includes version number for forward compatibility
 - Legacy R2+D1 data is migrated once on first DO init
 
+## Widget Delete / TextNode 规则（避免“过度修改”导致回归）
+
+### 删除是“两段式确认”流程（UI 不直接删）
+- 画布侧（packages/widget）删除一律先 `widgetBridge.emit('NODE_DELETE_REQUEST', ...)`
+- **宿主页面（apps/demo 或业务方）必须监听** `NODE_DELETE_REQUEST`，完成自身业务校验/弹窗后调用 `widgetBridge.command('NODE_DELETE_CONFIRM', { nodeId })`
+- 画布侧收到 `NODE_DELETE_CONFIRM` 才会真正把节点从 `nodes` 移除
+- 协作同步依赖“本地节点列表变更”：
+  - `InfiniteCanvas` 删除 → 触发 `onNodesChange` → `CollaborativeCanvas.handleNodesChange` 检测到删除 → `collab.deleteNode(...)` 发给服务端
+- 因此：如果“右键 Delete / 键盘 Delete 不生效”，优先检查宿主页面是否漏了 `NODE_DELETE_REQUEST` → `NODE_DELETE_CONFIRM`
+
+### TextNode 删除触发条件（保持一致）
+- TextNode 通过 `onNodeDataChange(id, { _delete: true })` 请求删除
+- 空文本删除判断必须使用“当前输入值”而不是依赖可能延迟的 state：
+  - blur 时用 `event.currentTarget.value`
+  - Delete/Backspace 时可在 textarea `onKeyDown` 中对空值触发删除
+- 编辑态 textarea 应 `preventDefault` 原生右键菜单，避免遮挡画布右键菜单（删除入口）
+
+### TextNode 背景色（透明）同步规则
+- 透明背景必须使用显式值：`backgroundColor: 'transparent'`
+- 不要用 `undefined` 代表透明（会导致 patch 序列化/合并时丢字段，协作不同步）
+
+### Debug 日志策略（不引入 Node 类型依赖）
+- 包内不要直接使用 `process.env.NODE_ENV`（dts 构建可能无 Node typings）
+- 需要 dev-only 日志时统一用 `packages/widget/src/utils/env.ts` 的 `isDev()` 包裹
+
 ## Monorepo 结构（pnpm workspace）
 
 /

@@ -27,6 +27,25 @@ const FLOW_UI = {
   danger: '#ef4444',
 };
 
+const normalizeAudioNodeSize = (node: CanvasNodeData): { node: CanvasNodeData; changed: boolean } => {
+  if (node.type !== NodeType.AUDIO) {
+    return { node, changed: false };
+  }
+  const width = node.size?.width;
+  const height = node.size?.height;
+  if (!width || !height || width === height) {
+    return { node, changed: false };
+  }
+  const side = Math.max(width, height);
+  return {
+    node: {
+      ...node,
+      size: { width: side, height: side },
+    },
+    changed: true,
+  };
+};
+
 type SubCanvasInfo = {
   id: string;
   status: 'unread' | 'read';
@@ -100,9 +119,9 @@ export function CollaborativeCanvas({
   );
   const seedNodes = useMemo(() => {
     if (rawData !== undefined) {
-      return parseRawData(rawData, resolvedLayout);
+      return parseRawData(rawData, resolvedLayout).map((node) => normalizeAudioNodeSize(node).node);
     }
-    return seedNodesProp ?? [];
+    return (seedNodesProp ?? []).map((node) => normalizeAudioNodeSize(node).node);
   }, [rawData, resolvedLayout, seedNodesProp]);
   const userId = useMemo(
     () => userIdProp ?? `user_${Math.random().toString(36).slice(2, 8)}`,
@@ -190,6 +209,31 @@ export function CollaborativeCanvas({
     const hash = Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
     return palette[hash % palette.length];
   }, [userId]);
+  const pushImmediateUpdates = useCallback(
+    (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => {
+      if (!canEdit || updates.length === 0) {
+        return;
+      }
+      const collab = collabRef.current;
+      if (!collab) {
+        return;
+      }
+      const now = Date.now();
+      updates.forEach((update) => {
+        localOperatingNodesRef.current.set(update.nodeId, now);
+      });
+      collab.updateNodes(updates, true);
+      setTimeout(() => {
+        updates.forEach((update) => {
+          const timestamp = localOperatingNodesRef.current.get(update.nodeId);
+          if (timestamp === now) {
+            localOperatingNodesRef.current.delete(update.nodeId);
+          }
+        });
+      }, 100);
+    },
+    [canEdit]
+  );
 
   const resolvePresenceCursor = useCallback((presence: UserPresence) => {
     if (!presence.cursor) {
@@ -616,8 +660,9 @@ export function CollaborativeCanvas({
       if (newNodes.length === 0) {
         return;
       }
+      const normalizedNodes = newNodes.map((node) => normalizeAudioNodeSize(node).node);
       if (collabEnabled) {
-        const tempNodes = newNodes.map((node) => ({
+        const tempNodes = normalizedNodes.map((node) => ({
           ...node,
           id: `temp_${node.id}`,
         }));
@@ -628,7 +673,7 @@ export function CollaborativeCanvas({
         });
         return;
       }
-      setNodes((prevNodes) => [...prevNodes, ...newNodes]);
+      setNodes((prevNodes) => [...prevNodes, ...normalizedNodes]);
     },
     [collabEnabled]
   );
@@ -678,7 +723,18 @@ export function CollaborativeCanvas({
           
           if (message.nodes.length > 0) {
             seededRef.current = true;
-            setNodes(message.nodes as CanvasNodeData[]);
+            const sizeUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+            const normalizedNodes = (message.nodes as CanvasNodeData[]).map((node) => {
+              const { node: normalizedNode, changed } = normalizeAudioNodeSize(node);
+              if (changed) {
+                sizeUpdates.push({ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } });
+              }
+              return normalizedNode;
+            });
+            setNodes(normalizedNodes);
+            if (sizeUpdates.length > 0) {
+              pushImmediateUpdates(sizeUpdates);
+            }
           } else {
             // 如果本地已经有数据,不要清空
             // 只在首次连接且房间为空时才初始化
@@ -698,46 +754,70 @@ export function CollaborativeCanvas({
           break;
 
         case 'node_created':
-          if (message.tempId) {
-            idMapRef.current.set(message.tempId, message.node.id);
-          }
-          setNodes((prevNodes) => {
+          {
+            const { node: normalizedNode, changed } = normalizeAudioNodeSize(
+              message.node as CanvasNodeData
+            );
+            if (changed) {
+              pushImmediateUpdates([{ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } }]);
+            }
             if (message.tempId) {
-              const hasTemp = prevNodes.some((node) => node.id === message.tempId);
-              if (hasTemp) {
-                return prevNodes.map((node) =>
-                  node.id === message.tempId ? (message.node as CanvasNodeData) : node
-                );
+              idMapRef.current.set(message.tempId, message.node.id);
+            }
+            setNodes((prevNodes) => {
+              if (message.tempId) {
+                const hasTemp = prevNodes.some((node) => node.id === message.tempId);
+                if (hasTemp) {
+                  return prevNodes.map((node) =>
+                    node.id === message.tempId ? normalizedNode : node
+                  );
+                }
               }
-            }
-            if (prevNodes.some((node) => node.id === message.node.id)) {
-              return prevNodes;
-            }
-            return [...prevNodes, message.node as CanvasNodeData];
-          });
-          break;
+              if (prevNodes.some((node) => node.id === normalizedNode.id)) {
+                return prevNodes;
+              }
+              return [...prevNodes, normalizedNode];
+            });
+            break;
+          }
 
         case 'node_updated':
           // 如果更新来自当前用户自己,完全跳过处理(避免回显造成抖动)
           if (message.userId && message.userId === userId) {
             break;
           }
-          setNodes((prevNodes) =>
-            prevNodes.map((node) => {
-              if (node.id === message.nodeId) {
-                return { ...node, ...(message.updates as Partial<CanvasNodeData>) } as CanvasNodeData;
-              }
-              const mappedId = idMapRef.current.get(node.id);
-              if (mappedId && mappedId === message.nodeId) {
-                return {
-                  ...node,
-                  id: message.nodeId,
-                  ...(message.updates as Partial<CanvasNodeData>),
-                } as CanvasNodeData;
-              }
-              return node;
-            })
-          );
+          {
+            const sizeUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+            setNodes((prevNodes) =>
+              prevNodes.map((node) => {
+                if (node.id === message.nodeId) {
+                  const merged = { ...node, ...(message.updates as Partial<CanvasNodeData>) } as CanvasNodeData;
+                  const { node: normalizedNode, changed } = normalizeAudioNodeSize(merged);
+                  if (changed) {
+                    sizeUpdates.push({ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } });
+                  }
+                  return normalizedNode;
+                }
+                const mappedId = idMapRef.current.get(node.id);
+                if (mappedId && mappedId === message.nodeId) {
+                  const merged = {
+                    ...node,
+                    id: message.nodeId,
+                    ...(message.updates as Partial<CanvasNodeData>),
+                  } as CanvasNodeData;
+                  const { node: normalizedNode, changed } = normalizeAudioNodeSize(merged);
+                  if (changed) {
+                    sizeUpdates.push({ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } });
+                  }
+                  return normalizedNode;
+                }
+                return node;
+              })
+            );
+            if (sizeUpdates.length > 0) {
+              pushImmediateUpdates(sizeUpdates);
+            }
+          }
           break;
 
         case 'nodes_updated':
@@ -760,32 +840,48 @@ export function CollaborativeCanvas({
             break;
           }
           
-          setNodes((prevNodes) => {
-            const updateMap = new Map(
-              filteredUpdates.map((update) => [update.nodeId, update.updates])
-            );
-            
-            const nextNodes = prevNodes.map((node) => {
-              const directUpdate = updateMap.get(node.id);
-              if (directUpdate) {
-                return { ...node, ...(directUpdate as Partial<CanvasNodeData>) } as CanvasNodeData;
-              }
-              const mappedId = idMapRef.current.get(node.id);
-              if (mappedId) {
-                const mappedUpdate = updateMap.get(mappedId);
-                if (mappedUpdate) {
-                  return {
-                    ...node,
-                    id: mappedId,
-                    ...(mappedUpdate as Partial<CanvasNodeData>),
-                  } as CanvasNodeData;
+          {
+            const sizeUpdates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+            setNodes((prevNodes) => {
+              const updateMap = new Map(
+                filteredUpdates.map((update) => [update.nodeId, update.updates])
+              );
+              
+              const nextNodes = prevNodes.map((node) => {
+                const directUpdate = updateMap.get(node.id);
+                if (directUpdate) {
+                  const merged = { ...node, ...(directUpdate as Partial<CanvasNodeData>) } as CanvasNodeData;
+                  const { node: normalizedNode, changed } = normalizeAudioNodeSize(merged);
+                  if (changed) {
+                    sizeUpdates.push({ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } });
+                  }
+                  return normalizedNode;
                 }
-              }
-              return node;
+                const mappedId = idMapRef.current.get(node.id);
+                if (mappedId) {
+                  const mappedUpdate = updateMap.get(mappedId);
+                  if (mappedUpdate) {
+                    const merged = {
+                      ...node,
+                      id: mappedId,
+                      ...(mappedUpdate as Partial<CanvasNodeData>),
+                    } as CanvasNodeData;
+                    const { node: normalizedNode, changed } = normalizeAudioNodeSize(merged);
+                    if (changed) {
+                      sizeUpdates.push({ nodeId: normalizedNode.id, updates: { size: normalizedNode.size } });
+                    }
+                    return normalizedNode;
+                  }
+                }
+                return node;
+              });
+              
+              return nextNodes;
             });
-            
-            return nextNodes;
-          });
+            if (sizeUpdates.length > 0) {
+              pushImmediateUpdates(sizeUpdates);
+            }
+          }
           break;
 
         case 'node_deleted':
@@ -828,7 +924,7 @@ export function CollaborativeCanvas({
           break;
       }
     },
-    [pushToast, seedCanvas, userId]
+    [pushImmediateUpdates, pushToast, seedCanvas, userId]
   );
 
   const collab = useCollaboration(

@@ -312,10 +312,6 @@ export class CanvasRoom implements DurableObject {
           console.log(
             `[CanvasRoom] Restored from DO storage v${version}: ${storedData.nodes.length} nodes, seq ${this.seq}`
           );
-          // #region agent log
-          const nodesSample = storedData.nodes.slice(0,3).map((n:any)=>({id:n.id,type:n.type,url:n.url,poster:n.poster}));
-          fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:initialize:fromDOStorage',message:'Loaded nodes from DO Storage',data:{nodeCount:storedData.nodes.length,seq:this.seq,nodesSample},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
         } else {
           this.lastStateSource = 'do_storage';
           console.warn(
@@ -533,11 +529,14 @@ export class CanvasRoom implements DurableObject {
       `[CanvasRoom] User ${userId} joined canvas ${this.canvasId} (state source: ${this.lastStateSource}, invisible: ${invisible || false})`
     );
 
+    // 刷新所有节点的媒体 URL（签名 URL 可能已过期）
+    const refreshedNodes = await this.refreshAllNodesMediaUrls();
+
     // 发送完整状态同步
     const syncMessage: SyncStateMessage = {
       type: MessageType.SYNC_STATE,
       seq: this.seq,
-      nodes: Array.from(this.nodes.values()),
+      nodes: refreshedNodes,
       presences: Object.fromEntries(this.presences),
       lockedNodes: Object.fromEntries(this.lockedNodes),
     };
@@ -953,10 +952,6 @@ export class CanvasRoom implements DurableObject {
     console.log(
       `[CanvasRoom] External command received id=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
     );
-    // #region agent log
-    const nodesSampleExt = parsed.command.payload.nodes.slice(0,2).map((n:any)=>({taskId:n.taskId,mediaType:n.mediaType,status:n.status,result:n.result}));
-    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:handleExternalCommand',message:'External command received',data:{commandId:parsed.command.id,type:parsed.command.type,nodeCount:parsed.command.payload.nodes.length,nodesSample:nodesSampleExt},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
 
     const result = await this.applyExternalCommand(parsed.command);
     console.log(
@@ -1463,10 +1458,6 @@ export class CanvasRoom implements DurableObject {
   ): Promise<Partial<CanvasNodeData>> {
     const result = item.result ?? undefined;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:buildTaskNodeData',message:'Building task node data',data:{taskId:item.taskId,type,hasResult:!!result,originVideo:result?.originVideo,originImage:result?.originImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-    // #endregion
-
     switch (type) {
       case NodeType.IMAGE: {
         const url =
@@ -1479,9 +1470,6 @@ export class CanvasRoom implements DurableObject {
         const poster =
           (await this.resolveCoverUrl(result?.originVideo)) ??
           (await this.resolveCoverUrl(result?.originImage));
-        // #region agent log
-        fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:buildTaskNodeData:VIDEO',message:'Video node data built',data:{taskId:item.taskId,url,poster,hasOriginVideo:!!result?.originVideo,hasOriginImage:!!result?.originImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'})}).catch(()=>{});
-        // #endregion
         return { url, poster, loop: true, muted: true };
       }
       case NodeType.AUDIO: {
@@ -1599,9 +1587,6 @@ export class CanvasRoom implements DurableObject {
   }
 
   private async resolveMediaUrl(resource?: MediaResourceInfo): Promise<string | undefined> {
-    // #region agent log
-    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveMediaUrl',message:'Resolving media URL',data:{hasResource:!!resource,filePath:resource?.filePath,url:resource?.url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
-    // #endregion
     if (!resource) {
       return undefined;
     }
@@ -1630,17 +1615,11 @@ export class CanvasRoom implements DurableObject {
   }
 
   private async resolveCoverUrl(resource?: MediaResourceInfo): Promise<string | undefined> {
-    // #region agent log
-    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveCoverUrl',message:'Resolving cover URL',data:{hasResource:!!resource,coverPath:resource?.coverPath,coverUrl:resource?.coverUrl,filePath:resource?.filePath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
-    // #endregion
     if (!resource) {
       return undefined;
     }
     if (resource.coverPath) {
       const signedUrl = await this.resolveSignedUrl(resource.coverPath);
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveCoverUrl:afterSignedUrl',message:'After resolveSignedUrl for coverPath',data:{coverPath:resource.coverPath,signedUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
-      // #endregion
       if (signedUrl) {
         return signedUrl;
       }
@@ -1664,40 +1643,25 @@ export class CanvasRoom implements DurableObject {
   }
 
   private async resolveSignedUrl(filePath: string): Promise<string | undefined> {
-    // #region agent log
-    fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:entry',message:'Entry resolveSignedUrl',data:{filePath,isAbsoluteUrl:ABSOLUTE_URL_PATTERN.test(filePath||''),mediaUrlEndpoint:this.mediaUrlEndpoint},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D'})}).catch(()=>{});
-    // #endregion
     if (!filePath) {
       return undefined;
     }
     if (ABSOLUTE_URL_PATTERN.test(filePath)) {
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:absoluteUrl',message:'filePath is already absolute URL, returning as-is',data:{filePath},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
       return filePath;
     }
     const cached = this.getCachedMediaUrl(filePath);
     if (cached) {
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:cached',message:'Returning cached URL',data:{filePath,cached},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       return cached;
     }
     try {
       const url = new URL(this.mediaUrlEndpoint);
       url.searchParams.set('filePath', filePath);
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:beforeFetch',message:'About to fetch from backend API',data:{filePath,fetchUrl:url.toString()},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       const response = await fetch(url.toString(), { method: 'GET' });
       if (!response.ok) {
         console.warn('[CanvasRoom] resolveSignedUrl bad response', {
           filePath,
           status: response.status,
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:badResponse',message:'Backend API returned bad response',data:{filePath,status:response.status},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         return undefined;
       }
       const data = (await response.json()) as {
@@ -1705,9 +1669,6 @@ export class CanvasRoom implements DurableObject {
         result?: { fileUrl?: string };
       };
       const fileUrl = data?.result?.fileUrl;
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:afterFetch',message:'Backend API response received',data:{filePath,code:data?.code,fileUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       if (typeof fileUrl !== 'string' || fileUrl.length === 0) {
         console.warn('[CanvasRoom] resolveSignedUrl missing fileUrl', { filePath, code: data?.code });
         return undefined;
@@ -1719,9 +1680,6 @@ export class CanvasRoom implements DurableObject {
       return fileUrl;
     } catch (error) {
       console.warn('[CanvasRoom] resolveSignedUrl failed', { filePath, error });
-      // #region agent log
-      fetch('http://127.0.0.1:7252/ingest/d8cf513e-55e6-425c-a0f3-19d785d97aee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'canvasRoom.ts:resolveSignedUrl:error',message:'Backend API fetch failed',data:{filePath,error:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
       return undefined;
     }
   }
@@ -1790,7 +1748,63 @@ export class CanvasRoom implements DurableObject {
       const video = node as CanvasNodeData & { url?: string; poster?: string };
       return this.shouldRefreshUrl(video.url) || this.shouldRefreshUrl(video.poster);
     }
+    if (type === NodeType.AUDIO) {
+      return this.shouldRefreshUrl((node as CanvasNodeData & { url?: string }).url);
+    }
     return false;
+  }
+
+  /**
+   * 刷新所有节点的媒体 URL
+   * 在发送数据给客户端之前调用，确保签名 URL 有效
+   */
+  private async refreshAllNodesMediaUrls(): Promise<CanvasNodeData[]> {
+    const nodes = Array.from(this.nodes.values());
+    const refreshedNodes: CanvasNodeData[] = [];
+
+    for (const node of nodes) {
+      const refreshedNode = await this.refreshNodeMediaUrls(node);
+      if (refreshedNode !== node) {
+        // 更新内存中的节点数据
+        this.nodes.set(node.id, refreshedNode);
+        this.markDirty();
+      }
+      refreshedNodes.push(refreshedNode);
+    }
+
+    return refreshedNodes;
+  }
+
+  /**
+   * 刷新单个节点的媒体 URL
+   * 每次都从 raw 数据重新解析 URL，确保签名 URL 有效
+   */
+  private async refreshNodeMediaUrls(node: CanvasNodeData): Promise<CanvasNodeData> {
+    const type = node.type;
+    if (!type) {
+      return node;
+    }
+
+    // 只处理需要媒体 URL 的节点类型
+    if (type !== NodeType.IMAGE && type !== NodeType.VIDEO && type !== NodeType.AUDIO) {
+      return node;
+    }
+
+    // 从 raw 数据重新解析 URL
+    const rawItem = (node as CanvasNodeData & { raw?: BoardTaskItem }).raw;
+    if (!rawItem) {
+      return node;
+    }
+
+    const derived = await this.buildTaskNodeData(rawItem, type);
+    
+    // 合并刷新后的数据
+    const refreshedNode = {
+      ...node,
+      ...derived,
+    } as CanvasNodeData;
+
+    return refreshedNode;
   }
 
   private resolveAspectRatioFromParameters(parameters?: BoardTaskItem['parameters']): number | undefined {

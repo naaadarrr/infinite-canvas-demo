@@ -398,8 +398,10 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
             )} */}
             <button
               type="button"
+              className="nodrag nopan nowheel"
               onClick={togglePlayback}
               onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.stopPropagation()}
               style={{
                 position: 'absolute',
                 left: '50%',

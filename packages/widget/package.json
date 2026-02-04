@@ -1,6 +1,6 @@
 {
   "name": "@tc/infinite-widget",
-  "version": "0.0.18",
+  "version": "0.0.19",
   "description": "React components for infinite canvas",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",

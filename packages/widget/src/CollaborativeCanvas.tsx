@@ -264,26 +264,37 @@ export function CollaborativeCanvas({
     return raw.taskId;
   }, []);
 
-  const getInputImagePath = useCallback((item?: BoardTaskItem) => {
+  const getInputImagePaths = useCallback((item?: BoardTaskItem): string[] => {
     if (!item) {
-      return null;
+      return [];
     }
     const inputImages = item.parameters?.inputImages;
     if (!Array.isArray(inputImages) || inputImages.length === 0) {
-      return null;
+      return [];
     }
+    const paths: string[] = [];
     const first = inputImages[0] as unknown;
     if (typeof first === 'string') {
-      return first;
+      paths.push(first);
+    } else if (first && typeof first === 'object') {
+      // 提取所有可能的输入路径标识
+      const obj = first as Record<string, unknown>;
+      const possibleKeys = ['inputImageS3Path', 'url', 'filePath', 'resourceId', 'path'];
+      possibleKeys.forEach((key) => {
+        const value = obj[key];
+        if (typeof value === 'string' && value.length > 0) {
+          paths.push(value);
+        }
+      });
     }
-    if (first && typeof first === 'object') {
-      const path = (first as { inputImageS3Path?: unknown }).inputImageS3Path;
-      if (typeof path === 'string') {
-        return path;
-      }
-    }
-    return null;
+    return paths;
   }, []);
+
+  // 保持向后兼容的单路径版本
+  const getInputImagePath = useCallback((item?: BoardTaskItem) => {
+    const paths = getInputImagePaths(item);
+    return paths.length > 0 ? paths[0] : null;
+  }, [getInputImagePaths]);
 
   const getNodeReferencePaths = useCallback(
     (node: CanvasNodeData) => {
@@ -298,10 +309,20 @@ export function CollaborativeCanvas({
           paths.push(value);
         }
       };
-      pushPath(result?.originImage?.filePath);
-      pushPath(result?.compressedImage?.filePath);
-      pushPath(result?.originVideo?.filePath);
-      pushPath(result?.originAudio?.filePath);
+      // 收集所有可能的输出路径标识（filePath, url, resourceId）
+      const resources = [
+        result?.originImage,
+        result?.compressedImage,
+        result?.originVideo,
+        result?.originAudio,
+      ];
+      resources.forEach((resource) => {
+        if (resource) {
+          pushPath(resource.filePath);
+          pushPath(resource.url);
+          pushPath(resource.resourceId);
+        }
+      });
       const inputPath = getInputImagePath(raw);
       if (inputPath) {
         paths.push(inputPath);
@@ -323,19 +344,35 @@ export function CollaborativeCanvas({
         paths.push(value);
       }
     };
-    pushPath(result?.originImage?.filePath);
-    pushPath(result?.compressedImage?.filePath);
-    pushPath(result?.originVideo?.filePath);
-    pushPath(result?.originAudio?.filePath);
+    // 收集所有可能的输出路径标识
+    const resources = [
+      result?.originImage,
+      result?.compressedImage,
+      result?.originVideo,
+      result?.originAudio,
+    ];
+    resources.forEach((resource) => {
+      if (resource) {
+        pushPath(resource.filePath);
+        pushPath(resource.url);
+        pushPath(resource.resourceId);
+      }
+    });
     return paths;
   }, []);
 
   const findAnchorNodeByInputPath = useCallback(
-    (inputPath: string, baseNodes: CanvasNodeData[]) => {
+    (inputPaths: string[], baseNodes: CanvasNodeData[]) => {
+      if (inputPaths.length === 0) {
+        return null;
+      }
       for (const node of baseNodes) {
-        const paths = getNodeReferencePaths(node);
-        if (paths.includes(inputPath)) {
-          return node;
+        const nodePaths = getNodeReferencePaths(node);
+        // 检查任意输入路径是否匹配节点的任意引用路径
+        for (const inputPath of inputPaths) {
+          if (nodePaths.includes(inputPath)) {
+            return node;
+          }
         }
       }
       return null;
@@ -1074,15 +1111,17 @@ export function CollaborativeCanvas({
     const anchoredGroups = new Map<string, { anchor: CanvasNodeData; items: BoardTaskItem[] }>();
     const fallbackItems: RawDataItem[] = [];
     pendingItems.forEach((item) => {
-      const inputPath = getInputImagePath(item);
-      if (inputPath) {
-        const anchor = findAnchorNodeByInputPath(inputPath, nodes);
+      const inputPaths = getInputImagePaths(item);
+      if (inputPaths.length > 0) {
+        const anchor = findAnchorNodeByInputPath(inputPaths, nodes);
         if (anchor) {
-          const existing = anchoredGroups.get(inputPath);
+          // 使用第一个输入路径作为分组键
+          const groupKey = inputPaths[0];
+          const existing = anchoredGroups.get(groupKey);
           if (existing) {
             existing.items.push(item);
           } else {
-            anchoredGroups.set(inputPath, { anchor, items: [item] });
+            anchoredGroups.set(groupKey, { anchor, items: [item] });
           }
           return;
         }
@@ -1143,7 +1182,7 @@ export function CollaborativeCanvas({
     ensureActiveSubCanvas,
     findAnchorNodeByInputPath,
     getAnchoredSubCanvas,
-    getInputImagePath,
+    getInputImagePaths,
     layoutDependentNodes,
     getRawTaskId,
     nodes,
@@ -1522,6 +1561,11 @@ export function CollaborativeCanvas({
     (event: React.MouseEvent, node: { id: string }) => {
       event.preventDefault();
       if (!canEdit || isLocked || toolMode !== 'edit') {
+        return;
+      }
+      // 多选模式下不提供右键菜单（右键菜单是针对单一节点的）
+      const selectedNodes = nodesRef.current.filter((item) => item.selected);
+      if (selectedNodes.length > 1) {
         return;
       }
       const targetNode = nodesRef.current.find((item) => item.id === node.id);

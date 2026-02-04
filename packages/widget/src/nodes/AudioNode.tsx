@@ -622,7 +622,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
                   letterSpacing: '0.025em',
                 }}
               >
-                {hasError ? '无法加载音频' : nodeData.title || '音频文件'}
+                {hasError ? '无法加载音频' : nodeData.title || 'Untitled'}
               </div>
               <div
                 style={{

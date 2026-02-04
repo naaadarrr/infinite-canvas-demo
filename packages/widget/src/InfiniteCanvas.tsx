@@ -413,6 +413,10 @@ export function InfiniteCanvas({
       if (selectedNodes.length === 0) {
         return;
       }
+      // 多选模式下不允许删除节点（不论选中多少个都不可以）
+      if (selectedNodes.length > 1) {
+        return;
+      }
       selectedNodes.forEach((node) => requestDeleteNode(node));
     };
     window.addEventListener('keydown', handleKeyDown);

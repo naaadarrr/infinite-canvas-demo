@@ -321,8 +321,17 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
     : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const startedAt = Date.now();
   const bodyText = await request.text();
-
-  console.log(`[ExternalCommands] request ${requestId} canvas=${canvasId} bytes=${bodyText.length}`);
+  const bodyJson = tryParseJson(bodyText);
+  const baseLog = {
+    tag: 'ExternalCommands',
+    requestId,
+    canvasId,
+    Request: {
+      bytes: bodyText.length,
+      bodyText,
+      bodyJson,
+    },
+  };
 
   // const auth = await authenticateExternalRequest(request, env, bodyText, canvasId);
   // if (!auth.ok) {
@@ -332,18 +341,23 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
 
   const parsed = parseExternalCommand(bodyText);
   if (!parsed.ok || !parsed.command) {
-    console.warn(`[ExternalCommands] request ${requestId} invalid body: ${parsed.error || 'Invalid command body'}`);
+    console.warn({
+      ...baseLog,
+      Error: parsed.error || 'Invalid command body',
+    });
     return errorResponse(parsed.error || 'Invalid command body', 400);
   }
+  const commandLog = {
+    id: parsed.command.id,
+    source: parsed.command.source,
+    type: parsed.command.type,
+    nodes: parsed.command.payload.nodes.length,
+  };
 
   // if (!isSourceAllowed(auth.context!.config, parsed.command.source)) {
   //   console.warn(`[ExternalCommands] request ${requestId} source not allowed: ${parsed.command.source}`);
   //   return errorResponse('Source not allowed', 403);
   // }
-
-  console.log(
-    `[ExternalCommands] request ${requestId} cmd=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
-  );
 
   const id = env.CANVAS_ROOM.idFromName(canvasId);
   const stub = env.CANVAS_ROOM.get(id);
@@ -359,11 +373,30 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
 
   const responseText = await response.clone().text();
   const preview = responseText.length > 500 ? `${responseText.slice(0, 500)}...` : responseText;
-  console.log(
-    `[ExternalCommands] request ${requestId} status=${response.status} durationMs=${Date.now() - startedAt} body=${preview}`
-  );
+  const responseJson = tryParseJson(responseText);
+  console.log({
+    ...baseLog,
+    Command: commandLog,
+    Response: {
+      status: response.status,
+      durationMs: Date.now() - startedAt,
+      bodyText: preview,
+      bodyJson: responseJson,
+    },
+  });
 
   return response;
+}
+
+function tryParseJson(text: string): unknown | null {
+  if (!text) {
+    return null;
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -27,6 +27,16 @@ binding = "R2"
 bucket_name = "canvas-snapshots"
 preview_bucket_name = "canvas-snapshots"
 
+#可观察状态默认为打开
+[observability]
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+#可观察跟踪默认为关闭
+[observability.traces]
+enabled = false
+
 # 环境变量
 [vars]
 TOKEN_SECRET = "0b7e12a9f5c84d23a6b1f9a0c3e7b8d9f4a1c6e2b7d9f3a0c5e8b1d6f2a9c4e7"

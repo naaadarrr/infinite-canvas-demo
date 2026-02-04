@@ -1305,16 +1305,44 @@ export class CanvasRoom implements DurableObject {
           const shouldRefreshMedia = normalizedType
             ? this.shouldRefreshMedia(existing, normalizedType)
             : false;
+
+          // 检测状态变化，添加调试日志
+          const existingStatus = existingRaw?.status;
+          const incomingStatus = item.status;
+          const statusChanged = existingStatus !== incomingStatus;
+          const hasResultData = item.result && Object.keys(item.result).length > 0;
+          
+          if (statusChanged) {
+            console.log(
+              `[CanvasRoom] Status change detected: taskId=${item.taskId} status=${existingStatus}->${incomingStatus} hasResult=${hasResultData}`
+            );
+          }
+
           if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw) && !shouldRefreshMedia) {
+            console.log(
+              `[CanvasRoom] Skipping update (no changes): taskId=${item.taskId} status=${incomingStatus} shouldRefreshMedia=${shouldRefreshMedia}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           const updates = await this.buildTaskItemUpdates(mergedRaw, existing, source);
           if (!updates || Object.keys(updates).length === 0) {
+            console.log(
+              `[CanvasRoom] Skipping update (empty updates): taskId=${item.taskId} status=${incomingStatus}`
+            );
             summary.ignored += 1;
             continue;
           }
+
+          // 记录关键更新字段
+          const updateKeys = Object.keys(updates);
+          const hasUrlUpdate = 'url' in updates;
+          const hasPosterUpdate = 'poster' in updates;
+          const hasSizeUpdate = 'size' in updates;
+          console.log(
+            `[CanvasRoom] Applying updates: taskId=${item.taskId} status=${incomingStatus} updateKeys=[${updateKeys.join(',')}] hasUrl=${hasUrlUpdate} hasPoster=${hasPosterUpdate} hasSize=${hasSizeUpdate}`
+          );
 
           Object.assign(existing, updates);
           updatesBatch.push({ nodeId: existingId, updates });
@@ -1434,12 +1462,29 @@ export class CanvasRoom implements DurableObject {
       updates.type = normalizedType;
     }
 
-    // 自动修正音频节点尺寸为 300x300 正方形（迁移逻辑）
-    if (normalizedType === NodeType.AUDIO && existing.size) {
-      const { width, height } = existing.size;
-      // 如果尺寸不是 300x300，则修正
-      if (width !== 300 || height !== 300) {
-        updates.size = { width: 300, height: 300 };
+    // 根据媒体类型更新尺寸
+    if (normalizedType === NodeType.AUDIO) {
+      // 音频节点固定为 300x300 正方形
+      if (existing.size) {
+        const { width, height } = existing.size;
+        if (width !== 300 || height !== 300) {
+          updates.size = { width: 300, height: 300 };
+        }
+      }
+    } else if (normalizedType === NodeType.IMAGE || normalizedType === NodeType.VIDEO) {
+      // 图片/视频节点：根据 result 中的 width/height 更新尺寸
+      const newSize = this.resolveTaskResultSize(item, normalizedType, existing.size);
+      if (newSize && existing.size) {
+        // 检查尺寸是否发生变化
+        if (existing.size.width !== newSize.width || existing.size.height !== newSize.height) {
+          updates.size = newSize;
+          console.log(
+            `[CanvasRoom] Updating node size: taskId=${item.taskId} oldSize=${existing.size.width}x${existing.size.height} newSize=${newSize.width}x${newSize.height}`
+          );
+        }
+      } else if (newSize && !existing.size) {
+        // 节点之前没有尺寸，设置新尺寸
+        updates.size = newSize;
       }
     }
 
@@ -1452,16 +1497,62 @@ export class CanvasRoom implements DurableObject {
     return updates;
   }
 
+  /**
+   * 根据任务结果计算节点尺寸
+   * 优先级：1. parameters.aspectRatio 2. result 中的 width/height 3. 保持现有尺寸
+   */
+  private resolveTaskResultSize(
+    item: BoardTaskItem,
+    type: NodeType,
+    existingSize?: Size
+  ): Size | null {
+    const { nodeWidth, nodeHeight } = this.externalLayoutConfig;
+    const result = item.result ?? undefined;
+
+    // 1. 优先使用 parameters 中的 aspectRatio
+    const paramAspectRatio = this.resolveAspectRatioFromParameters(item.parameters);
+    if (paramAspectRatio) {
+      return this.resolveNodeSize(nodeWidth, nodeHeight, paramAspectRatio);
+    }
+
+    // 2. 从 result 中获取 width/height
+    const resources =
+      type === NodeType.IMAGE
+        ? [result?.originImage, result?.compressedImage]
+        : [result?.originVideo, result?.originImage];
+    const resultAspectRatio = this.resolveAspectRatioFromResources(resources);
+    if (resultAspectRatio) {
+      return this.resolveNodeSize(nodeWidth, nodeHeight, resultAspectRatio);
+    }
+
+    // 3. 如果都没有，返回 null 表示不更新尺寸（保持现有尺寸）
+    // 注意：创建节点时如果没有任何尺寸信息，会使用默认 300x300
+    return null;
+  }
+
   private async buildTaskNodeData(
     item: BoardTaskItem,
     type: NodeType
   ): Promise<Partial<CanvasNodeData>> {
     const result = item.result ?? undefined;
+    const hasResult = result && Object.keys(result).length > 0;
+
+    // 调试日志：检查 result 数据
+    if (type === NodeType.VIDEO || type === NodeType.IMAGE) {
+      const hasOriginVideo = !!(result as Record<string, unknown>)?.originVideo;
+      const hasOriginImage = !!(result as Record<string, unknown>)?.originImage;
+      console.log(
+        `[CanvasRoom] buildTaskNodeData: taskId=${item.taskId} type=${type} status=${item.status} hasResult=${hasResult} hasOriginVideo=${hasOriginVideo} hasOriginImage=${hasOriginImage}`
+      );
+    }
 
     switch (type) {
       case NodeType.IMAGE: {
         const url =
           (await this.resolveMediaUrlFrom([result?.originImage, result?.compressedImage])) ?? '';
+        console.log(
+          `[CanvasRoom] buildTaskNodeData IMAGE: taskId=${item.taskId} url=${url ? 'resolved' : 'empty'} urlLength=${url.length}`
+        );
         return { url };
       }
       case NodeType.VIDEO: {
@@ -1470,6 +1561,9 @@ export class CanvasRoom implements DurableObject {
         const poster =
           (await this.resolveCoverUrl(result?.originVideo)) ??
           (await this.resolveCoverUrl(result?.originImage));
+        console.log(
+          `[CanvasRoom] buildTaskNodeData VIDEO: taskId=${item.taskId} url=${url ? 'resolved' : 'empty'} urlLength=${url.length} poster=${poster ? 'resolved' : 'empty'}`
+        );
         return { url, poster, loop: true, muted: true };
       }
       case NodeType.AUDIO: {
@@ -1477,7 +1571,7 @@ export class CanvasRoom implements DurableObject {
         const title =
           this.resolveTitle(item.parameters?.fileName) ??
           this.resolveTitle(item.title) ??
-          '音频文件';
+          'Untitled';
         return { url, title };
       }
       case NodeType.TEXT: {
@@ -1577,7 +1671,8 @@ export class CanvasRoom implements DurableObject {
     aspectRatio?: number
   ): Size {
     if (!aspectRatio || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
-      return { width: nodeWidth, height: nodeHeight };
+      // 默认使用 300x300 正方形（原先是 300x200）
+      return { width: 300, height: 300 };
     }
     const containerRatio = nodeWidth / nodeHeight;
     if (aspectRatio >= containerRatio) {

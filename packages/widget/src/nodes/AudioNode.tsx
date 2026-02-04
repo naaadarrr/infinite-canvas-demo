@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
-import { Info, Play, Pause, Pen } from 'lucide-react';
+import { Info, RefreshCw, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
@@ -163,7 +163,26 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
-  // 构建快捷操作菜单
+  const handleQuickAction = React.useCallback(
+    (actionId: string, actionLabel: string) => {
+      const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'NODE_QUICK_ACTION',
+          {
+            nodeId: nodeData.id,
+            nodeType: nodeData.type,
+            actionId,
+            actionLabel,
+            node: nodeSnapshot,
+          },
+          { source: 'ui' }
+        )
+      );
+    },
+    [nodeData]
+  );
+  // 构建快捷操作菜单 - 根据 toolType 过滤 Re-edit 按钮
   const quickActions: QuickAction[] = React.useMemo(() => {
     const actions: QuickAction[] = [];
     
@@ -172,27 +191,12 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
       actions.push({
         id: 'edit',
         label: 'Re-edit',
-        icon: Pen,
-        onClick: () => {
-          const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
-          widgetBridge.emit(
-            createWidgetEvent(
-              'NODE_QUICK_ACTION',
-              {
-                nodeId: nodeData.id,
-                nodeType: nodeData.type,
-                actionId: 'edit',
-                actionLabel: 'Re-edit',
-                node: nodeSnapshot,
-              },
-              { source: 'ui' }
-            )
-          );
-        },
+        icon: RefreshCw,
+        onClick: () => handleQuickAction('edit', 'Re-edit'),
       });
     }
     
-    // 依赖关系线开关按钮
+    // 依赖关系线开关按钮（始终显示）
     actions.push({
       id: 'dependency',
       label: 'Related Nodes',
@@ -202,7 +206,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
     });
     
     return actions;
-  }, [rawItem?.toolType, nodeData, toggleNode, isDependencyFocus]);
+  }, [rawItem?.toolType, handleQuickAction, toggleNode, nodeData.id, isDependencyFocus]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {

@@ -64,9 +64,9 @@ export class CanvasRoom implements DurableObject {
   private readonly tombstoneTtlMs: number = 30 * 24 * 60 * 60 * 1000;
   private readonly externalLayoutConfig = {
     columns: 4,
-    nodeWidth: 300,
-    nodeHeight: 200,
-    gap: 50,
+    nodeWidth: 450,      // 1.5x of 300
+    nodeHeight: 300,     // 1.5x of 200
+    gap: 60,             // slightly increased gap
     startX: 100,
     startY: 100,
   };
@@ -529,14 +529,15 @@ export class CanvasRoom implements DurableObject {
       `[CanvasRoom] User ${userId} joined canvas ${this.canvasId} (state source: ${this.lastStateSource}, invisible: ${invisible || false})`
     );
 
-    // 刷新所有节点的媒体 URL（签名 URL 可能已过期）
-    const refreshedNodes = await this.refreshAllNodesMediaUrls();
-
-    // 发送完整状态同步
+    // 【优化】两阶段同步：先立即发送节点基础信息，让用户快速看到画布结构
+    // 然后在后台异步刷新媒体 URL 并推送更新
+    const currentNodes = Array.from(this.nodes.values());
+    
+    // Phase 1: 立即发送当前节点状态（不等待媒体URL刷新）
     const syncMessage: SyncStateMessage = {
       type: MessageType.SYNC_STATE,
       seq: this.seq,
-      nodes: refreshedNodes,
+      nodes: currentNodes,
       presences: Object.fromEntries(this.presences),
       lockedNodes: Object.fromEntries(this.lockedNodes),
     };
@@ -547,6 +548,16 @@ export class CanvasRoom implements DurableObject {
     if (!invisible) {
       this.broadcastPresenceUpdate(userId, this.presences.get(userId)!);
     }
+
+    // Phase 2: 在后台异步刷新媒体 URL，完成后推送增量更新
+    // 使用 queueMicrotask 确保不阻塞当前流程
+    queueMicrotask(async () => {
+      try {
+        await this.refreshAndBroadcastMediaUrls();
+      } catch (error) {
+        console.error(`[CanvasRoom] Background media refresh failed:`, error);
+      }
+    });
 
     // 启动空闲检查(如果是第一个连接)
     if (this.connections.size === 1) {
@@ -957,6 +968,17 @@ export class CanvasRoom implements DurableObject {
     console.log(
       `[CanvasRoom] External command result id=${parsed.command.id} status=${result.status} created=${result.created} updated=${result.updated} deleted=${result.deleted} ignored=${result.ignored} seq=${result.seq}`
     );
+
+    // 关键修复: 外部命令处理后立即持久化，确保数据不会因 DO 休眠而丢失
+    // 这是必要的，因为外部命令可能在没有 WebSocket 连接时到达，
+    // 此时定时器可能还没来得及执行就 DO 休眠了
+    if (result.created + result.updated + result.deleted > 0) {
+      await this.flushToStorage('manual');
+      console.log(
+        `[CanvasRoom] External command flushed immediately: id=${parsed.command.id} seq=${result.seq}`
+      );
+    }
+
     return new Response(JSON.stringify(result), {
       headers: { 'Content-Type': 'application/json' },
     });
@@ -1416,12 +1438,15 @@ export class CanvasRoom implements DurableObject {
     const position = this.nextAutoPosition(size);
     const derived = await this.buildTaskNodeData(item, normalizedType);
 
+    // 新节点应该在所有现有节点之上，避免被已有图片覆盖
+    const zIndex = this.getNextZIndex();
+
     return ({
       id: nodeId,
       type: normalizedType,
       position,
       size,
-      zIndex: 1,
+      zIndex,
       raw: item,
       taskId: item.taskId,
       rating: item.rating,
@@ -1464,11 +1489,11 @@ export class CanvasRoom implements DurableObject {
 
     // 根据媒体类型更新尺寸
     if (normalizedType === NodeType.AUDIO) {
-      // 音频节点固定为 300x300 正方形
+      // 音频节点固定为 450x450 正方形 (1.5x of original 300x300)
       if (existing.size) {
         const { width, height } = existing.size;
-        if (width !== 300 || height !== 300) {
-          updates.size = { width: 300, height: 300 };
+        if (width !== 450 || height !== 450) {
+          updates.size = { width: 450, height: 450 };
         }
       }
     } else if (normalizedType === NodeType.IMAGE || normalizedType === NodeType.VIDEO) {
@@ -1647,11 +1672,11 @@ export class CanvasRoom implements DurableObject {
   private getTaskDefaultSize(item: BoardTaskItem, type: NodeType): Size {
     const { nodeWidth, nodeHeight } = this.externalLayoutConfig;
     if (type === NodeType.AUDIO) {
-      // 音频节点固定为 300x300 正方形
-      return { width: 300, height: 300 };
+      // 音频节点固定为 450x450 正方形 (1.5x of original 300x300)
+      return { width: 450, height: 450 };
     }
     if (type === NodeType.TEXT) {
-      return { width: nodeWidth, height: 120 };
+      return { width: nodeWidth, height: 180 }; // 1.5x of original 120
     }
 
     const result = item.result ?? undefined;
@@ -1671,8 +1696,8 @@ export class CanvasRoom implements DurableObject {
     aspectRatio?: number
   ): Size {
     if (!aspectRatio || !Number.isFinite(aspectRatio) || aspectRatio <= 0) {
-      // 默认使用 300x300 正方形（原先是 300x200）
-      return { width: 300, height: 300 };
+      // 默认使用 450x450 正方形 (1.5x of original 300x300)
+      return { width: 450, height: 450 };
     }
     const containerRatio = nodeWidth / nodeHeight;
     if (aspectRatio >= containerRatio) {
@@ -1871,6 +1896,91 @@ export class CanvasRoom implements DurableObject {
   }
 
   /**
+   * 【优化】后台刷新所有媒体节点的 URL 并推送增量更新
+   * 这个方法在用户加入后异步执行，不阻塞初始同步
+   * 只有在 URL 确实发生变化时才推送更新，减少不必要的网络传输
+   */
+  private async refreshAndBroadcastMediaUrls(): Promise<void> {
+    const nodes = Array.from(this.nodes.values());
+    const updatesBatch: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }> = [];
+    
+    console.log(`[CanvasRoom] Starting background media URL refresh for ${nodes.length} nodes`);
+    const startTime = Date.now();
+
+    for (const node of nodes) {
+      const type = node.type;
+      // 只处理需要媒体 URL 的节点类型
+      if (type !== NodeType.IMAGE && type !== NodeType.VIDEO && type !== NodeType.AUDIO) {
+        continue;
+      }
+
+      const rawItem = (node as CanvasNodeData & { raw?: BoardTaskItem }).raw;
+      if (!rawItem) {
+        continue;
+      }
+
+      try {
+        const derived = await this.buildTaskNodeData(rawItem, type);
+        
+        // 检查 URL 是否发生变化
+        const urlChanged = this.hasMediaUrlChanged(node, derived);
+        if (!urlChanged) {
+          continue;
+        }
+
+        // 更新内存中的节点数据
+        const refreshedNode = { ...node, ...derived } as CanvasNodeData;
+        this.nodes.set(node.id, refreshedNode);
+        this.markDirty();
+
+        // 收集需要更新的字段（只包含实际变化的媒体相关字段）
+        const updates: Partial<CanvasNodeData> = {};
+        if ('url' in derived && derived.url !== (node as { url?: string }).url) {
+          (updates as { url?: string }).url = derived.url as string;
+        }
+        if ('poster' in derived && derived.poster !== (node as { poster?: string }).poster) {
+          (updates as { poster?: string }).poster = derived.poster as string;
+        }
+        if (Object.keys(updates).length > 0) {
+          updatesBatch.push({ nodeId: node.id, updates });
+        }
+      } catch (error) {
+        console.warn(`[CanvasRoom] Failed to refresh media URL for node ${node.id}:`, error);
+      }
+    }
+
+    const duration = Date.now() - startTime;
+    console.log(`[CanvasRoom] Background media refresh completed in ${duration}ms, ${updatesBatch.length} nodes updated`);
+
+    // 批量广播更新
+    if (updatesBatch.length > 0) {
+      this.seq += 1;
+      const updateMessage: NodesUpdatedMessage = {
+        type: MessageType.NODES_UPDATED,
+        seq: this.seq,
+        updates: updatesBatch,
+      };
+      this.broadcast(updateMessage);
+    }
+  }
+
+  /**
+   * 检查节点的媒体 URL 是否发生变化
+   */
+  private hasMediaUrlChanged(node: CanvasNodeData, derived: Partial<CanvasNodeData>): boolean {
+    const nodeWithUrl = node as { url?: string; poster?: string };
+    const derivedWithUrl = derived as { url?: string; poster?: string };
+    
+    if ('url' in derived && derivedWithUrl.url !== nodeWithUrl.url) {
+      return true;
+    }
+    if ('poster' in derived && derivedWithUrl.poster !== nodeWithUrl.poster) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * 刷新单个节点的媒体 URL
    * 每次都从 raw 数据重新解析 URL，确保签名 URL 有效
    */
@@ -1940,6 +2050,28 @@ export class CanvasRoom implements DurableObject {
       return undefined;
     }
     return width / height;
+  }
+
+  /**
+   * 获取当前画布中节点的最大 zIndex
+   * 新节点应该在所有现有节点之上
+   */
+  private getMaxZIndex(): number {
+    let maxZ = 0;
+    for (const node of this.nodes.values()) {
+      const z = typeof node.zIndex === 'number' ? node.zIndex : 0;
+      if (z > maxZ) {
+        maxZ = z;
+      }
+    }
+    return maxZ;
+  }
+
+  /**
+   * 获取新节点应该使用的 zIndex (最大值 + 1)
+   */
+  private getNextZIndex(): number {
+    return this.getMaxZIndex() + 1;
   }
 
   private nextAutoPosition(size?: Size): Position {

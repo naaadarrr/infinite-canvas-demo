@@ -34,3 +34,4 @@ worker-debug.log
 .cursor/*
 
 *dist*
+.wrangler.env

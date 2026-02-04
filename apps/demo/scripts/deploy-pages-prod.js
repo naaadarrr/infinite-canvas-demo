@@ -28,7 +28,9 @@ function parseDotenv(contents) {
   return parsed;
 }
 
-function loadEnvFile(filename) {
+function loadEnvFile(filename, options = {}) {
+  const { override = false, overrideKeys = [] } = options;
+  const overrideSet = new Set(overrideKeys);
   const filePath = path.join(process.cwd(), filename);
   try {
     const stat = fs.statSync(filePath);
@@ -36,7 +38,7 @@ function loadEnvFile(filename) {
     const contents = fs.readFileSync(filePath, 'utf8');
     const parsed = parseDotenv(contents);
     for (const [key, value] of Object.entries(parsed)) {
-      if (process.env[key] === undefined) {
+      if (override || overrideSet.has(key) || process.env[key] === undefined) {
         process.env[key] = value;
       }
     }
@@ -61,6 +63,7 @@ function run(command) {
 process.env.NODE_ENV = 'production';
 loadEnvFile('.env.production');
 loadEnvFile('.env');
+loadEnvFile('.wrangler.env', { overrideKeys: ['CLOUDFLARE_API_TOKEN'] });
 process.env.__NEXT_PROCESSED_ENV = 'true';
 
 run('pnpm run build:pages');

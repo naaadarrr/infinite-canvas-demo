@@ -33,6 +33,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       ? `${Math.round(actualWidth)} x ${Math.round(actualHeight)}`
       : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
+  const [isHovered, setIsHovered] = React.useState(false);
   const [preloadProgress, setPreloadProgress] = React.useState(0);
   const [isPreloaded, setIsPreloaded] = React.useState(false);
   const isSkeleton = status === 'init';
@@ -449,70 +450,11 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           width: '100%',
           height: '100%',
           overflow: 'hidden',
+          background: '#1a1a1a',
         }}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        {/* 动画背景层 - 始终存在，被内容覆盖 */}
-        {!isFailed && (
-          <>
-            <style>
-              {`
-                @keyframes video-node-stripe {
-                  0% { background-position: 0 0; }
-                  100% { background-position: 60px 60px; }
-                }
-                @keyframes video-node-glow {
-                  0% { filter: hue-rotate(0deg) brightness(1); }
-                  50% { filter: hue-rotate(60deg) brightness(1.2); }
-                  100% { filter: hue-rotate(0deg) brightness(1); }
-                }
-              `}
-            </style>
-            {/* 霓虹条纹动画背景 */}
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: '#1a1a1a',
-              }}
-            >
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: `repeating-linear-gradient(
-                    45deg,
-                    rgba(0, 255, 255, 0.12) 0px,
-                    rgba(0, 255, 255, 0.12) 10px,
-                    rgba(255, 0, 255, 0.12) 10px,
-                    rgba(255, 0, 255, 0.12) 20px,
-                    rgba(0, 255, 128, 0.12) 20px,
-                    rgba(0, 255, 128, 0.12) 30px,
-                    rgba(255, 128, 0, 0.10) 30px,
-                    rgba(255, 128, 0, 0.10) 40px,
-                    rgba(128, 0, 255, 0.12) 40px,
-                    rgba(128, 0, 255, 0.12) 50px,
-                    rgba(0, 128, 255, 0.12) 50px,
-                    rgba(0, 128, 255, 0.12) 60px
-                  )`,
-                  backgroundSize: '84.85px 84.85px',
-                  animation: 'video-node-stripe 1.5s linear infinite, video-node-glow 4s ease-in-out infinite',
-                }}
-              />
-              {/* 磨砂玻璃遮罩 */}
-              <div
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'rgba(30, 30, 30, 0.5)',
-                  backdropFilter: 'blur(4px)',
-                  WebkitBackdropFilter: 'blur(4px)',
-                }}
-              />
-            </div>
-          </>
-        )}
-        
-        {/* 内容层 */}
         {isFailed ? (
           <div
             style={{
@@ -601,6 +543,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 />
               </div>
             )}
+            {/* 播放按钮 - 暂停时始终显示，播放时仅悬停显示 */}
             <button
               type="button"
               className="nodrag nopan nowheel"
@@ -623,6 +566,9 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 color: '#fff',
                 cursor: 'pointer',
                 zIndex: 2,
+                opacity: !isPlaying || isHovered ? 1 : 0,
+                transition: 'opacity 0.2s ease',
+                pointerEvents: !isPlaying || isHovered ? 'auto' : 'none',
               }}
               aria-label={isPlaying ? 'Pause video' : 'Play video'}
             >

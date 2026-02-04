@@ -12,6 +12,7 @@ import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PanModeIcon, TextModeIcon } from './icons';
 import { CanvasRoleProvider } from './CanvasRoleContext';
+import { SelectModeProvider, SelectModeState } from './SelectModeContext';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
@@ -169,6 +170,13 @@ export function CollaborativeCanvas({
   const [toasts, setToasts] = useState<
     Array<{ id: string; message: string; variant: 'info' | 'error' }>
   >([]);
+
+  // Select mode state - 素材选择模式状态
+  const [selectMode, setSelectMode] = useState<SelectModeState>({
+    isActive: false,
+    mediaType: null,
+  });
+
   const getToolButtonStyle = (active: boolean, disabled: boolean): React.CSSProperties => ({
     width: 32,
     height: 32,
@@ -1078,6 +1086,24 @@ export function CollaborativeCanvas({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [canEdit]);
+
+  // Listen for SET_SELECT_MODE command from host page
+  useEffect(() => {
+    const unsubscribe = widgetBridge.onCommand<SelectModeState>(
+      'SET_SELECT_MODE',
+      (payload) => {
+        if (payload && typeof payload === 'object') {
+          console.log('[CollaborativeCanvas] SET_SELECT_MODE received:', payload);
+          setSelectMode({
+            isActive: Boolean(payload.isActive),
+            mediaType: payload.mediaType ?? null,
+          });
+        }
+      }
+    );
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     if (!collabEnabled) {
       return;
@@ -2183,8 +2209,9 @@ export function CollaborativeCanvas({
           </div>
         )}
         <div style={{ width: '100%', height: '100%' }}>
-          <CanvasRoleProvider value={resolvedRole}>
-            <DependencyFocusProvider
+          <SelectModeProvider value={selectMode}>
+            <CanvasRoleProvider value={resolvedRole}>
+              <DependencyFocusProvider
               value={{ activeNodeId: dependencyFocusNodeId, toggleNode: toggleDependencyFocus }}
             >
               <InfiniteCanvas
@@ -2221,8 +2248,9 @@ export function CollaborativeCanvas({
                 minWidth={minWidth}
                 minHeight={minHeight}
               />
-            </DependencyFocusProvider>
-          </CanvasRoleProvider>
+              </DependencyFocusProvider>
+            </CanvasRoleProvider>
+          </SelectModeProvider>
         </div>
         {contextMenu && canEdit && (
           <div

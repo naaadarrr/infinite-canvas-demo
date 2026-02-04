@@ -10,3 +10,5 @@ export * from './hooks';
 export * from './nodes';
 export * from './icons';
 export * from '@tc/infinite-core';
+export { SelectModeProvider, useSelectMode } from './SelectModeContext';
+export type { SelectModeState } from './SelectModeContext';

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
+import { NodeType } from '@tc/infinite-core';
 import { Info, Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
@@ -9,11 +10,20 @@ import { MediaSkeleton } from './MediaSkeleton';
 import { useDependencyFocus } from './DependencyFocusContext';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
+import { useSelectMode } from '../SelectModeContext';
+import { SelectionOverlay } from './components/SelectionOverlay';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
   const role = useCanvasRole();
   const canEdit = role !== 'viewer';
   const canDeleteFailed = canEdit;
+  
+  // Select mode - 素材选择模式
+  const selectMode = useSelectMode();
+  // 判断节点是否可被选择（在选择模式下且 mediaType 匹配）
+  // Widget 的 NodeType.IMAGE 对应宿主页面的 MediaType.IMAGE
+  const nodeMediaType = NodeType.IMAGE.toLowerCase();
+  const isSelectable = selectMode.isActive && selectMode.mediaType === nodeMediaType;
   const nodeData = data as unknown as ImageNodeData & {
     onNodeDataChange?: (id: string, patch: Partial<Omit<ImageNodeData, 'type'>>) => void;
   };
@@ -93,6 +103,32 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
+  
+  /**
+   * 处理素材选择请求
+   * 在选择模式下点击节点时触发，发送 NODE_SELECT_REQUEST 事件
+   */
+  const handleSelectRequest = React.useCallback(() => {
+    const taskId = rawItem?.taskId;
+    // 从 raw 数据中获取 URL 和 S3 Path
+    const url = nodeData.url || rawItem?.result?.originImage?.url || rawItem?.result?.compressedImage?.url || '';
+    const s3Path = rawItem?.result?.originImage?.filePath || rawItem?.result?.compressedImage?.filePath || '';
+    
+    widgetBridge.emit(
+      createWidgetEvent(
+        'NODE_SELECT_REQUEST',
+        {
+          nodeId: nodeData.id,
+          nodeType: nodeData.type,
+          taskId: taskId || '',
+          url,
+          s3Path,
+        },
+        { source: 'ui' }
+      )
+    );
+  }, [nodeData.id, nodeData.type, nodeData.url, rawItem]);
+  
   // 构建快捷操作菜单 - 根据 toolType 过滤 Re-edit 按钮
   const quickActions: QuickAction[] = React.useMemo(() => {
     const actions: QuickAction[] = [];
@@ -373,6 +409,11 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
             }}
           />
         ) : null}
+        {/* 素材选择模式遮罩 - 仅在选择模式下且任务成功时显示 */}
+        <SelectionOverlay
+          isVisible={isSelectable && isSuccess}
+          onClick={handleSelectRequest}
+        />
       </div>
       {showHighlight && (
         <>

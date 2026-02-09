@@ -1275,12 +1275,18 @@ export class CanvasRoom implements DurableObject {
       case 'append_nodes': {
         for (const item of command.payload.nodes) {
           if (!item || typeof item.taskId !== 'string') {
+            console.log(
+              `[CanvasRoom] Ignored append_nodes: Reason=Invalid item or missing taskId, item=${JSON.stringify(item)}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           const existingId = this.findNodeIdByTaskId(item.taskId, source);
           if (existingId) {
+            console.log(
+              `[CanvasRoom] Ignored append_nodes: Reason=Node already exists, taskId=${item.taskId}, existingNodeId=${existingId}`
+            );
             summary.ignored += 1;
             continue;
           }
@@ -1288,6 +1294,9 @@ export class CanvasRoom implements DurableObject {
           const nodeId = this.getTaskNodeId(item.taskId);
           const createdNode = await this.buildNodeFromTaskItem(item, nodeId, source);
           if (!createdNode) {
+            console.log(
+              `[CanvasRoom] Ignored append_nodes: Reason=Failed to build node, taskId=${item.taskId}, mediaType=${item.mediaType}`
+            );
             summary.ignored += 1;
             continue;
           }
@@ -1305,18 +1314,27 @@ export class CanvasRoom implements DurableObject {
       case 'update_nodes': {
         for (const item of command.payload.nodes) {
           if (!item || typeof item.taskId !== 'string') {
+            console.log(
+              `[CanvasRoom] Ignored update_nodes: Reason=Invalid item or missing taskId, item=${JSON.stringify(item)}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           const existingId = this.findNodeIdByTaskId(item.taskId, source);
           if (!existingId) {
+            console.log(
+              `[CanvasRoom] Ignored update_nodes: Reason=Node not found, taskId=${item.taskId}, source=${source}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           const existing = this.nodes.get(existingId);
           if (!existing) {
+            console.log(
+              `[CanvasRoom] Ignored update_nodes: Reason=Node exists in index but not in memory, taskId=${item.taskId}, nodeId=${existingId}`
+            );
             summary.ignored += 1;
             continue;
           }
@@ -1346,7 +1364,7 @@ export class CanvasRoom implements DurableObject {
             
             if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw) && !shouldRefreshMedia) {
               console.log(
-                `[CanvasRoom] Skipping update (no changes): taskId=${item.taskId} status=${incomingStatus}`
+                `[CanvasRoom] Ignored update_nodes: Reason=No changes detected (deep equal), taskId=${item.taskId}, status=${incomingStatus}, shouldRefreshMedia=${shouldRefreshMedia}`
               );
               summary.ignored += 1;
               continue;
@@ -1372,7 +1390,7 @@ export class CanvasRoom implements DurableObject {
           
           if (!updates || Object.keys(updates).length === 0) {
             console.log(
-              `[CanvasRoom] Skipping update (empty updates): taskId=${item.taskId} status=${incomingStatus}`
+              `[CanvasRoom] Ignored update_nodes: Reason=Empty updates (buildTaskItemUpdates returned nothing), taskId=${item.taskId}, status=${incomingStatus}, nodeType=${normalizedType}`
             );
             summary.ignored += 1;
             continue;
@@ -1405,17 +1423,26 @@ export class CanvasRoom implements DurableObject {
       case 'delete_nodes': {
         for (const item of command.payload.nodes) {
           if (!item || typeof item.taskId !== 'string') {
+            console.log(
+              `[CanvasRoom] Ignored delete_nodes: Reason=Invalid item or missing taskId, item=${JSON.stringify(item)}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           const existingId = this.findNodeIdByTaskId(item.taskId, source);
           if (!existingId) {
+            console.log(
+              `[CanvasRoom] Ignored delete_nodes: Reason=Node not found, taskId=${item.taskId}, source=${source}`
+            );
             summary.ignored += 1;
             continue;
           }
 
           if (!this.nodes.has(existingId)) {
+            console.log(
+              `[CanvasRoom] Ignored delete_nodes: Reason=Node exists in index but not in memory, taskId=${item.taskId}, nodeId=${existingId}`
+            );
             summary.ignored += 1;
             continue;
           }

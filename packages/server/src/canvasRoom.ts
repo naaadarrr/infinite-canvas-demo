@@ -1324,31 +1324,52 @@ export class CanvasRoom implements DurableObject {
           const existingRaw = (existing as CanvasNodeData & { raw?: BoardTaskItem }).raw;
           const mergedRaw = this.mergeTaskItem(existingRaw, item);
           const normalizedType = this.resolveTaskNodeType(item.mediaType, existing);
-          const shouldRefreshMedia = normalizedType
-            ? this.shouldRefreshMedia(existing, normalizedType)
-            : false;
-
-          // 检测状态变化，添加调试日志
+          
+          // 【优化】简化判断逻辑: 只要 incoming 有 result 数据就强制更新
           const existingStatus = existingRaw?.status;
           const incomingStatus = item.status;
           const statusChanged = existingStatus !== incomingStatus;
           const hasResultData = item.result && Object.keys(item.result).length > 0;
           
-          if (statusChanged) {
+          // 关键判断: 状态变化或有 result 数据时,直接更新,无需深度比较
+          const shouldForceUpdate = statusChanged || hasResultData;
+          
+          if (shouldForceUpdate) {
             console.log(
-              `[CanvasRoom] Status change detected: taskId=${item.taskId} status=${existingStatus}->${incomingStatus} hasResult=${hasResultData}`
+              `[CanvasRoom] Forcing update: taskId=${item.taskId} statusChanged=${statusChanged} hasResult=${hasResultData} status=${existingStatus}->${incomingStatus}`
             );
-          }
-
-          if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw) && !shouldRefreshMedia) {
-            console.log(
-              `[CanvasRoom] Skipping update (no changes): taskId=${item.taskId} status=${incomingStatus} shouldRefreshMedia=${shouldRefreshMedia}`
-            );
-            summary.ignored += 1;
-            continue;
+          } else {
+            // 只有在没有状态变化且没有 result 数据时,才进行深度相等检查
+            const shouldRefreshMedia = normalizedType
+              ? this.shouldRefreshMedia(existing, normalizedType)
+              : false;
+            
+            if (existingRaw && this.isDeepEqual(existingRaw, mergedRaw) && !shouldRefreshMedia) {
+              console.log(
+                `[CanvasRoom] Skipping update (no changes): taskId=${item.taskId} status=${incomingStatus}`
+              );
+              summary.ignored += 1;
+              continue;
+            }
           }
 
           const updates = await this.buildTaskItemUpdates(mergedRaw, existing, source);
+          
+          // 如果强制更新但 updates 为空,则至少更新 raw 数据
+          if (shouldForceUpdate && (!updates || Object.keys(updates).length === 0)) {
+            console.warn(
+              `[CanvasRoom] Empty updates but forced update, updating raw: taskId=${item.taskId}`
+            );
+            const forcedUpdates: Partial<CanvasNodeData> = {
+              raw: mergedRaw,
+              status: mergedRaw.status,
+            };
+            Object.assign(existing, forcedUpdates);
+            updatesBatch.push({ nodeId: existingId, updates: forcedUpdates });
+            summary.updated += 1;
+            continue;
+          }
+          
           if (!updates || Object.keys(updates).length === 0) {
             console.log(
               `[CanvasRoom] Skipping update (empty updates): taskId=${item.taskId} status=${incomingStatus}`
@@ -1524,7 +1545,7 @@ export class CanvasRoom implements DurableObject {
 
   /**
    * 根据任务结果计算节点尺寸
-   * 优先级：1. parameters.aspectRatio 2. result 中的 width/height 3. 保持现有尺寸
+   * 优先级：1. result 中的实际 width/height 2. parameters.aspectRatio 3. 默认尺寸
    */
   private resolveTaskResultSize(
     item: BoardTaskItem,
@@ -1534,24 +1555,31 @@ export class CanvasRoom implements DurableObject {
     const { nodeWidth, nodeHeight } = this.externalLayoutConfig;
     const result = item.result ?? undefined;
 
-    // 1. 优先使用 parameters 中的 aspectRatio
-    const paramAspectRatio = this.resolveAspectRatioFromParameters(item.parameters);
-    if (paramAspectRatio) {
-      return this.resolveNodeSize(nodeWidth, nodeHeight, paramAspectRatio);
-    }
-
-    // 2. 从 result 中获取 width/height
+    // 【优化】优先使用 result 中的实际资源尺寸,计算真实比例
     const resources =
       type === NodeType.IMAGE
         ? [result?.originImage, result?.compressedImage]
         : [result?.originVideo, result?.originImage];
-    const resultAspectRatio = this.resolveAspectRatioFromResources(resources);
-    if (resultAspectRatio) {
-      return this.resolveNodeSize(nodeWidth, nodeHeight, resultAspectRatio);
+    
+    // 从实际资源中获取真实的宽高比
+    const actualAspectRatio = this.resolveAspectRatioFromResources(resources);
+    if (actualAspectRatio) {
+      console.log(
+        `[CanvasRoom] Using actual aspect ratio from result: taskId=${item.taskId} ratio=${actualAspectRatio.toFixed(3)} (${resources[0]?.width}x${resources[0]?.height})`
+      );
+      return this.resolveNodeSize(nodeWidth, nodeHeight, actualAspectRatio);
     }
 
-    // 3. 如果都没有，返回 null 表示不更新尺寸（保持现有尺寸）
-    // 注意：创建节点时如果没有任何尺寸信息，会使用默认 300x300
+    // 备选方案: 使用 parameters 中的 aspectRatio
+    const paramAspectRatio = this.resolveAspectRatioFromParameters(item.parameters);
+    if (paramAspectRatio) {
+      console.log(
+        `[CanvasRoom] Using aspect ratio from parameters: taskId=${item.taskId} ratio=${paramAspectRatio.toFixed(3)}`
+      );
+      return this.resolveNodeSize(nodeWidth, nodeHeight, paramAspectRatio);
+    }
+
+    // 如果都没有,返回 null 表示不更新尺寸(保持现有尺寸)
     return null;
   }
 
@@ -1679,15 +1707,27 @@ export class CanvasRoom implements DurableObject {
       return { width: nodeWidth, height: 180 }; // 1.5x of original 120
     }
 
+    // 【优化】优先使用 result 中的实际资源尺寸
     const result = item.result ?? undefined;
     const resources =
       type === NodeType.IMAGE
         ? [result?.originImage, result?.compressedImage]
         : [result?.originVideo, result?.originImage];
-    const aspectRatio =
-      this.resolveAspectRatioFromParameters(item.parameters) ??
-      this.resolveAspectRatioFromResources(resources);
-    return this.resolveNodeSize(nodeWidth, nodeHeight, aspectRatio);
+    
+    // 从实际资源获取真实比例
+    const actualAspectRatio = this.resolveAspectRatioFromResources(resources);
+    if (actualAspectRatio) {
+      return this.resolveNodeSize(nodeWidth, nodeHeight, actualAspectRatio);
+    }
+    
+    // 备选方案: 使用 parameters 中的 aspectRatio
+    const paramAspectRatio = this.resolveAspectRatioFromParameters(item.parameters);
+    if (paramAspectRatio) {
+      return this.resolveNodeSize(nodeWidth, nodeHeight, paramAspectRatio);
+    }
+    
+    // 默认正方形
+    return this.resolveNodeSize(nodeWidth, nodeHeight, undefined);
   }
 
   private resolveNodeSize(

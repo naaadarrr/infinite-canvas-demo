@@ -103,6 +103,10 @@ export enum MessageType {
   
   // 错误
   ERROR = 'error',
+
+  // 获取完整节点数据（用于重新生成等需要完整 prompt 的场景）
+  GET_FULL_NODE = 'get_full_node',
+  FULL_NODE_DATA = 'full_node_data',
 }
 
 // 客户端 -> 服务器消息
@@ -169,6 +173,11 @@ export interface UserActivityMessage {
   timestamp?: number; // 可选:客户端时间戳
 }
 
+export interface GetFullNodeMessage {
+  type: MessageType.GET_FULL_NODE;
+  nodeId: string;
+}
+
 export type ClientMessage =
   | JoinMessage
   | LeaveMessage
@@ -180,7 +189,8 @@ export type ClientMessage =
   | DragMoveMessage
   | DragEndMessage
   | UpdatePresenceMessage
-  | UserActivityMessage;
+  | UserActivityMessage
+  | GetFullNodeMessage;
 
 // 服务器 -> 客户端消息
 
@@ -242,6 +252,12 @@ export interface ErrorMessage {
   code?: string;
 }
 
+export interface FullNodeDataMessage {
+  type: MessageType.FULL_NODE_DATA;
+  nodeId: string;
+  node: CanvasNodeData | null;
+}
+
 export type ServerMessage =
   | SyncStateMessage
   | NodeCreatedMessage
@@ -251,7 +267,8 @@ export type ServerMessage =
   | NodeLockedMessage
   | NodeUnlockedMessage
   | PresenceUpdateMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | FullNodeDataMessage;
 
 // ============ Presence 类型 ============
 
@@ -306,6 +323,8 @@ export interface Env {
   EXTERNAL_API_NONCE_TTL_SEC?: string;
   MEDIA_URL_ENDPOINT?: string;
   MEDIA_URL_CACHE_TTL_MS?: string;
+  MEDIA_URL_REQUEST_TIMEOUT_MS?: string;
+  EXTERNAL_COMMAND_MAX_BYTES?: string;
   // DO优化配置
   IDLE_TIMEOUT_MS?: string;
   EMPTY_ROOM_TIMEOUT_MS?: string;

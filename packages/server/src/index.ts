@@ -7,6 +7,11 @@ import type { Env } from './types';
 import { extractToken, verifyToken } from './utils/auth';
 // import { authenticateExternalRequest, isSourceAllowed } from './utils/externalAuth';
 import { parseExternalCommand } from './utils/externalCommands';
+import {
+  byteLength,
+  compactExternalCommand,
+  resolveExternalCommandMaxBytes,
+} from './utils/externalCommandSanitizer';
 import { 
   handleGetRoomStatus, 
   handleShutdownRoom, 
@@ -321,17 +326,27 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
     : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const startedAt = Date.now();
   const bodyText = await request.text();
-  const bodyJson = tryParseJson(bodyText);
+  const maxBytes = resolveExternalCommandMaxBytes(env.EXTERNAL_COMMAND_MAX_BYTES);
+  const bodyBytes = byteLength(bodyText);
+  const requestBodyPreview = bodyText.length > 500 ? `${bodyText.slice(0, 500)}...` : bodyText;
   const baseLog = {
     tag: 'ExternalCommands',
     requestId,
     canvasId,
     Request: {
-      bytes: bodyText.length,
-      bodyText,
-      bodyJson,
+      bytes: bodyBytes,
+      maxBytes,
+      bodyPreview: requestBodyPreview,
     },
   };
+
+  if (bodyBytes > maxBytes) {
+    console.warn({
+      ...baseLog,
+      Error: `Command body too large: ${bodyBytes} bytes (max ${maxBytes})`,
+    });
+    return errorResponse(`Command body too large (max ${maxBytes} bytes)`, 413);
+  }
 
   // const auth = await authenticateExternalRequest(request, env, bodyText, canvasId);
   // if (!auth.ok) {
@@ -347,12 +362,25 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
     });
     return errorResponse(parsed.error || 'Invalid command body', 400);
   }
+  const compactedCommand = compactExternalCommand(parsed.command);
+  const forwardBody = JSON.stringify(compactedCommand);
+  const forwardedBytes = byteLength(forwardBody);
   const commandLog = {
-    id: parsed.command.id,
-    source: parsed.command.source,
-    type: parsed.command.type,
-    nodes: parsed.command.payload.nodes.length,
+    id: compactedCommand.id,
+    source: compactedCommand.source,
+    type: compactedCommand.type,
+    nodes: compactedCommand.payload.nodes.length,
+    forwardedBytes,
   };
+
+  if (forwardedBytes > maxBytes) {
+    console.warn({
+      ...baseLog,
+      Command: commandLog,
+      Error: `Compacted command body too large: ${forwardedBytes} bytes (max ${maxBytes})`,
+    });
+    return errorResponse(`Command body too large after sanitization (max ${maxBytes} bytes)`, 413);
+  }
 
   // if (!isSourceAllowed(auth.context!.config, parsed.command.source)) {
   //   console.warn(`[ExternalCommands] request ${requestId} source not allowed: ${parsed.command.source}`);
@@ -368,7 +396,7 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
   const response = await stub.fetch(doUrl.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: bodyText,
+    body: forwardBody,
   });
 
   const responseText = await response.clone().text();
@@ -381,7 +409,7 @@ async function handleExternalCommands(request: Request, env: Env, canvasId: stri
       status: response.status,
       durationMs: Date.now() - startedAt,
       bodyText: preview,
-      bodyJson: responseJson,
+      bodyJsonPreview: responseJson,
     },
   });
 

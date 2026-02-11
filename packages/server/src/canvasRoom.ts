@@ -29,11 +29,19 @@ import type {
   NodeDeletedMessage,
   NodeUpdatedMessage,
   NodesUpdatedMessage,
+  GetFullNodeMessage,
   Position,
 } from './types';
 import { MessageType, NodeType } from './types';
-import { loadLatestSnapshot } from './snapshot';
+import { getFullSnapshotKey, loadFullSnapshot, loadLatestSnapshot, saveFullSnapshot } from './snapshot';
 import { parseExternalCommand } from './utils/externalCommands';
+import {
+  byteLength,
+  compactBoardTaskItem,
+  compactExternalCommand,
+  MAX_STRING_BYTES,
+  resolveExternalCommandMaxBytes,
+} from './utils/externalCommandSanitizer';
 
 const ABSOLUTE_URL_PATTERN = /^https?:\/\//i;
 const ASPECT_RATIO_PATTERN = /^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/;
@@ -52,6 +60,9 @@ export class CanvasRoom implements DurableObject {
   private processedCommandIds: Map<string, number> = new Map();
   private externalTombstones: Map<string, number> = new Map();
   private autoLayoutIndex: number = 0;
+  
+  // R2 完整数据保存：存储未压缩的原始 raw 数据
+  private uncompressedRawData: Map<string, BoardTaskItem> = new Map(); // nodeId -> 原始 BoardTaskItem
   
   // DO Storage 持久化配置
   private isDirty: boolean = false;
@@ -73,7 +84,9 @@ export class CanvasRoom implements DurableObject {
   private readonly externalCdnBaseUrl = 'https://dr1coeak04nbk.cloudfront.net';
   private readonly mediaUrlEndpoint: string;
   private readonly mediaUrlCacheTtlMs: number;
+  private readonly mediaUrlRequestTimeoutMs: number;
   private readonly mediaUrlCache: Map<string, { url: string; expiresAt: number }> = new Map();
+  private readonly inFlightMediaUrlRequests: Map<string, Promise<string | undefined>> = new Map();
   
   // 旧快照配置(已废弃,保留用于迁移)
   private lastSnapshotSeq: number = 0;
@@ -110,6 +123,12 @@ export class CanvasRoom implements DurableObject {
       this.mediaUrlCacheTtlMs = !Number.isNaN(ttl) && ttl > 0 ? ttl : 5 * 60 * 1000;
     } else {
       this.mediaUrlCacheTtlMs = 5 * 60 * 1000;
+    }
+    if (env.MEDIA_URL_REQUEST_TIMEOUT_MS) {
+      const timeoutMs = parseInt(env.MEDIA_URL_REQUEST_TIMEOUT_MS, 10);
+      this.mediaUrlRequestTimeoutMs = !Number.isNaN(timeoutMs) && timeoutMs > 0 ? timeoutMs : 1200;
+    } else {
+      this.mediaUrlRequestTimeoutMs = 1200;
     }
     
     // 从环境变量读取配置
@@ -292,6 +311,7 @@ export class CanvasRoom implements DurableObject {
         seq: number;
         nodes: CanvasNodeData[];
         canvasId: string;
+        fullDataKey?: string;
         commandIds?: Record<string, number>;
         tombstones?: Record<string, number>;
         autoLayoutIndex?: number;
@@ -632,7 +652,17 @@ export class CanvasRoom implements DurableObject {
       case 'update_presence':
         await this.handleUpdatePresence(conn.userId, message as UpdatePresenceMessage);
         break;
-      
+
+      case MessageType.GET_FULL_NODE: {
+        const fullNode = await this.getFullNodeData((message as GetFullNodeMessage).nodeId);
+        this.send(ws, {
+          type: MessageType.FULL_NODE_DATA,
+          nodeId: (message as GetFullNodeMessage).nodeId,
+          node: fullNode,
+        });
+        break;
+      }
+
       default:
         console.warn(`[CanvasRoom] Unknown message type:`, message);
     }
@@ -676,6 +706,7 @@ export class CanvasRoom implements DurableObject {
 
     this.nodes.delete(nodeId);
     this.lockedNodes.delete(nodeId);
+    this.uncompressedRawData.delete(nodeId);
     this.seq++;
 
     const response: NodeDeletedMessage = {
@@ -951,6 +982,22 @@ export class CanvasRoom implements DurableObject {
     }
 
     const bodyText = await request.text();
+    const maxBytes = this.getExternalCommandMaxBytes();
+    const requestBytes = byteLength(bodyText);
+    if (requestBytes > maxBytes) {
+      return new Response(
+        JSON.stringify({
+          error: 'Command body too large',
+          bytes: requestBytes,
+          maxBytes,
+        }),
+        {
+          status: 413,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+
     const parsed = parseExternalCommand(bodyText);
     if (!parsed.ok || !parsed.command) {
       console.warn(`[CanvasRoom] Invalid external command: ${parsed.error || 'Invalid command'}`);
@@ -959,14 +1006,15 @@ export class CanvasRoom implements DurableObject {
         headers: { 'Content-Type': 'application/json' },
       });
     }
+    const compactedCommand = compactExternalCommand(parsed.command);
 
     console.log(
-      `[CanvasRoom] External command received id=${parsed.command.id} source=${parsed.command.source} type=${parsed.command.type} nodes=${parsed.command.payload.nodes.length}`
+      `[CanvasRoom] External command received id=${compactedCommand.id} source=${compactedCommand.source} type=${compactedCommand.type} nodes=${compactedCommand.payload.nodes.length} bytes=${requestBytes}`
     );
 
-    const result = await this.applyExternalCommand(parsed.command);
+    const result = await this.applyExternalCommand(compactedCommand);
     console.log(
-      `[CanvasRoom] External command result id=${parsed.command.id} status=${result.status} created=${result.created} updated=${result.updated} deleted=${result.deleted} ignored=${result.ignored} seq=${result.seq}`
+      `[CanvasRoom] External command result id=${compactedCommand.id} status=${result.status} created=${result.created} updated=${result.updated} deleted=${result.deleted} ignored=${result.ignored} seq=${result.seq}`
     );
 
     // 关键修复: 外部命令处理后立即持久化，确保数据不会因 DO 休眠而丢失
@@ -975,7 +1023,7 @@ export class CanvasRoom implements DurableObject {
     if (result.created + result.updated + result.deleted > 0) {
       await this.flushToStorage('manual');
       console.log(
-        `[CanvasRoom] External command flushed immediately: id=${parsed.command.id} seq=${result.seq}`
+        `[CanvasRoom] External command flushed immediately: id=${compactedCommand.id} seq=${result.seq}`
       );
     }
 
@@ -1238,6 +1286,10 @@ export class CanvasRoom implements DurableObject {
     }
   }
 
+  private getExternalCommandMaxBytes(): number {
+    return resolveExternalCommandMaxBytes(this.env.EXTERNAL_COMMAND_MAX_BYTES);
+  }
+
   private async applyExternalCommand(command: ExternalCommandEnvelope) {
     const now = Date.now();
     this.pruneCommandIds(now);
@@ -1379,7 +1431,7 @@ export class CanvasRoom implements DurableObject {
               `[CanvasRoom] Empty updates but forced update, updating raw: taskId=${item.taskId}`
             );
             const forcedUpdates: Partial<CanvasNodeData> = {
-              raw: mergedRaw,
+              raw: compactBoardTaskItem(mergedRaw),
               status: mergedRaw.status,
             };
             Object.assign(existing, forcedUpdates);
@@ -1395,6 +1447,9 @@ export class CanvasRoom implements DurableObject {
             summary.ignored += 1;
             continue;
           }
+
+          // 保存未压缩的原始数据
+          this.uncompressedRawData.set(existingId, mergedRaw);
 
           // 记录关键更新字段
           const updateKeys = Object.keys(updates);
@@ -1449,6 +1504,7 @@ export class CanvasRoom implements DurableObject {
 
           this.nodes.delete(existingId);
           this.lockedNodes.delete(existingId);
+          this.uncompressedRawData.delete(existingId);
           this.seq += 1;
           summary.deleted += 1;
           this.broadcast({
@@ -1489,13 +1545,16 @@ export class CanvasRoom implements DurableObject {
     // 新节点应该在所有现有节点之上，避免被已有图片覆盖
     const zIndex = this.getNextZIndex();
 
+    // 保存未压缩的原始数据到内存，用于 R2 完整快照
+    this.uncompressedRawData.set(nodeId, item);
+
     return ({
       id: nodeId,
       type: normalizedType,
       position,
       size,
       zIndex,
-      raw: item,
+      raw: compactBoardTaskItem(item),
       taskId: item.taskId,
       rating: item.rating,
       status: item.status,
@@ -1519,8 +1578,9 @@ export class CanvasRoom implements DurableObject {
     }
 
     const derived = await this.buildTaskNodeData(item, normalizedType);
+    const compactedRaw = compactBoardTaskItem(item);
     const updates: Partial<CanvasNodeData> = {
-      raw: item,
+      raw: compactedRaw,
       taskId: item.taskId,
       rating: item.rating,
       status: item.status,
@@ -1840,10 +1900,31 @@ export class CanvasRoom implements DurableObject {
     if (cached) {
       return cached;
     }
+    const inFlight = this.inFlightMediaUrlRequests.get(filePath);
+    if (inFlight) {
+      return inFlight;
+    }
+
+    const requestPromise = this.fetchSignedUrlWithTimeout(filePath).finally(() => {
+      this.inFlightMediaUrlRequests.delete(filePath);
+    });
+    this.inFlightMediaUrlRequests.set(filePath, requestPromise);
+
+    return requestPromise;
+  }
+
+  private async fetchSignedUrlWithTimeout(filePath: string): Promise<string | undefined> {
+    const url = new URL(this.mediaUrlEndpoint);
+    url.searchParams.set('filePath', filePath);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.mediaUrlRequestTimeoutMs);
+
     try {
-      const url = new URL(this.mediaUrlEndpoint);
-      url.searchParams.set('filePath', filePath);
-      const response = await fetch(url.toString(), { method: 'GET' });
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        signal: controller.signal,
+      });
       if (!response.ok) {
         console.warn('[CanvasRoom] resolveSignedUrl bad response', {
           filePath,
@@ -1866,8 +1947,20 @@ export class CanvasRoom implements DurableObject {
       });
       return fileUrl;
     } catch (error) {
-      console.warn('[CanvasRoom] resolveSignedUrl failed', { filePath, error });
+      const isTimeout =
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.message.toLowerCase().includes('aborted'));
+      if (isTimeout) {
+        console.warn('[CanvasRoom] resolveSignedUrl timeout', {
+          filePath,
+          timeoutMs: this.mediaUrlRequestTimeoutMs,
+        });
+      } else {
+        console.warn('[CanvasRoom] resolveSignedUrl failed', { filePath, error });
+      }
       return undefined;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -2316,6 +2409,61 @@ export class CanvasRoom implements DurableObject {
   }
 
   /**
+   * 仅在持久化时压缩 raw payload，避免触发 DO SQLite blob 限制。
+   */
+  private getPersistedNodes(): CanvasNodeData[] {
+    return Array.from(this.nodes.values()).map((node) => {
+      const rawItem = (node as CanvasNodeData & { raw?: BoardTaskItem }).raw;
+      if (!rawItem) {
+        return node;
+      }
+      return ({
+        ...(node as Record<string, unknown>),
+        raw: compactBoardTaskItem(rawItem),
+      } as unknown) as CanvasNodeData;
+    });
+  }
+
+  /**
+   * 获取完整节点数据（含未截断的 prompt），用于「重新使用相同 prompt 生成」等场景。
+   * 若当前节点的 prompt 未被截断则直接返回；否则从 R2 加载完整数据；失败时降级返回压缩版。
+   */
+  private async getFullNodeData(nodeId: string): Promise<CanvasNodeData | null> {
+    const node = this.nodes.get(nodeId);
+    if (!node) {
+      return null;
+    }
+
+    const rawItem = (node as CanvasNodeData & { raw?: BoardTaskItem }).raw;
+    if (!rawItem) {
+      return node;
+    }
+
+    const prompt = (rawItem.parameters as Record<string, unknown> | undefined)?.prompt;
+    const isPromptTruncated =
+      typeof prompt === 'string' && byteLength(prompt) >= MAX_STRING_BYTES;
+
+    if (!isPromptTruncated) {
+      return node;
+    }
+
+    try {
+      const fullSnapshot = await loadFullSnapshot(this.env, this.canvasId!);
+      if (!fullSnapshot) {
+        return node;
+      }
+      const fullNode = fullSnapshot.nodes.find((n) => n.id === nodeId);
+      console.log(
+        `[CanvasRoom] Loaded full node data for ${nodeId} from R2 (prompt was truncated)`
+      );
+      return fullNode ?? node;
+    } catch (error) {
+      console.error(`[CanvasRoom] Failed to load full data from R2:`, error);
+      return node;
+    }
+  }
+
+  /**
    * 将脏状态持久化到 DO Storage
    * 使用 blockConcurrencyWhile 确保写入原子性
    */
@@ -2331,14 +2479,39 @@ export class CanvasRoom implements DurableObject {
       console.log(
         `[CanvasRoom] Flushing state (${reason}) for canvas ${this.canvasId} v${this.CURRENT_STATE_VERSION} at seq ${this.seq}`
       );
-      
+      const persistedNodes = this.getPersistedNodes();
+      const fullDataKey = getFullSnapshotKey(this.canvasId!);
+
+      // 异步保存完整未压缩数据到 R2（不阻塞主流程）
+      // 构建包含完整未压缩 raw 数据的节点列表
+      const fullNodes = Array.from(this.nodes.values()).map((node) => {
+        const uncompressedRaw = this.uncompressedRawData.get(node.id);
+        if (uncompressedRaw) {
+          return {
+            ...node,
+            raw: uncompressedRaw, // 使用未压缩的原始数据
+          } as CanvasNodeData;
+        }
+        return node; // 如果没有未压缩数据，使用原节点（可能是用户手动创建的节点）
+      });
+
+      saveFullSnapshot(
+        this.env,
+        this.canvasId!,
+        this.seq,
+        fullNodes
+      ).catch(err => {
+        console.error(`[CanvasRoom] Failed to save full snapshot to R2:`, err);
+      });
+
       // 使用 blockConcurrencyWhile 保证原子性写入
       await this.state.blockConcurrencyWhile(async () => {
         await this.state.storage.put('state', {
           version: this.CURRENT_STATE_VERSION,
           seq: this.seq,
-          nodes: Array.from(this.nodes.values()),
+          nodes: persistedNodes,
           canvasId: this.canvasId,
+          fullDataKey,
           commandIds: Object.fromEntries(this.processedCommandIds),
           tombstones: Object.fromEntries(this.externalTombstones),
           autoLayoutIndex: this.autoLayoutIndex,

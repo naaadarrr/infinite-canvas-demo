@@ -67,6 +67,69 @@ export async function loadSnapshot(
   return snapshot;
 }
 
+/** R2 key for full (uncompressed) snapshot - single file per canvas, overwritten on each flush */
+export const FULL_SNAPSHOT_KEY_PREFIX = 'snapshots/';
+export function getFullSnapshotKey(canvasId: string): string {
+  return `snapshots/${canvasId}/latest-full.json`;
+}
+
+/**
+ * 保存完整未压缩数据到 R2（用于"重新使用相同 prompt 生成"等需要完整数据的场景）
+ * 始终覆盖更新，不保留历史版本
+ */
+export async function saveFullSnapshot(
+  env: Env,
+  canvasId: string,
+  seq: number,
+  nodes: CanvasNodeData[]
+): Promise<string> {
+  const key = getFullSnapshotKey(canvasId);
+  const snapshot: CanvasSnapshot = {
+    canvasId,
+    seq,
+    nodes,
+    timestamp: Date.now(),
+  };
+  const content = JSON.stringify(snapshot);
+
+  await env.R2.put(key, content, {
+    httpMetadata: {
+      contentType: 'application/json',
+    },
+    customMetadata: {
+      canvasId,
+      seq: seq.toString(),
+      timestamp: snapshot.timestamp.toString(),
+      dataType: 'full',
+    },
+  });
+
+  console.log(`[Snapshot] Saved full snapshot for canvas ${canvasId} at seq ${seq}`);
+  return key;
+}
+
+/**
+ * 从 R2 加载完整未压缩数据（用于获取完整 prompt 等）
+ */
+export async function loadFullSnapshot(
+  env: Env,
+  canvasId: string
+): Promise<CanvasSnapshot | null> {
+  const key = getFullSnapshotKey(canvasId);
+  const object = await env.R2.get(key);
+
+  if (!object) {
+    console.warn(`[Snapshot] Full snapshot not found: ${key}`);
+    return null;
+  }
+
+  const content = await object.text();
+  const snapshot = JSON.parse(content) as CanvasSnapshot;
+
+  console.log(`[Snapshot] Loaded full snapshot for canvas ${snapshot.canvasId} at seq ${snapshot.seq}`);
+  return snapshot;
+}
+
 /**
  * 更新 D1 中的快照指针
  */

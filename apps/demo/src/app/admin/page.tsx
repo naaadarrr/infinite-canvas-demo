@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -39,6 +40,9 @@ import {
   Layers,
   Maximize2,
   Minimize2,
+  LogOut,
+  User,
+  Loader2,
 } from 'lucide-react';
 
 /* ────────────────────────────────────
@@ -78,10 +82,21 @@ interface EnrichedRoom extends RoomInfo {
   loading: boolean;
 }
 
+interface UserInfo {
+  id: string;
+  name: string;
+  email: string;
+  avatar?: string;
+  loginAt: number;
+}
+
 /* ────────────────────────────────────
    Page Component
    ──────────────────────────────────── */
 export default function AdminPage() {
+  const router = useRouter();
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [enrichedRooms, setEnrichedRooms] = useState<EnrichedRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedRoomStatus, setSelectedRoomStatus] =
@@ -107,6 +122,39 @@ export default function AdminPage() {
       .replace('ws://', 'http://') ||
     'https://infinite-canvas-collab-worker.topviewai.app';
   const TOKEN = process.env.NEXT_PUBLIC_USER_TOKEN || 'user_admin';
+
+  /* ── 身份验证 ── */
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const res = await fetch('/admin/auth/me');
+        if (!res.ok) {
+          router.push('/admin/login');
+          return;
+        }
+        const data = await res.json();
+        setUserInfo(data.user);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        router.push('/admin/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
+  /* ── 退出登录 ── */
+  const handleLogout = async () => {
+    if (!confirm('确定要退出登录吗？')) return;
+    try {
+      await fetch('/admin/auth/logout', { method: 'POST' });
+      router.push('/admin/login');
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
+  };
 
   /* ── data fetching (unchanged logic) ── */
   const fetchRooms = useCallback(
@@ -317,6 +365,18 @@ export default function AdminPage() {
   const activeCount = enrichedRooms.filter((r) => r.isActive).length;
   const allCollapsed = !detailsOpen && !connectionsOpen;
 
+  /* ── 加载状态 ── */
+  if (authLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">验证登录状态...</p>
+        </div>
+      </div>
+    );
+  }
+
   /* ── render ── */
   return (
     <div className="flex h-screen overflow-hidden leading-relaxed">
@@ -496,6 +556,35 @@ export default function AdminPage() {
               </h1>
 
               <div className="ml-auto flex items-center gap-4">
+                {/* User Info */}
+                {userInfo && (
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-2 rounded-lg bg-muted/50">
+                      {userInfo.avatar ? (
+                        <img
+                          src={userInfo.avatar}
+                          alt={userInfo.name}
+                          className="h-8 w-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                          <User className="h-4 w-4 text-primary" />
+                        </div>
+                      )}
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium leading-none">
+                          {userInfo.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground leading-none mt-1">
+                          {userInfo.email}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="h-5 w-px bg-border/50" />
+                  </>
+                )}
+
                 <Button
                   variant="ghost"
                   className="h-auto min-h-10 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground gap-4 leading-relaxed"
@@ -534,6 +623,18 @@ export default function AdminPage() {
                     </Button>
                   </>
                 )}
+
+                <div className="h-5 w-px bg-border/50" />
+
+                {/* Logout Button */}
+                <Button
+                  variant="ghost"
+                  className="h-auto min-h-10 px-4 py-2.5 text-sm text-muted-foreground hover:text-destructive gap-4 leading-relaxed"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>退出</span>
+                </Button>
               </div>
             </header>
 

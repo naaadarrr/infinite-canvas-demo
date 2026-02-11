@@ -4,6 +4,11 @@ import './globals.css';
 export const metadata: Metadata = {
   title: '@tc/infinite - Infinite Canvas Demo',
   description: 'Demo for @tc/infinite canvas library',
+  icons: {
+    icon: '/Gemini_Generated_infinity_Image_aa0lzhaa0lzhaa0l.png',
+    shortcut: '/Gemini_Generated_infinity_Image_aa0lzhaa0lzhaa0l.png',
+    apple: '/Gemini_Generated_infinity_Image_aa0lzhaa0lzhaa0l.png',
+  },
 };
 
 export default function RootLayout({

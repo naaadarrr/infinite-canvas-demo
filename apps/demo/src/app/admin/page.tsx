@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
   ResizablePanelGroup,
@@ -101,7 +102,7 @@ export default function AdminPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [selectedRoomStatus, setSelectedRoomStatus] =
     useState<RoomStatus | null>(null);
-  const [refreshInterval, setRefreshInterval] = useState(0);
+  const [refreshInterval, setRefreshInterval] = useState(5000);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualRoomId, setManualRoomId] = useState('');
@@ -397,8 +398,15 @@ export default function AdminPage() {
               <aside className="h-full bg-sidebar border-r border-sidebar-border flex flex-col leading-relaxed">
                 {/* ── brand ── */}
                 <div className="h-16 flex items-center gap-3 px-5 border-b border-sidebar-border shrink-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground text-sm font-bold shrink-0">
-                    B
+                  <div className="relative h-9 w-9 overflow-hidden rounded-lg ring-1 ring-black/5 shrink-0">
+                    <Image
+                      src="/Gemini_Generated_infinity_Image_aa0lzhaa0lzhaa0l.png"
+                      alt="Board Admin Logo"
+                      fill
+                      sizes="36px"
+                      className="object-cover"
+                      priority
+                    />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold leading-relaxed truncate">

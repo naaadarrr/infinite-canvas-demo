@@ -4,9 +4,9 @@
  */
 
 import { cookies } from 'next/headers';
-import { SignJWT, jwtVerify } from 'jose';
+import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 
-export interface SessionData {
+export interface SessionData extends JWTPayload {
   userId: string;
   userName: string;
   userEmail: string;

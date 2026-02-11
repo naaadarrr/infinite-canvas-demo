@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -37,21 +37,22 @@ const isSafeNextPath = (path: string | null): path is string =>
   !!path && path.startsWith('/') && !path.startsWith('//');
 
 export default function AdminLoginPage() {
-  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
     const errorParam = searchParams.get('error');
     if (errorParam) {
       setError(getErrorMessage(errorParam));
     }
-  }, [searchParams]);
+  }, []);
 
   const handleLogin = () => {
     setIsLoading(true);
     setError(null);
 
+    const searchParams = new URLSearchParams(window.location.search);
     const nextPath = searchParams.get('next');
     if (isSafeNextPath(nextPath)) {
       const authUrl = new URL('/admin/auth/login', window.location.origin);
@@ -70,8 +71,15 @@ export default function AdminLoginPage() {
         <CardHeader className="space-y-4 text-center pb-8 pt-10">
           {/* Logo */}
           <div className="flex justify-center mb-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 shadow-lg">
-              <span className="text-2xl font-bold text-white">B</span>
+            <div className="relative h-16 w-16 overflow-hidden rounded-2xl shadow-lg ring-1 ring-black/5">
+              <Image
+                src="/Gemini_Generated_infinity_Image_aa0lzhaa0lzhaa0l.png"
+                alt="Board Admin Logo"
+                fill
+                sizes="64px"
+                className="object-cover"
+                priority
+              />
             </div>
           </div>
 
@@ -119,7 +127,7 @@ export default function AdminLoginPage() {
             <div className="flex items-start gap-2 text-sm text-muted-foreground">
               <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
               <p className="leading-relaxed">
-                使用企业飞书账号登录，仅限已授权的管理员访问
+                使用企业飞书账号登录
               </p>
             </div>
 

@@ -11,6 +11,8 @@ import {
 } from '@/lib/feishu';
 import { createSession } from '@/lib/session';
 
+export const runtime = 'edge';
+
 const POST_LOGIN_REDIRECT_COOKIE_NAME = 'post_login_redirect';
 
 function getSafeNextPath(path: string | undefined): string | null {

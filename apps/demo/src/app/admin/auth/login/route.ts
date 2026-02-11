@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFeishuAuthUrl } from '@/lib/feishu';
 
+export const runtime = 'edge';
+
 const POST_LOGIN_REDIRECT_COOKIE_NAME = 'post_login_redirect';
 const POST_LOGIN_REDIRECT_MAX_AGE_SECONDS = 10 * 60;
 

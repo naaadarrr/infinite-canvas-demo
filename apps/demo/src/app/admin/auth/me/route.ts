@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSession } from '@/lib/session';
 
+export const runtime = 'edge';
+
 export async function GET(request: NextRequest) {
   const session = await getSession();
 

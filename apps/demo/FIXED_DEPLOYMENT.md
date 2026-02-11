@@ -3,7 +3,7 @@
 ## 📋 当前状态
 
 从你的截图看到:
-- **Compatibility flags**: `nodejs_compat populate_process_env` ❌ (这是错误的格式)
+- **Compatibility flags**: `nodejs_compat nodejs_compat_populate_process_env` ❌ (这是错误的格式)
 - **Compatibility date**: `Jan 23, 2026` ✅
 
 ## ⚠️ 问题
@@ -15,7 +15,7 @@
 ### 1. 点击 Compatibility flags 右侧的 ✏️ (编辑按钮)
 
 ### 2. 删除当前的标志
-   - 删除整个 `nodejs_compat populate_process_env` 字符串
+   - 删除整个 `nodejs_compat nodejs_compat_populate_process_env` 字符串
 
 ### 3. 重新添加正确的标志(逐个添加)
 
@@ -26,7 +26,7 @@
 
 **第二个标志(可选):**
 - 点击 **Add flag**
-- 输入: `populate_process_env`
+- 输入: `nodejs_compat_populate_process_env`
 - 点击 Save 或 Add
 
 ### 4. 保存设置
@@ -50,7 +50,7 @@ pnpm run deploy:pages
 
 在 **Compatibility flags** 部分应该显示为:
 - `nodejs_compat`
-- `populate_process_env`
+- `nodejs_compat_populate_process_env`
 
 两个独立的标志,而不是一个连在一起的字符串。
 

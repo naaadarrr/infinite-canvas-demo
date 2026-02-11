@@ -37,17 +37,19 @@ no nodejs_compat compatibility flag set
 
 4. 找到 **Compatibility date** 部分:
    - 点击 **Edit** 或直接修改
-   - 设置为: `2024-01-01` 或更新的日期(如 `2026-01-23`)
+   - 设置为: `2026-01-23`（推荐）
    - 点击 **Save**
 
 5. 找到 **Compatibility flags** 部分:
    - 点击 **Add flag** 按钮
    - 在输入框中输入: `nodejs_compat`
    - 点击 **Add** 或 **Save**
+   - 再次点击 **Add flag**，输入: `nodejs_compat_populate_process_env`
+   - 点击 **Add** 或 **Save**
 
 对于 **Preview 环境**(如果你也想让预览环境正常工作):
 
-6. 重复步骤 4-5,为 Preview 环境也添加相同的配置
+6. 重复步骤 4-5,为 Preview 环境也添加相同的配置（日期和两个 flags 都一致）
 
 ### 步骤 4: 重新部署
 
@@ -88,4 +90,4 @@ pnpm run deploy:pages
 
 - 必须为 **Production** 和 **Preview** 两个环境都配置
 - 保存后必须重新部署才能生效
-- 如果还是有问题,检查 **Compatibility date** 是否设置为较新的日期(建议 2024-01-01 或更新)
+- 如果还是有问题,检查 **Compatibility date** 是否设置为 `2026-01-23`，并确认 flags 为 `nodejs_compat` + `nodejs_compat_populate_process_env`

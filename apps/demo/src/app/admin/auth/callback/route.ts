@@ -14,6 +14,7 @@ import { createSession } from '@/lib/session';
 export const runtime = 'edge';
 
 const POST_LOGIN_REDIRECT_COOKIE_NAME = 'post_login_redirect';
+const PROCESSED_CODE_TTL_MS = 5 * 60 * 1000;
 
 function getSafeNextPath(path: string | undefined): string | null {
   if (!path) return null;
@@ -22,14 +23,34 @@ function getSafeNextPath(path: string | undefined): string | null {
 }
 
 // 用于防止重复处理同一个 code
-const processedCodes = new Set<string>();
+const processedCodes = new Map<string, number>();
 
-// 定期清理已处理的 code（5分钟后清理）
-setInterval(() => {
-  processedCodes.clear();
-}, 5 * 60 * 1000);
+function cleanupProcessedCodes(now: number): void {
+  for (const [code, timestamp] of processedCodes) {
+    if (now - timestamp > PROCESSED_CODE_TTL_MS) {
+      processedCodes.delete(code);
+    }
+  }
+}
+
+function hasProcessedCode(code: string, now: number): boolean {
+  const timestamp = processedCodes.get(code);
+  if (!timestamp) {
+    return false;
+  }
+
+  if (now - timestamp > PROCESSED_CODE_TTL_MS) {
+    processedCodes.delete(code);
+    return false;
+  }
+
+  return true;
+}
 
 export async function GET(request: NextRequest) {
+  const now = Date.now();
+  cleanupProcessedCodes(now);
+
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
   const error = searchParams.get('error');
@@ -55,13 +76,13 @@ export async function GET(request: NextRequest) {
   }
 
   // 检查 code 是否已经处理过
-  if (processedCodes.has(code)) {
+  if (hasProcessedCode(code, now)) {
     console.warn('⚠️ 授权码已处理，跳过重复请求:', code.substring(0, 10) + '...');
     return NextResponse.redirect(new URL('/admin', request.url));
   }
 
   // 标记 code 为已处理
-  processedCodes.add(code);
+  processedCodes.set(code, now);
   console.log('✅ 开始处理授权码:', code.substring(0, 10) + '...');
 
   const appId = process.env.FEISHU_APP_ID;
@@ -129,9 +150,16 @@ export async function GET(request: NextRequest) {
     // 从已处理列表中移除失败的 code，允许重试
     processedCodes.delete(code);
     
-    // 特殊处理错误码 20014
+    // 特殊处理授权码失效错误
     const errorMessage = error instanceof Error ? error.message : 'unknown_error';
-    if (errorMessage.includes('20014') || errorMessage.includes('已过期') || errorMessage.includes('已使用')) {
+    if (
+      errorMessage.includes('20014') ||
+      errorMessage.includes('20003') ||
+      errorMessage.includes('已过期') ||
+      errorMessage.includes('已使用') ||
+      errorMessage.includes('code is invalid') ||
+      errorMessage.includes('code is expired')
+    ) {
       console.error('💡 提示: 授权码已失效，请重新登录');
       return NextResponse.redirect(
         new URL('/admin/login?error=code_expired', request.url)

@@ -19,10 +19,12 @@
 ### 步骤 3: 配置兼容性标志
 
 1. 在左侧菜单中找到 **Functions** 部分
-2. 滚动到 **Compatibility Flags** 区域
-3. 点击 **Add flag** 按钮
-4. 在输入框中输入: `nodejs_compat`
-5. 点击 **Save** 保存
+2. 先设置 **Compatibility Date** 为: `2026-01-23`
+3. 滚动到 **Compatibility Flags** 区域
+4. 点击 **Add flag** 按钮
+5. 在输入框中输入: `nodejs_compat`
+6. 再添加一个 flag: `nodejs_compat_populate_process_env`
+7. 点击 **Save** 保存
 
 ### 步骤 4: 重新部署
 

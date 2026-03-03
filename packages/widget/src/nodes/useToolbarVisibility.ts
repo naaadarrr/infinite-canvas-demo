@@ -30,7 +30,7 @@ const getSelectedCount = (state: any) => {
   return 0;
 };
 
-export function useToolbarVisibility(selected: boolean, dragging: boolean) {
+export function useToolbarVisibility(selected: boolean | undefined, dragging: boolean | undefined) {
   const selectedCount = useStore(getSelectedCount);
   const elementsSelectable = useStore((state) => state.elementsSelectable ?? true);
   const zoom = useStore((state) => state.transform[2] ?? 1);

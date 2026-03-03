@@ -1,12 +1,12 @@
 import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
-import { Info, Paintbrush, RefreshCw, Shuffle, Play, Pause } from 'lucide-react';
+import { ArrowUpRight, Download, RefreshCw, ScanFace, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
-import { useDependencyFocus } from './DependencyFocusContext';
+
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
 
@@ -41,8 +41,6 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
-  const { activeNodeId, toggleNode } = useDependencyFocus();
-  const isDependencyFocus = activeNodeId === nodeData.id;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const handleRatingChange = React.useCallback(
     (nextRating: number) => {
@@ -98,31 +96,29 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       });
     }
     
-    // 以下按钮始终显示（不受 toolType 影响）
     actions.push(
       {
         id: 'avatar',
         label: 'AI Avatar',
-        icon: Paintbrush,
+        icon: ScanFace,
         onClick: () => handleQuickAction('avatar', 'AI Avatar'),
       },
       {
         id: 'upscale',
         label: 'Upscale',
-        icon: Shuffle,
+        icon: ArrowUpRight,
         onClick: () => handleQuickAction('upscale', 'Upscale'),
       },
       {
-        id: 'dependency',
-        label: 'Related Nodes',
-        icon: Info,
-        onClick: () => toggleNode(nodeData.id),
-        active: isDependencyFocus,
+        id: 'download',
+        label: 'Download',
+        icon: Download,
+        onClick: () => handleQuickAction('download', 'Download'),
       }
     );
     
     return actions;
-  }, [rawItem?.toolType, handleQuickAction, toggleNode, nodeData.id, isDependencyFocus]);
+  }, [rawItem?.toolType, handleQuickAction]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -369,14 +365,17 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   return (
     <div
       ref={containerRef}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : 'transparent'}`,
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: 'transparent',
+        cursor: 'default',
       }}
     >
       {/* 顶部/底部依赖连接点 */}
@@ -418,7 +417,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         position={Position.Right}
         style={{ opacity: 0, pointerEvents: 'none' }}
       />
-      {isSuccess && (
+      {isSuccess && showToolbar && (
         <NodeRatingBadge
           rating={(nodeData as any).rating ?? rawItem?.rating}
           onChange={canEdit ? handleRatingChange : undefined}
@@ -460,8 +459,6 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           overflow: 'hidden',
           background: '#1a1a1a',
         }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
         {isFailed ? (
           <div

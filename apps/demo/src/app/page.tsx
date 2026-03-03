@@ -256,6 +256,7 @@ export default function Home() {
       layoutConfig={layoutConfig}
       dependencyEdgesVisible={true}
       invisible={invisible}
+      topBarLogoUrl="/logo.svg"
     />
   );
 }

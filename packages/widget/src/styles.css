@@ -30,7 +30,7 @@
   background-color: var(--tc-node-toolbar-bg);
   border: 1px solid var(--tc-node-toolbar-border);
   box-shadow: var(--tc-node-toolbar-shadow);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .tc-node-toolbar-action {

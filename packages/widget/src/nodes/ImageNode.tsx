@@ -2,12 +2,12 @@ import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { NodeType } from '@tc/infinite-core';
-import { Info, Paintbrush, RefreshCw, Shuffle, Type, Video } from 'lucide-react';
+import { ArrowUpRight, Download, Paintbrush, RefreshCw, RotateCw, ScanFace, Shuffle, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
-import { useDependencyFocus } from './DependencyFocusContext';
+
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
 import { useSelectMode } from '../SelectModeContext';
@@ -55,14 +55,14 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     corner: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
   } | null>(null);
   
+  const [isHovered, setIsHovered] = React.useState(false);
+  
   // 使用 React Flow 原生的 selected 和 dragging 状态
   const isSkeleton = status === 'init';
   const isFailed = status === 'fail';
   const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
-  const { activeNodeId, toggleNode } = useDependencyFocus();
-  const isDependencyFocus = activeNodeId === nodeData.id;
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -143,7 +143,6 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       });
     }
     
-    // 以下按钮始终显示（不受 toolType 影响）
     actions.push(
       {
         id: 'reference',
@@ -164,22 +163,33 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         onClick: () => handleQuickAction('video', 'Generate Video'),
       },
       {
-        id: 'ocr',
-        label: 'Edit Image Text',
-        icon: Type,
-        onClick: () => handleQuickAction('ocr', 'Edit Image Text'),
+        id: 'edit-angles',
+        label: 'Edit Angles',
+        icon: RotateCw,
+        onClick: () => handleQuickAction('edit-angles', 'Edit Angles'),
       },
       {
-        id: 'dependency',
-        label: 'Related Nodes',
-        icon: Info,
-        onClick: () => toggleNode(nodeData.id),
-        active: isDependencyFocus,
+        id: 'avatar',
+        label: 'AI Avatar',
+        icon: ScanFace,
+        onClick: () => handleQuickAction('avatar', 'AI Avatar'),
+      },
+      {
+        id: 'upscale',
+        label: 'Upscale',
+        icon: ArrowUpRight,
+        onClick: () => handleQuickAction('upscale', 'Upscale'),
+      },
+      {
+        id: 'download',
+        label: 'Download',
+        icon: Download,
+        onClick: () => handleQuickAction('download', 'Download'),
       }
     );
     
     return actions;
-  }, [rawItem?.toolType, handleQuickAction, toggleNode, nodeData.id, isDependencyFocus]);
+  }, [rawItem?.toolType, handleQuickAction]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -288,14 +298,17 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   return (
     <div
       ref={containerRef}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : 'transparent'}`,
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: 'transparent',
+        cursor: 'default',
       }}
     >
       {/* 顶部/底部依赖连接点 */}
@@ -337,7 +350,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         position={Position.Right}
         style={{ opacity: 0, pointerEvents: 'none' }}
       />
-      {isSuccess && (
+      {isSuccess && showToolbar && (
         <NodeRatingBadge
           rating={(nodeData as any).rating ?? rawItem?.rating}
           onChange={canEdit ? handleRatingChange : undefined}
@@ -408,7 +421,28 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
               pointerEvents: 'none',
             }}
           />
-        ) : null}
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              color: 'rgba(255,255,255,0.2)',
+              background: '#2a2d32',
+            }}
+          >
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+            <span style={{ fontSize: 11 }}>Image</span>
+          </div>
+        )}
         {/* 素材选择模式遮罩 - 仅在选择模式下且任务成功时显示 */}
         <SelectionOverlay
           isVisible={isSelectable && isSuccess}

@@ -579,6 +579,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     side: 'left' | 'right';
   } | null>(null);
   const manualSizingRef = React.useRef(false); // 标记是否正在手动调整尺寸
+  const [isHovered, setIsHovered] = React.useState(false);
   
   const fontSize = nodeData.fontSize ?? 16;
   const fontWeight = nodeData.fontWeight ?? 'normal';
@@ -971,6 +972,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     <div
       ref={containerRef}
       onClick={handleContainerClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
@@ -978,8 +981,9 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         overflow: 'visible',
         padding: `${paddingSize}px`,
         boxSizing: 'border-box',
-        border: showHighlight ? '2px solid #3b82f6' : '2px solid transparent',
+        border: (showHighlight || isHovered) ? '2px solid #3b82f6' : '2px solid transparent',
         backgroundColor: resolvedBackgroundColor,
+        cursor: 'default',
       }}
     >
       {/* 顶部工具栏 - 在编辑模式或选中时显示 */}

@@ -1,12 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
-import { Info, RefreshCw, Play, Pause } from 'lucide-react';
+import { Download, RefreshCw, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { useToolbarVisibility } from './useToolbarVisibility';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
-import { useDependencyFocus } from './DependencyFocusContext';
+
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
 
@@ -35,12 +35,11 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
   const isSuccess = status === 'success';
   const showHighlight = selected || dragging;
   const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
-  const { activeNodeId, toggleNode } = useDependencyFocus();
-  const isDependencyFocus = activeNodeId === nodeData.id;
 
   // 音频播放状态
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [progress, setProgress] = useState(0);
   const [hasError, setHasError] = useState(false);
 
@@ -195,18 +194,16 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         onClick: () => handleQuickAction('edit', 'Re-edit'),
       });
     }
-    
-    // 依赖关系线开关按钮（始终显示）
+
     actions.push({
-      id: 'dependency',
-      label: 'Related Nodes',
-      icon: Info,
-      onClick: () => toggleNode(nodeData.id),
-      active: isDependencyFocus,
+      id: 'download',
+      label: 'Download',
+      icon: Download,
+      onClick: () => handleQuickAction('download', 'Download'),
     });
-    
+
     return actions;
-  }, [rawItem?.toolType, handleQuickAction, toggleNode, nodeData.id, isDependencyFocus]);
+  }, [rawItem?.toolType, handleQuickAction]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -325,11 +322,13 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
   return (
     <div
       ref={containerRef}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${isFailed ? '#ef4444' : showHighlight ? '#3b82f6' : 'transparent'}`,
+        border: `2px solid ${isFailed ? '#ef4444' : 'transparent'}`,
         // borderRadius: '8px',
         overflow: 'visible',
         padding: isSkeleton || isFailed ? 0 : '16px',
@@ -337,6 +336,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         display: 'flex',
         flexDirection: 'column',
         gap: '12px',
+        cursor: 'default',
       }}
     >
       {/* 顶部/底部依赖连接点 */}

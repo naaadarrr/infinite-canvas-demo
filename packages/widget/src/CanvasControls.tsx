@@ -36,100 +36,101 @@ const getButtonStyle = (enabled: boolean): React.CSSProperties => ({
 
 function ZoomOutIcon() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={ICON_STYLE}
-    >
-      <path
-        d="M3.33333 8H12.6667"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
 
 function ZoomInIcon() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={ICON_STYLE}
-    >
-      <path
-        d="M3.33333 8H12.6667"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 3V12.3333"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M7 5V9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
 
-function FitViewIcon() {
+function ZoomToSelectionIcon() {
   return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={ICON_STYLE}
-    >
-      <path
-        d="M2 4.66667V3.33333C2 2.97971 2.14048 2.64057 2.39052 2.39052C2.64057 2.14048 2.97971 2 3.33333 2H4.66667"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M11.3333 2H12.6667C13.0203 2 13.3594 2.14048 13.6095 2.39052C13.8595 2.64057 14 2.97971 14 3.33333V4.66667"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M14 11.3333V12.6667C14 13.0203 13.8595 13.3594 13.6095 13.6095C13.3594 13.8595 13.0203 14 12.6667 14H11.3333"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4.66667 14H3.33333C2.97971 14 2.64057 13.8595 2.39052 13.6095C2.14048 13.3594 2 13.0203 2 12.6667V11.3333"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M10.6667 5.33333H5.33333C4.96514 5.33333 4.66667 5.63181 4.66667 6V10C4.66667 10.3682 4.96514 10.6667 5.33333 10.6667H10.6667C11.0349 10.6667 11.3333 10.3682 11.3333 10V6C11.3333 5.63181 11.0349 5.33333 10.6667 5.33333Z"
-        stroke="currentColor"
-        strokeWidth="1.33333"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
+      <path d="M2 5V3.33C2 2.6 2.6 2 3.33 2H5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11 2h1.67C13.4 2 14 2.6 14 3.33V5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 11v1.67c0 .73-.6 1.33-1.33 1.33H11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 14H3.33C2.6 14 2 13.4 2 12.67V11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.2" />
     </svg>
+  );
+}
+
+function FitToScreenIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
+      <path d="M2 4.67V3.33C2 2.6 2.6 2 3.33 2H4.67" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M11.33 2H12.67C13.4 2 14 2.6 14 3.33V4.67" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M14 11.33V12.67C14 13.4 13.4 14 12.67 14H11.33" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.67 14H3.33C2.6 14 2 13.4 2 12.67V11.33" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="4.67" y="5.33" width="6.67" height="5.33" rx="0.67" stroke="currentColor" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TooltipButton({ label, onClick, style, disabled, ariaLabel, children }: {
+  label: string;
+  onClick: () => void;
+  style: React.CSSProperties;
+  disabled?: boolean;
+  ariaLabel: string;
+  children: React.ReactNode;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <div style={{ position: 'relative' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        style={style}
+        disabled={disabled}
+        aria-label={ariaLabel}
+      >
+        {children}
+      </button>
+      {hovered && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          marginBottom: 6,
+          padding: '5px 8px',
+          borderRadius: 6,
+          background: '#252525',
+          border: '1px solid rgba(255,255,255,0.12)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          color: '#fff',
+          fontSize: 11,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}>
+          {label}
+        </div>
+      )}
+    </div>
   );
 }
 
 export function CanvasControls({
   position = 'bottom-left',
 }: CanvasControlsProps) {
-  const { zoomIn, zoomOut, fitView } = useReactFlow();
+  const { zoomIn, zoomOut, fitView, getNodes } = useReactFlow();
   const zoom = useStore((state) => state.transform[2] ?? 1);
   const minZoom = useStore((state) => state.minZoom ?? 0.1);
   const maxZoom = useStore((state) => state.maxZoom ?? 4);
@@ -137,6 +138,17 @@ export function CanvasControls({
   const zoomPercent = Math.round(zoom * 100);
   const canZoomIn = zoom < maxZoom - 0.001;
   const canZoomOut = zoom > minZoom + 0.001;
+
+  const handleZoomToSelection = React.useCallback(() => {
+    const selectedNodes = getNodes().filter((n) => n.selected);
+    if (selectedNodes.length > 0) {
+      fitView({ nodes: selectedNodes, padding: 0.3, duration: 300 });
+    }
+  }, [getNodes, fitView]);
+
+  const handleFitToScreen = React.useCallback(() => {
+    fitView({ padding: 0.15, duration: 300 });
+  }, [fitView]);
 
   const containerPosition: React.CSSProperties =
     position === 'top-left'
@@ -161,25 +173,24 @@ export function CanvasControls({
           background: '#1c1e22',
           border: '1px solid rgba(255,255,255,0.03)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-          overflow: 'hidden',
+          overflow: 'visible',
           color: '#ffffff',
           fontFamily: 'Inter, sans-serif',
           pointerEvents: 'auto',
         }}
       >
-        <button
-          type="button"
+        <TooltipButton
+          label="Zoom out (⌘ -)"
           onClick={() => zoomOut({ duration: 0 })}
           style={getButtonStyle(canZoomOut)}
           disabled={!canZoomOut}
-          aria-label="Zoom out"
-          title="Zoom out"
+          ariaLabel="Zoom out"
         >
           <ZoomOutIcon />
-        </button>
+        </TooltipButton>
         <div
           style={{
-            width: 32,
+            width: 36,
             padding: '8px 4px',
             borderRadius: 8,
             textAlign: 'center',
@@ -194,25 +205,32 @@ export function CanvasControls({
         >
           {zoomPercent}%
         </div>
-        <button
-          type="button"
+        <TooltipButton
+          label="Zoom in (⌘ +)"
           onClick={() => zoomIn({ duration: 0 })}
           style={getButtonStyle(canZoomIn)}
           disabled={!canZoomIn}
-          aria-label="Zoom in"
-          title="Zoom in"
+          ariaLabel="Zoom in"
         >
           <ZoomInIcon />
-        </button>
-        <button
-          type="button"
-          onClick={() => fitView({ padding: 0.2, duration: 0 })}
+        </TooltipButton>
+        <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.08)', margin: '0 2px', flexShrink: 0 }} />
+        <TooltipButton
+          label="Zoom to selection (Z)"
+          onClick={handleZoomToSelection}
           style={getButtonStyle(true)}
-          aria-label="Fit view"
-          title="Fit view"
+          ariaLabel="Zoom to selection"
         >
-          <FitViewIcon />
-        </button>
+          <ZoomToSelectionIcon />
+        </TooltipButton>
+        <TooltipButton
+          label="Fit to screen (F)"
+          onClick={handleFitToScreen}
+          style={getButtonStyle(true)}
+          ariaLabel="Fit to screen"
+        >
+          <FitToScreenIcon />
+        </TooltipButton>
       </div>
     </div>
   );

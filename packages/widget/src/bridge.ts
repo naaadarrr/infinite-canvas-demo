@@ -1,6 +1,6 @@
 import { isDev } from './utils/env';
 
-export type WidgetEventSource = 'ui' | 'agent' | 'system';
+export type WidgetEventSource = 'ui' | 'agent' | 'system' | 'inpaint-toolbar';
 
 export interface WidgetEvent<T = any> {
   type: string;

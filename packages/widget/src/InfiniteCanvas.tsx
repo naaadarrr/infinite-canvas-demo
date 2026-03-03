@@ -1,7 +1,6 @@
 import React, { useCallback, useMemo } from 'react';
 import {
   ReactFlow,
-  MiniMap,
   Node,
   Edge,
   ReactFlowInstance,
@@ -124,6 +123,8 @@ export interface InfiniteCanvasProps {
   minWidth?: string | number;
   /** 最小高度，默认 '400px' */
   minHeight?: string | number;
+  /** React Flow 实例就绪回调 */
+  onReactFlowInit?: (instance: ReactFlowInstance<Node<CanvasNodeData>, Edge>) => void;
 }
 
 export function InfiniteCanvas({
@@ -154,6 +155,7 @@ export function InfiniteCanvas({
   height = '100%',
   minWidth = '300px',
   minHeight = '400px',
+  onReactFlowInit,
 }: InfiniteCanvasProps) {
   const [nodes, setNodes] = React.useState<Node<CanvasNodeData>[]>([]);
   const nodesRef = React.useRef<Node<CanvasNodeData>[]>([]);
@@ -795,6 +797,7 @@ export function InfiniteCanvas({
     minHeight,
     backgroundColor,
     position: 'relative',
+    cursor: paneCursor,
     ...style,
   };
 
@@ -812,19 +815,6 @@ export function InfiniteCanvas({
           }
           .dependency-edge-animated path {
             animation: dependency-edge-dash 1.4s linear infinite;
-          }
-          .react-flow__minimap {
-            background: #1c1e22;
-            border: 1px solid rgba(255,255,255,0.03);
-            border-radius: 12px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-          }
-          .react-flow__minimap-mask {
-            fill: rgba(255,255,255,0.06);
-          }
-          .react-flow__minimap-node {
-            fill: rgba(255,255,255,0.35);
-            stroke: rgba(255,255,255,0.2);
           }
         `}
       </style>
@@ -870,6 +860,7 @@ export function InfiniteCanvas({
         onInit={(instance) => {
           reactFlowInstanceRef.current = instance;
           setInstanceReady(true);
+          onReactFlowInit?.(instance);
         }}
         onPaneMouseEnter={updatePaneCursor}
         onPaneMouseMove={(event) => {
@@ -904,8 +895,8 @@ export function InfiniteCanvas({
         nodesDraggable={nodesDraggable}
         nodesConnectable={false}
         elementsSelectable={elementsSelectable}
-        nodeDragThreshold={1}
-        selectNodesOnDrag={false}
+        nodeDragThreshold={5}
+        selectNodesOnDrag={true}
         selectionOnDrag={selectionOnDrag}
         selectionMode={SelectionMode.Full}
         elevateNodesOnSelect={false}
@@ -927,7 +918,6 @@ export function InfiniteCanvas({
             onLockChange={onLockChange}
           />
         )}
-        <MiniMap />
       </ReactFlow>
       {snapLines && (
         <div

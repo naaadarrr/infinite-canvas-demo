@@ -167,29 +167,17 @@ export default function Home() {
     []
   );
 
-  const userId = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return `user_${Math.random().toString(36).slice(2, 8)}`;
-    }
+  const [mounted, setMounted] = useState(false);
+  const [userId, setUserId] = useState('');
+  const [canvasId, setCanvasId] = useState<string | null>(null);
+  const [invisible, setInvisible] = useState(false);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlUserId = params.get('userId');
-    return urlUserId || `user_${Math.random().toString(36).slice(2, 8)}`;
-  }, []);
-  
-  const canvasId = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-    const params = new URLSearchParams(window.location.search);
-    return params.get('canvasId');
-  }, []);
-  
-  const invisible = useMemo(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    const params = new URLSearchParams(window.location.search);
-    return params.get('adminMode') === 'true';
+    setUserId(params.get('userId') || `user_${Math.random().toString(36).slice(2, 8)}`);
+    setCanvasId(params.get('canvasId'));
+    setInvisible(params.get('adminMode') === 'true');
+    setMounted(true);
   }, []);
 
   const [resolvedLocalMockData, setResolvedLocalMockData] = useState<BoardTaskItem[] | null>(null);
@@ -248,6 +236,10 @@ export default function Home() {
     };
   }, []);
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <CollaborativeCanvas
       canvasId={canvasId}
@@ -257,6 +249,7 @@ export default function Home() {
       dependencyEdgesVisible={true}
       invisible={invisible}
       topBarLogoUrl="/logo.svg"
+      userCredits={2580}
     />
   );
 }

@@ -101,6 +101,7 @@ export interface InfiniteCanvasProps {
   onNodeDrag?: (nodeId: string, position: { x: number; y: number }, selectedNodeIds?: string[]) => void;
   onNodeDragEnd?: (nodeId: string, position: { x: number; y: number }) => void;
   onNodeContextMenu?: (event: React.MouseEvent, node: Node<CanvasNodeData>) => void;
+  onPaneContextMenu?: (event: React.MouseEvent) => void;
   onPaneMouseMove?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
   onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
   onPaneClick?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
@@ -137,6 +138,7 @@ export function InfiniteCanvas({
   onNodeDrag,
   onNodeDragEnd,
   onNodeContextMenu,
+  onPaneContextMenu,
   onPaneMouseMove,
   onViewportChange,
   onPaneClick,
@@ -150,7 +152,7 @@ export function InfiniteCanvas({
   showControls = true,
   className,
   style,
-  backgroundColor = '#121417',
+  backgroundColor = '#000000',
   width = '100%',
   height = '100%',
   minWidth = '300px',
@@ -819,7 +821,13 @@ export function InfiniteCanvas({
         `}
       </style>
       <ReactFlow<Node<CanvasNodeData>, Edge>
-        style={{ width: '100%', height: '100%' }}
+        style={{ 
+          width: '100%', 
+          height: '100%', 
+          backgroundColor,
+          // Override React Flow default background
+          '--xy-background-color-default': backgroundColor,
+        } as any}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -842,7 +850,15 @@ export function InfiniteCanvas({
           if (!onNodeContextMenu) {
             return;
           }
+          event.preventDefault();
+          event.stopPropagation();
           onNodeContextMenu(event, node);
+        }}
+        onPaneContextMenu={(event) => {
+          if (!onPaneContextMenu) {
+            return;
+          }
+          onPaneContextMenu(event as unknown as React.MouseEvent);
         }}
         deleteKeyCode={null}
         onMoveEnd={(_, nextViewport) => {
@@ -905,7 +921,8 @@ export function InfiniteCanvas({
         zoomOnScroll={false}
         zoomOnPinch={true}
         zoomOnDoubleClick={false}
-        panOnScrollSpeed={0.5}
+        zoomActivationKeyCode="Meta"
+        panOnScrollSpeed={1}
         colorMode="dark"
         proOptions={{
           hideAttribution: true,

@@ -1,68 +1,28 @@
 import React from 'react';
 import { useStore } from '@xyflow/react';
 
-const getSelectedCount = (state: any) => {
-  if (Array.isArray(state.selectedNodes)) {
-    return state.selectedNodes.length;
-  }
-
-  if (Array.isArray(state.nodes)) {
-    let count = 0;
-    for (const node of state.nodes) {
-      if (node?.selected) {
-        count += 1;
-      }
-    }
-    return count;
-  }
-
-  const internals = state.nodeInternals ?? state.nodeLookup;
-  if (internals && typeof internals.forEach === 'function') {
-    let count = 0;
-    internals.forEach((node: any) => {
-      if (node?.selected) {
-        count += 1;
-      }
-    });
-    return count;
-  }
-
-  return 0;
-};
-
 export function useToolbarVisibility(selected: boolean | undefined, dragging: boolean | undefined) {
-  const selectedCount = useStore(getSelectedCount);
-  const elementsSelectable = useStore((state) => state.elementsSelectable ?? true);
   const zoom = useStore((state) => state.transform[2] ?? 1);
+
   const [isZooming, setIsZooming] = React.useState(false);
   const zoomRef = React.useRef(zoom);
-  const zoomTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   React.useEffect(() => {
-    if (zoom === zoomRef.current) {
-      return;
-    }
-
+    if (zoom === zoomRef.current) return;
     zoomRef.current = zoom;
     setIsZooming(true);
-
-    if (zoomTimerRef.current) {
-      clearTimeout(zoomTimerRef.current);
-    }
-
-    zoomTimerRef.current = setTimeout(() => {
-      setIsZooming(false);
-    }, 150);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setIsZooming(false), 150);
   }, [zoom]);
 
   React.useEffect(() => {
-    return () => {
-      if (zoomTimerRef.current) {
-        clearTimeout(zoomTimerRef.current);
-      }
-    };
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
-  const isSingleSelected = selected && selectedCount === 1;
-  return elementsSelectable && isSingleSelected && !dragging && !isZooming;
+  // Show toolbar whenever this node is selected and not being dragged or zoomed.
+  // We intentionally drop the `selectedCount === 1` check — it relied on a Zustand
+  // store that can lag in controlled mode, causing the toolbar to never appear.
+  // Each node independently decides to show its own toolbar based on its own `selected` prop.
+  return Boolean(selected && !dragging && !isZooming);
 }

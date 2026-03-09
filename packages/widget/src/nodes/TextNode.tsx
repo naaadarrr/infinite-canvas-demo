@@ -2,6 +2,7 @@ import React from 'react';
 import { NodeProps, useStore } from '@xyflow/react';
 import type { TextNodeData, TextAlign } from '@tc/infinite-core';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { useNodeSelection } from './useNodeSelection';
 import { isDev } from '../utils/env';
 
 // 工具栏组件
@@ -554,7 +555,6 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
     const node = state.nodeLookup?.get(nodeData.id);
     return node?.position ?? nodeData.position;
   });
-  const showHighlight = selected || dragging;
   const [content, setContent] = React.useState(nodeData.content || 'Add some text..');
   const [isEditing, setIsEditing] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -580,6 +580,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   } | null>(null);
   const manualSizingRef = React.useRef(false); // 标记是否正在手动调整尺寸
   const [isHovered, setIsHovered] = React.useState(false);
+  const { effectiveSelected, handlePointerDown: handleNodePointerDown } = useNodeSelection(selected, containerRef);
+  const showHighlight = effectiveSelected || dragging;
   
   const fontSize = nodeData.fontSize ?? 16;
   const fontWeight = nodeData.fontWeight ?? 'normal';
@@ -589,7 +591,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const paddingSize = 12;
   const lineHeightPx = Math.round(fontSize * lineHeight);
   const zoom = useStore((state) => state.transform[2] ?? 1);
-  const showToolbar = useToolbarVisibility(selected, dragging);
+  const showToolbar = useToolbarVisibility(effectiveSelected, dragging);
   const resolvedBackgroundColor = React.useMemo(() => {
     if (!nodeData.backgroundColor || nodeData.backgroundColor === 'transparent') {
       return 'transparent';
@@ -971,7 +973,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   return (
     <div
       ref={containerRef}
-      onClick={handleContainerClick}
+      onPointerDown={() => { handleNodePointerDown(); }}
+      onClick={() => { handleContainerClick(); }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -981,7 +984,17 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         overflow: 'visible',
         padding: `${paddingSize}px`,
         boxSizing: 'border-box',
-        border: (showHighlight || isHovered) ? '2px solid #3b82f6' : '2px solid transparent',
+        border: 'none',
+        outline: effectiveSelected
+          ? `${2.5 / zoom}px solid #5857FD`
+          : is      Hove  
+          
+          
+          啊手动 你red
+            ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
+            : `${2 / zoom}px solid transparent`,
+        outlineOffset: 0,
+        transition: 'outline-color 150ms ease',
         backgroundColor: resolvedBackgroundColor,
         cursor: 'default',
       }}
@@ -1011,10 +1024,10 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             onPointerDown={(e) => handleWidthResizeStart(e, 'left')}
             style={{
               position: 'absolute',
-              left: -4,
-              top: 12,
-              bottom: 12,
-              width: 8,
+              left: -4 / zoom,
+              top: 12 / zoom,
+              bottom: 12 / zoom,
+              width: 8 / zoom,
               cursor: 'ew-resize',
               zIndex: 1,
             }}
@@ -1025,10 +1038,10 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             onPointerDown={(e) => handleWidthResizeStart(e, 'right')}
             style={{
               position: 'absolute',
-              right: -4,
-              top: 12,
-              bottom: 12,
-              width: 8,
+              right: -4 / zoom,
+              top: 12 / zoom,
+              bottom: 12 / zoom,
+              width: 8 / zoom,
               cursor: 'ew-resize',
               zIndex: 1,
             }}
@@ -1036,6 +1049,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           {/* 四个角的缩放控制点 */}
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
+            const handleSize = 12 / zoom;
+            const handleOffset = -(handleSize / 2);
             return (
               <div
                 key={corner}
@@ -1043,16 +1058,16 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
+                  width: handleSize,
+                  height: handleSize,
+                  borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: '2px solid #3b82f6',
+                  border: `${2 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
-                  left: corner.includes('left') ? -6 : 'auto',
-                  right: corner.includes('right') ? -6 : 'auto',
-                  top: corner.includes('top') ? -6 : 'auto',
-                  bottom: corner.includes('bottom') ? -6 : 'auto',
+                  left: corner.includes('left') ? handleOffset : 'auto',
+                  right: corner.includes('right') ? handleOffset : 'auto',
+                  top: corner.includes('top') ? handleOffset : 'auto',
+                  bottom: corner.includes('bottom') ? handleOffset : 'auto',
                   zIndex: 2,
                 }}
               />
@@ -1089,7 +1104,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
           title="Input Text"
           placeholder="Add some text.."
           ref={textareaRef}
-          className="nodrag"
+          className="nodrag tc-node-textarea"
           autoFocus
           style={{
             position: 'absolute',
@@ -1109,7 +1124,6 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             wordBreak: 'break-word',
             overflow: 'hidden',
             border: 'none',
-            outline: 'none',
             resize: 'none',
             background: 'transparent',
             lineHeight: `${lineHeightPx}px`,

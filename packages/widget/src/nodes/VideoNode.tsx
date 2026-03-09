@@ -1,9 +1,11 @@
 import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
-import { ArrowUpRight, Download, RefreshCw, ScanFace, Play, Pause } from 'lucide-react';
+import { ArrowUpRight, Download, MessageSquare, RefreshCw, ScanFace, Play, Pause, Trash2 } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
+import { NodeLabelBar } from './NodeLabelBar';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { useNodeSelection } from './useNodeSelection';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
 
@@ -22,6 +24,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     const node = state.nodeLookup?.get(nodeData.id);
     return node?.position ?? nodeData.position;
   });
+  const zoom = useStore((state) => state.transform[2] ?? 1);
   const rawItem = (nodeData as VideoNodeData & { raw?: RawDataItem }).raw;
   const status = String(rawItem?.status ?? '').toLowerCase();
   const rawResult = rawItem?.result ?? undefined;
@@ -34,13 +37,15 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const { effectiveSelected, handlePointerDown: handleNodePointerDown } = useNodeSelection(selected, containerRef);
   const [preloadProgress, setPreloadProgress] = React.useState(0);
   const [isPreloaded, setIsPreloaded] = React.useState(false);
   const isSkeleton = status === 'init';
   const isFailed = status === 'fail';
   const isSuccess = status === 'success';
-  const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
+  const showHighlight = effectiveSelected || dragging;
+  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const handleRatingChange = React.useCallback(
     (nextRating: number) => {
@@ -82,43 +87,19 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
-  // 构建快捷操作菜单 - 根据 toolType 过滤 Re-edit 按钮
-  const quickActions: QuickAction[] = React.useMemo(() => {
-    const actions: QuickAction[] = [];
-    
-    // Re-edit 按钮 - 仅当 toolType 不是 "user-upload" 时显示
-    if (rawItem?.toolType !== 'user-upload') {
-      actions.push({
-        id: 'edit',
-        label: 'Re-edit',
-        icon: RefreshCw,
-        onClick: () => handleQuickAction('edit', 'Re-edit'),
-      });
-    }
-    
-    actions.push(
-      {
-        id: 'avatar',
-        label: 'AI Avatar',
-        icon: ScanFace,
-        onClick: () => handleQuickAction('avatar', 'AI Avatar'),
-      },
-      {
-        id: 'upscale',
-        label: 'Upscale',
-        icon: ArrowUpRight,
-        onClick: () => handleQuickAction('upscale', 'Upscale'),
-      },
-      {
-        id: 'download',
-        label: 'Download',
-        icon: Download,
-        onClick: () => handleQuickAction('download', 'Download'),
-      }
-    );
-    
-    return actions;
-  }, [rawItem?.toolType, handleQuickAction]);
+  const { quickActions, moreQuickActions } = React.useMemo(() => {
+    const visible: QuickAction[] = [
+      { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
+      { id: 'avatar', label: 'AI Avatar', icon: ScanFace, onClick: () => handleQuickAction('avatar', 'AI Avatar') },
+      { id: 'upscale', label: 'Upscale', icon: ArrowUpRight, onClick: () => handleQuickAction('upscale', 'Upscale') },
+      { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true },
+    ];
+    const more: QuickAction[] = [
+      { id: 'feedback', label: 'Feedback', icon: MessageSquare, onClick: () => handleQuickAction('feedback', 'Feedback') },
+      { id: 'delete', label: 'Delete', icon: Trash2, onClick: () => handleQuickAction('delete', 'Delete') },
+    ];
+    return { quickActions: visible, moreQuickActions: more };
+  }, [handleQuickAction]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -130,7 +111,6 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     },
     [canDeleteFailed, nodeData]
   );
-  const containerRef = React.useRef<HTMLDivElement | null>(null);
   const scaleStateRef = React.useRef<{
     anchorX: number;
     anchorY: number;
@@ -367,15 +347,25 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       ref={containerRef}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onPointerDown={handleNodePointerDown}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${isFailed ? '#ef4444' : 'transparent'}`,
+        border: 'none',
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: 'transparent',
-        cursor: 'default',
+        cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
+        outline: effectiveSelected
+          ? `${2.5 / zoom}px solid #5857FD`
+          : isFailed
+            ? `${2 / zoom}px solid #ef4444`
+            : isHovered
+              ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
+              : `${2 / zoom}px solid transparent`,
+        outlineOffset: 0,
+        transition: 'outline-color 150ms ease',
       }}
     >
       {/* 顶部/底部依赖连接点 */}
@@ -427,6 +417,8 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
+            const handleSize = 12 / zoom;
+            const handleOffset = -(handleSize / 2);
             return (
               <div
                 key={corner}
@@ -434,16 +426,16 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
+                  width: handleSize,
+                  height: handleSize,
+                  borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: '2px solid #3b82f6',
+                  border: `${2 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
-                  left: corner.includes('left') ? -6 : 'auto',
-                  right: corner.includes('right') ? -6 : 'auto',
-                  top: corner.includes('top') ? -6 : 'auto',
-                  bottom: corner.includes('bottom') ? -6 : 'auto',
+                  left: corner.includes('left') ? handleOffset : 'auto',
+                  right: corner.includes('right') ? handleOffset : 'auto',
+                  top: corner.includes('top') ? handleOffset : 'auto',
+                  bottom: corner.includes('bottom') ? handleOffset : 'auto',
                   zIndex: 2,
                 }}
               />
@@ -582,12 +574,14 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           </>
         ) : null}
       </div>
-      {showToolbar && <QuickActionToolbar actions={quickActions} />}
-      {showToolbar && (
-        <div className="tc-node-size-badge">
-          {sizeLabel}
-        </div>
-      )}
+      <NodeLabelBar
+        isVisible={showToolbar}
+        nodeType={nodeData.type}
+        label={rawItem?.title || 'Video'}
+        sizeLabel={sizeLabel}
+        nodeWidth={nodeData.size.width}
+      />
+      <QuickActionToolbar isVisible={showToolbar} actions={quickActions} moreActions={moreQuickActions} />
     </div>
   );
 }

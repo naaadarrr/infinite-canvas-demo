@@ -2,9 +2,11 @@ import React from 'react';
 import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { NodeType } from '@tc/infinite-core';
-import { ArrowUpRight, Download, Paintbrush, RefreshCw, RotateCw, ScanFace, Shuffle, Video } from 'lucide-react';
+import { ArrowUpRight, Download, MessageSquare, Paintbrush, RotateCw, ScanFace, Shuffle, Trash2, Video } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
+import { NodeLabelBar } from './NodeLabelBar';
 import { useToolbarVisibility } from './useToolbarVisibility';
+import { useNodeSelection } from './useNodeSelection';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
 
@@ -32,6 +34,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     const node = state.nodeLookup?.get(nodeData.id);
     return node?.position ?? nodeData.position;
   });
+  const zoom = useStore((state) => state.transform[2] ?? 1);
   const rawItem = (nodeData as ImageNodeData & { raw?: RawDataItem }).raw;
   const rawResult = rawItem?.result ?? undefined;
   const status = String(rawItem?.status ?? '').toLowerCase();
@@ -56,13 +59,13 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
   } | null>(null);
   
   const [isHovered, setIsHovered] = React.useState(false);
+  const { effectiveSelected, handlePointerDown: handleNodePointerDown } = useNodeSelection(selected, containerRef);
   
-  // 使用 React Flow 原生的 selected 和 dragging 状态
   const isSkeleton = status === 'init';
   const isFailed = status === 'fail';
   const isSuccess = status === 'success';
-  const showHighlight = selected || dragging;
-  const showToolbar = useToolbarVisibility(selected, dragging) && !isSkeleton && !isFailed;
+  const showHighlight = effectiveSelected || dragging;
+  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed;
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -129,67 +132,22 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     );
   }, [nodeData.id, nodeData.type, nodeData.url, rawItem]);
   
-  // 构建快捷操作菜单 - 根据 toolType 过滤 Re-edit 按钮
-  const quickActions: QuickAction[] = React.useMemo(() => {
-    const actions: QuickAction[] = [];
-    
-    // Re-edit 按钮 - 仅当 toolType 不是 "user-upload" 时显示
-    if (rawItem?.toolType !== 'user-upload') {
-      actions.push({
-        id: 'edit',
-        label: 'Re-edit',
-        icon: RefreshCw,
-        onClick: () => handleQuickAction('edit', 'Re-edit'),
-      });
-    }
-    
-    actions.push(
-      {
-        id: 'reference',
-        label: 'Remix',
-        icon: Shuffle,
-        onClick: () => handleQuickAction('reference', 'Remix'),
-      },
-      {
-        id: 'inpaint',
-        label: 'Inpaint',
-        icon: Paintbrush,
-        onClick: () => handleQuickAction('inpaint', 'Inpaint'),
-      },
-      {
-        id: 'video',
-        label: 'Generate Video',
-        icon: Video,
-        onClick: () => handleQuickAction('video', 'Generate Video'),
-      },
-      {
-        id: 'edit-angles',
-        label: 'Edit Angles',
-        icon: RotateCw,
-        onClick: () => handleQuickAction('edit-angles', 'Edit Angles'),
-      },
-      {
-        id: 'avatar',
-        label: 'AI Avatar',
-        icon: ScanFace,
-        onClick: () => handleQuickAction('avatar', 'AI Avatar'),
-      },
-      {
-        id: 'upscale',
-        label: 'Upscale',
-        icon: ArrowUpRight,
-        onClick: () => handleQuickAction('upscale', 'Upscale'),
-      },
-      {
-        id: 'download',
-        label: 'Download',
-        icon: Download,
-        onClick: () => handleQuickAction('download', 'Download'),
-      }
-    );
-    
-    return actions;
-  }, [rawItem?.toolType, handleQuickAction]);
+  const { visibleActions, moreActions: moreQuickActions } = React.useMemo(() => {
+    const visible: QuickAction[] = [
+      { id: 'reference', label: 'Remix', icon: Shuffle, onClick: () => handleQuickAction('reference', 'Remix') },
+      { id: 'inpaint', label: 'Inpaint', icon: Paintbrush, onClick: () => handleQuickAction('inpaint', 'Inpaint') },
+      { id: 'video', label: 'Generate Video', icon: Video, onClick: () => handleQuickAction('video', 'Generate Video') },
+      { id: 'edit-angles', label: 'Edit Angles', icon: RotateCw, onClick: () => handleQuickAction('edit-angles', 'Edit Angles') },
+      { id: 'avatar', label: 'AI Avatar', icon: ScanFace, onClick: () => handleQuickAction('avatar', 'AI Avatar') },
+      { id: 'upscale', label: 'Upscale', icon: ArrowUpRight, onClick: () => handleQuickAction('upscale', 'Upscale') },
+      { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true },
+    ];
+    const more: QuickAction[] = [
+      { id: 'feedback', label: 'Feedback', icon: MessageSquare, onClick: () => handleQuickAction('feedback', 'Feedback') },
+      { id: 'delete', label: 'Delete', icon: Trash2, onClick: () => handleQuickAction('delete', 'Delete') },
+    ];
+    return { visibleActions: visible, moreActions: more };
+  }, [handleQuickAction]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -300,15 +258,25 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
       ref={containerRef}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
+      onPointerDown={handleNodePointerDown}
       style={{
         width: nodeData.size.width,
         height: nodeData.size.height,
         position: 'relative',
-        border: `2px solid ${isFailed ? '#ef4444' : 'transparent'}`,
+        border: 'none',
         borderRadius: '2px',
         overflow: 'visible',
         backgroundColor: 'transparent',
-        cursor: 'default',
+        cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
+        outline: effectiveSelected
+          ? `${2.5 / zoom}px solid #5857FD`
+          : isFailed
+            ? `${2 / zoom}px solid #ef4444`
+            : isHovered
+              ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
+              : `${2 / zoom}px solid transparent`,
+        outlineOffset: 0,
+        transition: 'outline-color 150ms ease',
       }}
     >
       {/* 顶部/底部依赖连接点 */}
@@ -453,6 +421,8 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
+            const handleSize = 12 / zoom;
+            const handleOffset = -(handleSize / 2);
             return (
               <div
                 key={corner}
@@ -460,16 +430,16 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
+                  width: handleSize,
+                  height: handleSize,
+                  borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: '2px solid #3b82f6',
+                  border: `${2 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
-                  left: corner.includes('left') ? -6 : 'auto',
-                  right: corner.includes('right') ? -6 : 'auto',
-                  top: corner.includes('top') ? -6 : 'auto',
-                  bottom: corner.includes('bottom') ? -6 : 'auto',
+                  left: corner.includes('left') ? handleOffset : 'auto',
+                  right: corner.includes('right') ? handleOffset : 'auto',
+                  top: corner.includes('top') ? handleOffset : 'auto',
+                  bottom: corner.includes('bottom') ? handleOffset : 'auto',
                   zIndex: 2,
                 }}
               />
@@ -477,12 +447,14 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           })}
         </>
       )}
-      {showToolbar && <QuickActionToolbar actions={quickActions} />}
-      {showToolbar && (
-        <div className="tc-node-size-badge">
-          {sizeLabel}
-        </div>
-      )}
+      <NodeLabelBar
+        isVisible={showToolbar}
+        nodeType={nodeData.type}
+        label={rawItem?.title || 'Image'}
+        sizeLabel={sizeLabel}
+        nodeWidth={nodeData.size.width}
+      />
+      <QuickActionToolbar isVisible={showToolbar} actions={visibleActions} moreActions={moreQuickActions} />
     </div>
   );
 }

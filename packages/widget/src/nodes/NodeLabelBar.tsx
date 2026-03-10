@@ -1,9 +1,19 @@
 import React from 'react';
 import { NodeToolbar, Position, useStore } from '@xyflow/react';
-import { ImageIcon, VideoIcon, Music } from 'lucide-react';
+import { VideoIcon, Music } from 'lucide-react';
+
+function FilledImageIcon({ size = 16, style }: { size?: number; style?: React.CSSProperties }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={style}>
+      <rect x="2" y="3" width="20" height="18" rx="3" fill="currentColor" opacity="0.35" />
+      <circle cx="8.5" cy="9.5" r="2" fill="currentColor" />
+      <path d="M22 16l-5.5-6L10 17.5 7.5 15 2 21h17a3 3 0 003-3v-2z" fill="currentColor" />
+    </svg>
+  );
+}
 
 const typeIcons: Record<string, React.ComponentType<{ size?: number; style?: React.CSSProperties }>> = {
-  IMAGE: ImageIcon,
+  IMAGE: FilledImageIcon,
   VIDEO: VideoIcon,
   AUDIO: Music,
 };
@@ -48,7 +58,7 @@ export function NodeLabelBar({ isVisible, nodeType, label, sizeLabel, nodeWidth 
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: showSize ? 150 : renderedWidth - 20 }}>{label}</span>
         </div>
         {showSize && (
-          <div style={{ flexShrink: 0, color: 'rgba(88, 87, 253, 0.7)' }}>
+          <div style={{ flexShrink: 0, color: '#5857FD' }}>
             {sizeLabel}
           </div>
         )}

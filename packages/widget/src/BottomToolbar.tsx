@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { EditModeIcon, PanModeIcon, LayersIcon } from './icons';
-import { LayoutTemplate } from 'lucide-react';
+import { LayoutTemplate, Plus } from 'lucide-react';
 
 const TOOLBAR_BG = 'rgba(28, 30, 34, 1)';
 const TOOLBAR_BORDER = '1px solid rgba(255,255,255,0.08)';
@@ -43,7 +43,7 @@ function ToolbarButton({
 }) {
   const [hovered, setHovered] = React.useState(false);
   const bg = active
-    ? 'rgba(255,255,255,0.18)'
+    ? '#ffffff'
     : hovered && !disabled
       ? 'rgba(255,255,255,0.08)'
       : 'transparent';
@@ -59,13 +59,13 @@ function ToolbarButton({
         disabled={disabled}
         aria-label={label}
         style={{
-          width: 32,
-          height: 32,
+          width: 28,
+          height: 28,
           padding: 0,
           borderRadius: 8,
           border: 'none',
           background: bg,
-          color: disabled ? 'rgba(255,255,255,0.25)' : active ? '#fff' : 'rgba(255,255,255,0.7)',
+          color: disabled ? 'rgba(255,255,255,0.25)' : active ? '#000000' : 'rgba(255,255,255,0.7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -103,7 +103,7 @@ function ToolbarButton({
 }
 
 function Divider() {
-  return <div style={{ width: 1, height: 18, background: DIVIDER_COLOR, margin: '0 2px', flexShrink: 0 }} />;
+  return <div style={{ width: 1, height: 18, background: DIVIDER_COLOR, margin: '0 4px', flexShrink: 0 }} />;
 }
 
 export type BottomToolbarProps = {
@@ -118,6 +118,7 @@ export type BottomToolbarProps = {
   canEdit: boolean;
   isLocked: boolean;
   sidebarOffset?: number;
+  onAddAsset?: () => void;
 };
 
 export function BottomToolbar({
@@ -132,11 +133,15 @@ export function BottomToolbar({
   canEdit,
   isLocked,
   sidebarOffset = 0,
+  onAddAsset,
 }: BottomToolbarProps) {
   const zoomPercent = Math.round(viewport.zoom * 100);
   const canZoomIn = viewport.zoom < 3.99;
   const canZoomOut = viewport.zoom > 0.11;
   const [zoomHovered, setZoomHovered] = React.useState(false);
+  const [isEditingZoom, setIsEditingZoom] = useState(false);
+  const [tempZoomValue, setTempZoomValue] = useState('');
+  const zoomInputRef = useRef<HTMLInputElement>(null);
 
   const handleZoomIn = React.useCallback(() => {
     reactFlowInstance?.zoomIn({ duration: 0 });
@@ -150,12 +155,28 @@ export function BottomToolbar({
     reactFlowInstance?.zoomTo(1, { duration: 200 });
   }, [reactFlowInstance]);
 
+  const handleZoomCommit = () => {
+    let val = parseFloat(tempZoomValue);
+    if (!isNaN(val)) {
+      val = Math.max(10, Math.min(400, val)); // Clamp between 10% and 400%
+      reactFlowInstance?.zoomTo(val / 100, { duration: 200 });
+    }
+    setIsEditingZoom(false);
+  };
+
+  useEffect(() => {
+    if (isEditingZoom && zoomInputRef.current) {
+      zoomInputRef.current.focus();
+      zoomInputRef.current.select();
+    }
+  }, [isEditingZoom]);
+
   return (
     <div
       onPointerDown={(e) => e.stopPropagation()}
       style={{
         position: 'absolute',
-        bottom: 16,
+        bottom: 12,
         left: `calc(50% + ${sidebarOffset / 2}px)`,
         transform: 'translateX(-50%)',
         zIndex: 20,
@@ -166,10 +187,9 @@ export function BottomToolbar({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 0,
-          height: 44,
-          padding: '0 6px',
-          borderRadius: 16,
+          gap: 2,
+          padding: '10px 8px',
+          borderRadius: 14,
           background: TOOLBAR_BG,
           border: TOOLBAR_BORDER,
           boxShadow: TOOLBAR_SHADOW,
@@ -185,6 +205,23 @@ export function BottomToolbar({
         </ToolbarButton>
 
         <Divider />
+
+        {/* Add Asset */}
+        {onAddAsset && (
+          <ToolbarButton label="Add Asset" onClick={onAddAsset} disabled={!canEdit || isLocked}>
+            <div style={{
+              width: 16,
+              height: 16,
+              borderRadius: 4,
+              border: '1.5px solid currentColor',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}>
+              <Plus size={10} strokeWidth={3} />
+            </div>
+          </ToolbarButton>
+        )}
 
         {/* Template */}
         <ToolbarButton
@@ -202,31 +239,62 @@ export function BottomToolbar({
         <ToolbarButton label="Zoom out (⌘ −)" disabled={!canZoomOut} onClick={handleZoomOut}>
           <ZoomOutIcon />
         </ToolbarButton>
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={handleZoomReset}
-          onKeyDown={(e) => { if (e.key === 'Enter') handleZoomReset(); }}
-          onMouseEnter={() => setZoomHovered(true)}
-          onMouseLeave={() => setZoomHovered(false)}
-          style={{
-            minWidth: 40,
-            textAlign: 'center',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 12,
-            lineHeight: '16px',
-            fontWeight: 500,
-            color: zoomHovered ? '#fff' : 'rgba(255,255,255,0.6)',
-            cursor: 'pointer',
-            transition: 'color 120ms ease',
-            userSelect: 'none',
-            height: 32,
-          }}
-        >
-          {zoomPercent}%
-        </div>
+        
+        {isEditingZoom ? (
+          <input
+            ref={zoomInputRef}
+            value={tempZoomValue}
+            onChange={(e) => setTempZoomValue(e.target.value)}
+            onBlur={handleZoomCommit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleZoomCommit();
+              } else if (e.key === 'Escape') {
+                setIsEditingZoom(false);
+              }
+            }}
+            style={{
+              width: 28,
+              textAlign: 'center',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#fff',
+              fontSize: 12,
+              fontWeight: 500,
+              height: 28,
+              padding: 0,
+            }}
+          />
+        ) : (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setTempZoomValue(zoomPercent.toString());
+              setIsEditingZoom(true);
+            }}
+            onMouseEnter={() => setZoomHovered(true)}
+            onMouseLeave={() => setZoomHovered(false)}
+            style={{
+              minWidth: 28,
+              textAlign: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 12,
+              lineHeight: '16px',
+              fontWeight: 500,
+              color: zoomHovered ? '#fff' : 'rgba(255,255,255,0.6)',
+              cursor: 'pointer',
+              transition: 'color 120ms ease',
+              userSelect: 'none',
+              height: 28,
+            }}
+          >
+            {zoomPercent}%
+          </div>
+        )}
         <ToolbarButton label="Zoom in (⌘ +)" disabled={!canZoomIn} onClick={handleZoomIn}>
           <ZoomInIcon />
         </ToolbarButton>

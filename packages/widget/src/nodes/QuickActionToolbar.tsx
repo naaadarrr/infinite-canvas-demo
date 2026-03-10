@@ -1,5 +1,5 @@
 import React from 'react';
-import { NodeToolbar, Position, useStore } from '@xyflow/react';
+import { NodeToolbar, Position, useStore, useNodeId } from '@xyflow/react';
 import type { LucideIcon } from 'lucide-react';
 import { MoreHorizontal } from 'lucide-react';
 
@@ -19,8 +19,24 @@ type QuickActionToolbarProps = {
   offset?: number;
 };
 
-export function QuickActionToolbar({ isVisible, actions, moreActions, offset = 12 }: QuickActionToolbarProps) {
+export function QuickActionToolbar({ isVisible, actions, moreActions, offset = 28 }: QuickActionToolbarProps) {
+  const nodeId = useNodeId();
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  
+  const position = useStore((state) => {
+    if (!nodeId) return Position.Top;
+    const node = state.nodeLookup?.get(nodeId);
+    if (!node) return Position.Top;
+    
+    const [_, ty, tZoom] = state.transform;
+    // Fallback to node.position.y if internals not available (though nodeLookup returns internal nodes)
+    const nodeY = node.internals?.positionAbsolute?.y ?? node.position.y;
+    const screenNodeY = nodeY * tZoom + ty;
+    
+    // Switch to bottom if node top is too close to screen top (< 120px buffer)
+    return screenNodeY < 120 ? Position.Bottom : Position.Top;
+  });
+
   const [hoveredActionId, setHoveredActionId] = React.useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = React.useState(false);
   const moreRef = React.useRef<HTMLDivElement>(null);
@@ -80,7 +96,7 @@ export function QuickActionToolbar({ isVisible, actions, moreActions, offset = 1
   return (
     <NodeToolbar
       isVisible={isVisible}
-      position={Position.Top}
+      position={position}
       offset={offset}
       align="center"
       className="tc-node-toolbar-portal"
@@ -106,12 +122,9 @@ export function QuickActionToolbar({ isVisible, actions, moreActions, offset = 1
               onClick={() => setMoreMenuOpen((prev) => !prev)}
               aria-label="More actions"
               className="tc-node-toolbar-button"
-              style={{ width: 'auto', padding: '5px 10px', gap: 6 }}
+              style={{ width: 30, height: 30, padding: 5 }}
             >
               <MoreHorizontal className="tc-node-toolbar-icon" size={16} />
-              <span style={{ fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap', lineHeight: 1 }}>
-                More
-              </span>
             </button>
             {hoveredActionId === '__more__' && !moreMenuOpen && (
               <div className="tc-node-toolbar-tooltip">

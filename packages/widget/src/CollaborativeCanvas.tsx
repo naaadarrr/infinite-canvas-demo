@@ -11,7 +11,7 @@ import { isDev } from './utils/env';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PlusIcon, LayersIcon } from './icons';
-import { Upload, ImagePlus, Video, Send, X, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Command, Crown, LayoutTemplate, type LucideIcon } from 'lucide-react';
+import { Upload, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Command, Crown, LayoutTemplate, type LucideIcon } from 'lucide-react';
 import { CanvasRoleProvider } from './CanvasRoleContext';
 import { SelectModeProvider, SelectModeState } from './SelectModeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -23,7 +23,7 @@ const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
   canvasBg: '#000000',
   panelBg: '#1c1e22',
-  panelBorder: 'rgba(255,255,255,0.03)',
+  panelBorder: 'rgba(255,255,255,0.08)',
   panelShadow: '0 4px 16px rgba(0,0,0,0.2)',
   panelHighlight: 'rgba(255,255,255,0.08)',
   panelText: '#ffffff',
@@ -305,6 +305,7 @@ export function CollaborativeCanvas({
     step: 'upload' | 'edit';
     uploadedImageUrl?: string;
   } | null>(null);
+  const inpaintToolbarRef = useRef<HTMLDivElement>(null);
 
   // Layers drag state
   const [layerDragId, setLayerDragId] = useState<string | null>(null);
@@ -321,11 +322,12 @@ export function CollaborativeCanvas({
 
   // Re-activate creation panel when clicking a placeholder/draft node
   useEffect(() => {
-    if (aiCreateMode) return;
+    if (aiCreateMode || inpaintFocus) return;
     const selectedNode = nodes.find((n) => n.selected);
     if (!selectedNode) return;
     const nodeAny = selectedNode as CanvasNodeData & { toolId?: string; toolCategory?: string };
     if (!nodeAny.toolId || selectedNode.url) return;
+    if (nodeAny.toolId === 'inpaint') return;
     const category = (nodeAny.toolCategory ?? 'ai-image') as 'ai-image' | 'ai-video' | 'ai-avatar' | 'ai-audio';
     setAiCreateMode({
       type: category,
@@ -333,7 +335,7 @@ export function CollaborativeCanvas({
       nodeId: selectedNode.id,
       prompt: '',
     });
-  }, [nodes, aiCreateMode]);
+  }, [nodes, aiCreateMode, inpaintFocus]);
 
   const getToolButtonStyle = (active: boolean, disabled: boolean): React.CSSProperties => ({
     width: 36,
@@ -1348,13 +1350,36 @@ export function CollaborativeCanvas({
           );
           setTimeout(() => {
             const instance = reactFlowInstanceRef.current;
-            if (instance) {
-              instance.fitView({
-                nodes: [{ id: targetId }] as any,
-                padding: 0.5,
-                duration: 300,
-              });
-            }
+            if (!instance) return;
+            const node = nodesRef.current.find((n) => n.id === targetId);
+            if (!node) return;
+            const containerEl = document.querySelector('.react-flow');
+            if (!containerEl) return;
+            const cw = containerEl.clientWidth;
+            const ch = containerEl.clientHeight;
+            const hasSidebar = !!document.querySelector('.tc-sidebar-b');
+            const sidebarW = hasSidebar ? 64 : 0;
+            const bottomBarH = hasSidebar ? 64 : 0;
+            const inpaintPanelH = 180;
+            const maskBarH = 56;
+            const gap = 12;
+            const availLeft = sidebarW;
+            const availTop = maskBarH + gap;
+            const availW = cw - availLeft;
+            const availH = ch - availTop - bottomBarH - inpaintPanelH;
+            const availCenterX = availLeft + availW / 2;
+            const availCenterY = availTop + availH / 2;
+            const fitFrac = 0.75;
+            const zoomX = (availW * fitFrac) / node.size.width;
+            const zoomY = (availH * fitFrac) / node.size.height;
+            const zoom = Math.min(zoomX, zoomY, 2.5);
+            const nodeCX = node.position.x + node.size.width / 2;
+            const nodeCY = node.position.y + node.size.height / 2;
+            instance.setViewport({
+              x: availCenterX - nodeCX * zoom,
+              y: availCenterY - nodeCY * zoom,
+              zoom,
+            }, { duration: 300 });
           }, 50);
         }
       }
@@ -1376,6 +1401,26 @@ export function CollaborativeCanvas({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [inpaintFocus, aiCreateMode]);
+
+  // Smooth rAF-based positioning for inpaint mask toolbar & border highlight.
+  // Reads the node DOM element's bounding rect directly, bypassing React state lag.
+  useEffect(() => {
+    if (!inpaintFocus || inpaintFocus.step !== 'edit') return;
+    const nodeEl = document.querySelector(`[data-id="${inpaintFocus.nodeId}"]`) as HTMLElement | null;
+    if (!nodeEl) return;
+    let rafId: number;
+    const update = () => {
+      const rect = nodeEl.getBoundingClientRect();
+      const toolbar = inpaintToolbarRef.current;
+      if (toolbar) {
+        toolbar.style.left = `${rect.left + rect.width / 2}px`;
+        toolbar.style.top = `${rect.top - 12}px`;
+      }
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafId);
+  }, [inpaintFocus?.nodeId, inpaintFocus?.step]);
 
   useEffect(() => {
     if (!collabEnabled) {
@@ -1959,28 +2004,47 @@ export function CollaborativeCanvas({
   const handlePaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
+      // Check if the right-click landed on a node element (React Flow may route
+      // node contextmenu to pane handler depending on panOnDrag config).
+      const target = event.target as HTMLElement;
+      const nodeEl = target.closest('.react-flow__node');
+      if (nodeEl && canEdit && !isLocked && toolMode === 'edit') {
+        const nodeId = nodeEl.getAttribute('data-id');
+        if (nodeId) {
+          const targetNode = nodesRef.current.find((n) => n.id === nodeId);
+          const raw = (targetNode as CanvasNodeData & { raw?: RawDataItem } | undefined)?.raw;
+          if (String(raw?.status ?? '').toLowerCase() !== 'init') {
+            setContextMenu({ x: event.clientX, y: event.clientY, type: 'node', nodeId });
+            return;
+          }
+        }
+      }
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
         type: 'canvas',
       });
     },
-    []
+    [canEdit, isLocked, toolMode]
   );
 
   const handlePlusAction = useCallback(
     (actionId: 'upload' | 'upload-image' | 'upload-video' | 'select-from-board' | 'ai-image' | 'ai-video' | 'ai-avatar' | 'ai-audio', subActionId?: string) => {
-      if (subActionId !== 'inpaint') return;
       // Inpaint from sidebar → create placeholder node + enter upload step
       if (subActionId === 'inpaint') {
         const instance = reactFlowInstanceRef.current;
-        const placeholderSize = { width: 480, height: 320 };
+        const placeholderSize = { width: 260, height: 260 };
         let centerFlow = { x: 0, y: 0 };
         if (instance) {
           const containerEl = document.querySelector('.react-flow');
           const cw = containerEl?.clientWidth ?? 1200;
           const ch = containerEl?.clientHeight ?? 800;
-          centerFlow = instance.screenToFlowPosition({ x: cw / 2, y: ch / 2 });
+          const sidebarW = uiScheme === 'B' ? 64 : 0;
+          const bottomH = uiScheme === 'B' ? 64 : 0;
+          centerFlow = instance.screenToFlowPosition({
+            x: sidebarW + (cw - sidebarW) / 2,
+            y: (ch - bottomH) / 2,
+          });
         }
         const placeholderNode: CanvasNodeData = {
           id: generateId(),
@@ -1995,8 +2059,9 @@ export function CollaborativeCanvas({
           zIndex: nodes.length,
           toolId: 'inpaint',
           toolCategory: 'ai-image',
+          selected: true,
         } as CanvasNodeData;
-        setNodes((prev) => [...prev, placeholderNode]);
+        setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), placeholderNode]);
         setInpaintFocus({ nodeId: placeholderNode.id, prompt: '', maskTool: 'brush', brushSize: 30, step: 'upload' });
         setTemplatePickerOpen(false);
         setTemplatePickerExpanded(false);
@@ -3213,7 +3278,7 @@ export function CollaborativeCanvas({
                 nodesDraggable={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && !aiCreateMode}
                 elementsSelectable={!isLocked && !inpaintFocus && !aiCreateMode}
                 selectionOnDrag={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && !aiCreateMode}
-                panOnDrag={isLocked ? [] : effectiveToolMode === 'pan' ? [0, 1, 2] : [1, 2]}
+                panOnDrag={isLocked ? [] : effectiveToolMode === 'pan' ? [0, 1, 2] : [1]}
                 onLockChange={setIsLocked}
                 isLocked={isLocked}
                 showControls={!aiCreateMode && uiScheme !== 'B'}
@@ -3243,62 +3308,137 @@ export function CollaborativeCanvas({
             const uh = uploadNode.size.height * viewport.zoom;
             return (
               <>
-                {/* Transparent dismiss overlay — no dim, allows canvas interaction */}
+                {/* Transparent dismiss overlay — avoids sidebar & bottom toolbar */}
                 <div
                   onClick={() => {
                     setInpaintFocus(null);
                     setNodes((prev) => prev.filter((n) => n.id !== inpaintFocus.nodeId));
                   }}
-                  style={{ position: 'absolute', inset: 0, zIndex: 39 }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: uiScheme === 'B' ? 64 : 0,
+                    right: 0,
+                    bottom: uiScheme === 'B' ? 64 : 0,
+                    zIndex: 39,
+                  }}
                 />
-                {/* Node border highlight */}
+                {/* Node border highlight — matches other nodes' 2.5px selection outline */}
                 <div
                   style={{
                     position: 'absolute',
-                    left: ux - 2, top: uy - 2,
-                    width: uw + 4, height: uh + 4,
-                    zIndex: 41, borderRadius: 6,
-                    border: '2px solid #5857FD',
+                    left: ux - 2.5, top: uy - 2.5,
+                    width: uw + 5, height: uh + 5,
+                    zIndex: 41,
+                    border: '2.5px solid #5857FD',
                     pointerEvents: 'none',
                   }}
                 />
-                {/* Upload UI overlaid on the node */}
+                {/* Corner resize handles */}
+                {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
+                  const handleSize = 12;
+                  const handleOffset = -(handleSize / 2) - 2.5;
+                  const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
+                  return (
+                    <div
+                      key={corner}
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const startX = e.clientX;
+                        const startY = e.clientY;
+                        const startSize = { ...uploadNode.size };
+                        const startPos = { ...uploadNode.position };
+                        const anchorSX = corner.includes('left') ? ux + uw : ux;
+                        const anchorSY = corner.includes('top') ? uy + uh : uy;
+                        const startDist = Math.hypot(startX - anchorSX, startY - anchorSY);
+                        const onMove = (me: PointerEvent) => {
+                          const curDist = Math.hypot(me.clientX - anchorSX, me.clientY - anchorSY);
+                          const minSz = 80;
+                          const minScale = Math.max(minSz / startSize.width, minSz / startSize.height, 0.1);
+                          const scale = Math.max(curDist / startDist, minScale);
+                          const nw = Math.max(minSz, Math.round(startSize.width * scale));
+                          const nh = Math.max(minSz, Math.round(startSize.height * scale));
+                          let nx = startPos.x, ny = startPos.y;
+                          if (corner.includes('left')) nx = startPos.x + (startSize.width - nw);
+                          if (corner.includes('top')) ny = startPos.y + (startSize.height - nh);
+                          setNodes((prev) => prev.map((n) =>
+                            n.id === inpaintFocus.nodeId ? { ...n, position: { x: nx, y: ny }, size: { width: nw, height: nh } } : n
+                          ));
+                        };
+                        const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+                        window.addEventListener('pointermove', onMove);
+                        window.addEventListener('pointerup', onUp);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        width: handleSize,
+                        height: handleSize,
+                        borderRadius: 2,
+                        background: '#fff',
+                        border: '2px solid #5857FD',
+                        cursor: cursorStyle,
+                        zIndex: 42,
+                        left: corner.includes('left') ? ux + handleOffset : ux + uw - handleOffset - handleSize,
+                        top: corner.includes('top') ? uy + handleOffset : uy + uh - handleOffset - handleSize,
+                        pointerEvents: 'auto',
+                      }}
+                    />
+                  );
+                })}
+                {/* Upload UI overlaid on the node — draggable */}
                 <div
                   onClick={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const startPos = { ...uploadNode.position };
+                    let moved = false;
+                    const onMove = (me: PointerEvent) => {
+                      const dx = me.clientX - startX;
+                      const dy = me.clientY - startY;
+                      if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+                      moved = true;
+                      setNodes((prev) => prev.map((n) =>
+                        n.id === inpaintFocus.nodeId
+                          ? { ...n, position: { x: startPos.x + dx / viewport.zoom, y: startPos.y + dy / viewport.zoom } }
+                          : n
+                      ));
+                    };
+                    const onUp = () => {
+                      window.removeEventListener('pointermove', onMove);
+                      window.removeEventListener('pointerup', onUp);
+                      if (!moved) {
+                        widgetBridge.emit(createWidgetEvent('INPAINT_UPLOAD_IMAGE', { nodeId: inpaintFocus.nodeId }, { source: 'ui' }));
+                      }
+                    };
+                    window.addEventListener('pointermove', onMove);
+                    window.addEventListener('pointerup', onUp);
+                  }}
                   style={{
                     position: 'absolute',
                     left: ux, top: uy, width: uw, height: uh,
                     zIndex: 41,
-                    borderRadius: 6,
                     background: 'rgba(20,21,24,0.92)',
                     display: 'flex',
                     flexDirection: 'column',
                     overflow: 'hidden',
+                    cursor: 'grab',
                   }}
                 >
                   {/* Upload click area */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      widgetBridge.emit(createWidgetEvent('INPAINT_UPLOAD_IMAGE', { nodeId: inpaintFocus.nodeId }, { source: 'ui' }));
-                    }}
+                  <div
                     style={{
-                      flex: 1, border: 'none', background: 'transparent',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column',
+                      flex: 1, display: 'flex', flexDirection: 'column',
                       alignItems: 'center', justifyContent: 'center', gap: 12,
-                      color: 'rgba(255,255,255,0.5)',
+                      color: 'rgba(255,255,255,0.5)', pointerEvents: 'none',
                     }}
                   >
-                    <div style={{
-                      width: 48, height: 48, borderRadius: '50%',
-                      background: 'rgba(255,255,255,0.08)',
-                      border: '1px solid rgba(255,255,255,0.12)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <Plus size={22} color="rgba(255,255,255,0.7)" />
-                    </div>
+                    <ImagePlus size={28} color="rgba(255,255,255,0.35)" />
                     <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Click to upload</span>
-                  </button>
+                  </div>
                   {/* Select from Board — pinned to bottom */}
                   <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
                     <button
@@ -3329,11 +3469,6 @@ export function CollaborativeCanvas({
           // ── Edit step ─────────────────────────────────────────────────────
           const focusedNode = nodes.find((n) => n.id === inpaintFocus.nodeId);
           if (!focusedNode) return null;
-          const canvasOffsetX = uiScheme === 'B' ? 64 : 0;
-          const screenX = focusedNode.position.x * viewport.zoom + viewport.x + canvasOffsetX;
-          const screenY = focusedNode.position.y * viewport.zoom + viewport.y;
-          const screenW = focusedNode.size.width * viewport.zoom;
-          const screenH = focusedNode.size.height * viewport.zoom;
           const handleInpaintSubmit = () => {
             if (!inpaintFocus.prompt.trim()) return;
             widgetBridge.emit(
@@ -3389,45 +3524,37 @@ export function CollaborativeCanvas({
                   boxShadow: '0 0 0 1px rgba(0,0,0,0.3)',
                 }}
               />
-              {/* Focus highlight border */}
-              <div
-                style={{
-                  position: 'absolute',
-                  left: screenX - 2,
-                  top: screenY - 2,
-                  width: screenW + 4,
-                  height: screenH + 4,
-                  zIndex: 41,
-                  borderRadius: 4,
-                  border: '2px solid #5857FD',
-                  pointerEvents: 'none',
-                }}
-              />
+              {/* Selection border is provided by the underlying ImageNode's outline */}
 
-              {/* Mask toolbar (above image) */}
+              {/* Mask toolbar (above image) — positioned via rAF for smooth zoom tracking */}
               <div
+                ref={inpaintToolbarRef}
                 onClick={(e) => e.stopPropagation()}
+                onPointerDownCapture={(e) => e.stopPropagation()}
+                onMouseDownCapture={(e) => e.stopPropagation()}
                 onMouseMove={(e) => {
                   const el = document.getElementById('tc-brush-cursor');
                   if (el) { el.style.left = `${e.clientX}px`; el.style.top = `${e.clientY}px`; el.style.opacity = '1'; }
                 }}
                 style={{
-                  position: 'absolute',
-                  left: screenX + screenW / 2,
-                  transform: 'translateX(-50%)',
-                  top: screenY - 50,
+                  position: 'fixed',
+                  left: 0,
+                  top: 0,
+                  transform: 'translateX(-50%) translateY(-100%)',
+                  willChange: 'left, top',
                   cursor: 'default',
                   zIndex: 42,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 2,
                   padding: '4px 6px',
-                  borderRadius: 12,
+                  borderRadius: 14,
                   background: FLOW_UI.panelBg,
                   border: `1px solid ${FLOW_UI.panelBorder}`,
                   boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
+                  pointerEvents: 'auto',
                 }}
               >
                 <button type="button" title="Brush" onClick={() => setInpaintFocus((p) => p ? { ...p, maskTool: 'brush' } : p)} style={maskBtnStyle(inpaintFocus.maskTool === 'brush')}>
@@ -3446,8 +3573,8 @@ export function CollaborativeCanvas({
                   <Redo2 size={15} />
                 </button>
                 <div style={{ width: 1, height: 18, background: FLOW_UI.divider, margin: '0 3px' }} />
-                <button type="button" title="Close" onClick={() => setInpaintFocus(null)} style={{ ...maskBtnStyle(false), color: 'rgba(255,255,255,0.45)' }}>
-                  <X size={15} />
+                <button type="button" title="Done" onClick={() => setInpaintFocus(null)} style={{ ...maskBtnStyle(false), color: 'rgba(255,255,255,0.7)' }}>
+                  <Check size={15} />
                 </button>
               </div>
 
@@ -3460,12 +3587,12 @@ export function CollaborativeCanvas({
                 }}
                 style={{
                   position: 'absolute',
-                  bottom: uiScheme === 'B' ? 72 : 16,
+                  bottom: uiScheme === 'B' ? 64 : 16,
                   left: `calc(50% + ${(uiScheme === 'B' ? 64 : 0) / 2}px)`,
                   transform: 'translateX(-50%)',
-                  width: Math.min(720, typeof window !== 'undefined' ? window.innerWidth - 160 : 720),
+                  width: Math.min(440, typeof window !== 'undefined' ? window.innerWidth - 160 : 440),
                   zIndex: 42,
-                  borderRadius: 16,
+                  borderRadius: 14,
                   background: FLOW_UI.panelBg,
                   border: `1px solid ${FLOW_UI.panelBorder}`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
@@ -3479,9 +3606,9 @@ export function CollaborativeCanvas({
                 {/* Header */}
                 <div style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 16px 10px', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                  padding: '8px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)',
                 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Inpaint</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>Inpaint</span>
                   <button
                     type="button"
                     onClick={() => setInpaintFocus(null)}
@@ -3496,72 +3623,100 @@ export function CollaborativeCanvas({
                 </div>
 
                 {/* Content area */}
-                <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                  {/* Row 1: Prompt */}
-                  <textarea
-                    placeholder="Describe what you want to change in the masked area"
-                    value={inpaintFocus.prompt}
-                    onChange={(e) => setInpaintFocus((prev) => prev ? { ...prev, prompt: e.target.value } : prev)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey && inpaintFocus.prompt.trim()) {
-                        e.preventDefault();
-                        handleInpaintSubmit();
-                      }
-                    }}
-                    rows={1}
-                    style={{
-                      width: '100%', padding: '12px 14px', borderRadius: 12,
-                      border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
-                      color: '#fff', fontSize: 14, lineHeight: '20px', resize: 'none', fontFamily: 'inherit',
-                      minHeight: 46,
-                    }}
-                    className="tc-textarea-input"
-                  />
+                <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* Row: Reference + Textarea */}
+                  <div style={{ display: 'flex', flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+                    {/* Left: Reference Image Upload Area */}
+                    <div style={{ width: 64, height: 64, flexShrink: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          widgetBridge.emit(createWidgetEvent('INPAINT_UPLOAD_REFERENCE', { nodeId: inpaintFocus.nodeId, slotIndex: 0 }, { source: 'ui' }));
+                        }}
+                        style={{
+                          width: '100%', height: '100%',
+                          borderRadius: 8,
+                          border: 'none', 
+                          background: 'rgba(255,255,255,0.04)',
+                          color: 'rgba(255,255,255,0.3)', 
+                          cursor: 'pointer',
+                          display: 'flex', 
+                          flexDirection: 'column',
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          gap: 4,
+                          fontSize: 10, fontWeight: 500,
+                          transition: 'background 120ms ease',
+                          position: 'relative',
+                          overflow: 'hidden',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
+                      >
+                        {inpaintFocus.uploadedImageUrl ? (
+                          <img 
+                            src={inpaintFocus.uploadedImageUrl} 
+                            alt="Reference" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          />
+                        ) : (
+                          <>
+                            <Plus size={18} style={{ opacity: 0.4 }} />
+                            <span style={{ color: 'rgba(255,255,255,0.2)' }}>Reference</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
-                  {/* Row 2: Bottom Controls */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    {/* Left: Reference Image */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        widgetBridge.emit(createWidgetEvent('INPAINT_UPLOAD_REFERENCE', { nodeId: inpaintFocus.nodeId, slotIndex: 0 }, { source: 'ui' }));
+                    {/* Right: Prompt Textarea */}
+                    <textarea
+                      placeholder="Describe what you want to change, or enter a prompt for the masked area"
+                      value={inpaintFocus.prompt}
+                      onChange={(e) => setInpaintFocus((prev) => prev ? { ...prev, prompt: e.target.value } : prev)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && inpaintFocus.prompt.trim()) {
+                          e.preventDefault();
+                          handleInpaintSubmit();
+                        }
                       }}
                       style={{
-                        padding: '8px 12px', borderRadius: 8,
-                        border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)',
-                        color: 'rgba(255,255,255,0.7)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        fontSize: 13, fontWeight: 500,
-                        transition: 'background 120ms ease',
+                        flex: 1,
+                        height: 64,
+                        padding: '4px 0', 
+                        border: 'none', 
+                        background: 'transparent', 
+                        color: '#fff', 
+                        fontSize: 14, 
+                        lineHeight: '20px', 
+                        resize: 'none', 
+                        fontFamily: 'inherit',
+                        outline: 'none',
+                        boxShadow: 'none',
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                    >
-                      <ImagePlus size={16} />
-                      <span>Reference</span>
-                    </button>
+                      className="tc-inpaint-textarea"
+                    />
+                  </div>
 
-                    {/* Right: Generate Button */}
+                  {/* Generate Button */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button
                       type="button"
                       onClick={inpaintFocus.prompt.trim() ? handleInpaintSubmit : undefined}
                       style={{
-                        padding: '0 20px', height: 40, borderRadius: 10, border: 'none',
-                        background: inpaintFocus.prompt.trim() ? '#fff' : 'rgba(255,255,255,0.1)',
+                        padding: '0 20px', height: 32, borderRadius: 8, border: 'none',
+                        background: inpaintFocus.prompt.trim() ? '#fff' : 'rgba(255,255,255,0.08)',
                         color: inpaintFocus.prompt.trim() ? '#000' : 'rgba(255,255,255,0.3)',
-                        fontSize: 14, fontWeight: 600, cursor: inpaintFocus.prompt.trim() ? 'pointer' : 'default',
-                        display: 'flex', alignItems: 'center', gap: 8,
+                        fontSize: 12, fontWeight: 600, cursor: inpaintFocus.prompt.trim() ? 'pointer' : 'default',
+                        display: 'flex', alignItems: 'center', gap: 6,
                         transition: 'all 120ms ease',
                         boxShadow: inpaintFocus.prompt.trim() ? '0 2px 8px rgba(255,255,255,0.15)' : 'none',
                       }}
                     >
-                      <Crown size={16} color={inpaintFocus.prompt.trim() ? '#000' : 'currentColor'} />
+                      <Crown size={14} color={inpaintFocus.prompt.trim() ? '#000' : 'currentColor'} />
                       <span>Generate</span>
                     </button>
                   </div>
                 </div>
-
-                {/* Footer removed as it's merged into content */}
               </div>
             </>
           );
@@ -3881,108 +4036,92 @@ export function CollaborativeCanvas({
               const targetNode = nodesRef.current.find((n) => n.id === nId);
               const isHidden = (targetNode as any)?.hidden === true;
               const isNodeLocked = (targetNode as any)?.draggable === false;
+              const layerInfo = getLayerInfo(nId);
               return (
                 <>
-                  <button
-                    type="button"
-                    className="ctx-item"
-                    disabled
-                    onClick={() => { setContextMenu(null); }}
-                  >
-                    <span>Merge layers</span>
-                    <span className="ctx-shortcut">⌘E</span>
+                  {/* Clipboard */}
+                  <button type="button" className="ctx-item" onClick={() => {
+                    widgetBridge.emit(createWidgetEvent('NODE_QUICK_ACTION', { nodeId: nId, actionId: 'copy', actionLabel: 'Copy' }, { source: 'ui' }));
+                    setContextMenu(null);
+                  }}>
+                    <span>Copy</span><span className="ctx-shortcut">⌘C</span>
                   </button>
-                  <button
-                    type="button"
-                    className="ctx-item"
-                    onClick={() => {
-                      widgetBridge.emit(
-                        createWidgetEvent('NODE_QUICK_ACTION', {
-                          nodeId: nId,
-                          actionId: isHidden ? 'show' : 'hide',
-                          actionLabel: isHidden ? 'Show' : 'Hide',
-                        }, { source: 'ui' })
-                      );
-                      setContextMenu(null);
-                    }}
-                  >
-                    <span>{isHidden ? 'Show' : 'Hide'}</span>
-                    <span className="ctx-shortcut">⌘⇧H</span>
+                  <button type="button" className="ctx-item" onClick={() => {
+                    widgetBridge.emit(createWidgetEvent('NODE_QUICK_ACTION', { nodeId: nId, actionId: 'cut', actionLabel: 'Cut' }, { source: 'ui' }));
+                    setContextMenu(null);
+                  }}>
+                    <span>Cut</span><span className="ctx-shortcut">⌘X</span>
                   </button>
-                  <button
-                    type="button"
-                    className="ctx-item"
-                    onClick={() => {
-                      widgetBridge.emit(
-                        createWidgetEvent('NODE_QUICK_ACTION', {
-                          nodeId: nId,
-                          actionId: isNodeLocked ? 'unlock' : 'lock',
-                          actionLabel: isNodeLocked ? 'Unlock' : 'Lock',
-                        }, { source: 'ui' })
-                      );
-                      setContextMenu(null);
-                    }}
-                  >
-                    <span>{isNodeLocked ? 'Unlock' : 'Lock'}</span>
-                    <span className="ctx-shortcut">⌘⇧L</span>
+                  <button type="button" className="ctx-item" disabled>
+                    <span>Paste</span><span className="ctx-shortcut">⌘V</span>
                   </button>
+                  <button type="button" className="ctx-item" onClick={handleCloneNode}>
+                    <span>Duplicate</span><span className="ctx-shortcut">⌘D</span>
+                  </button>
+
+                  <div className="ctx-divider" />
+
+                  {/* Layer ordering */}
+                  <button type="button" className="ctx-item" disabled={layerInfo.isTop} onClick={() => { applyLayerAction(nId, 'forward'); }}>
+                    <span>Move up</span><span className="ctx-shortcut">⌘]</span>
+                  </button>
+                  <button type="button" className="ctx-item" disabled={layerInfo.isBottom} onClick={() => { applyLayerAction(nId, 'backward'); }}>
+                    <span>Move down</span><span className="ctx-shortcut">⌘[</span>
+                  </button>
+                  <button type="button" className="ctx-item" disabled={layerInfo.isTop} onClick={() => { applyLayerAction(nId, 'front'); }}>
+                    <span>Bring to front</span><span className="ctx-shortcut">⌘⇧]</span>
+                  </button>
+                  <button type="button" className="ctx-item" disabled={layerInfo.isBottom} onClick={() => { applyLayerAction(nId, 'back'); }}>
+                    <span>Send to back</span><span className="ctx-shortcut">⌘⇧[</span>
+                  </button>
+
+                  <div className="ctx-divider" />
+
+                  {/* Visibility & Lock */}
+                  <button type="button" className="ctx-item" onClick={() => {
+                    widgetBridge.emit(createWidgetEvent('NODE_QUICK_ACTION', { nodeId: nId, actionId: isHidden ? 'show' : 'hide', actionLabel: isHidden ? 'Show' : 'Hide' }, { source: 'ui' }));
+                    setContextMenu(null);
+                  }}>
+                    <span>{isHidden ? 'Show' : 'Hide'}</span><span className="ctx-shortcut">⌘⇧H</span>
+                  </button>
+                  <button type="button" className="ctx-item" onClick={() => {
+                    widgetBridge.emit(createWidgetEvent('NODE_QUICK_ACTION', { nodeId: nId, actionId: isNodeLocked ? 'unlock' : 'lock', actionLabel: isNodeLocked ? 'Unlock' : 'Lock' }, { source: 'ui' }));
+                    setContextMenu(null);
+                  }}>
+                    <span>{isNodeLocked ? 'Unlock' : 'Lock'}</span><span className="ctx-shortcut">⌘⇧L</span>
+                  </button>
+
+                  <div className="ctx-divider" />
+
+                  {/* Export submenu */}
                   <div style={{ position: 'relative' }}>
-                    <button
-                      type="button"
-                      className="ctx-item"
-                      onClick={() => {
-                        setContextMenu((prev) => prev ? { ...prev, exportSubmenuOpen: !prev.exportSubmenuOpen } : prev);
-                      }}
-                    >
-                      <span>Export</span>
-                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>›</span>
+                    <button type="button" className="ctx-item" onClick={() => {
+                      setContextMenu((prev) => prev ? { ...prev, exportSubmenuOpen: !prev.exportSubmenuOpen } : prev);
+                    }}>
+                      <span>Export</span><span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>›</span>
                     </button>
                     {contextMenu.exportSubmenuOpen && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: '100%',
-                          top: 0,
-                          marginLeft: 4,
-                          background: '#1c1e22',
-                          borderRadius: 10,
-                          border: '1px solid rgba(255,255,255,0.08)',
-                          boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25)',
-                          padding: 6,
-                          minWidth: 120,
-                          zIndex: 10,
-                        }}
-                      >
+                      <div style={{
+                        position: 'absolute', left: '100%', top: 0, marginLeft: 4,
+                        background: '#1c1e22', borderRadius: 10, border: '1px solid rgba(255,255,255,0.08)',
+                        boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25)',
+                        padding: 6, minWidth: 120, zIndex: 10,
+                      }}>
                         {(['PNG', 'JPG', 'SVG'] as const).map((format) => (
-                          <button
-                            key={format}
-                            type="button"
-                            className="ctx-item"
-                            onClick={() => {
-                              widgetBridge.emit(
-                                createWidgetEvent('NODE_QUICK_ACTION', {
-                                  nodeId: nId,
-                                  actionId: 'export',
-                                  actionLabel: `Export ${format}`,
-                                  format: format.toLowerCase(),
-                                }, { source: 'ui' })
-                              );
-                              setContextMenu(null);
-                            }}
-                          >
-                            {format}
-                          </button>
+                          <button key={format} type="button" className="ctx-item" onClick={() => {
+                            widgetBridge.emit(createWidgetEvent('NODE_QUICK_ACTION', { nodeId: nId, actionId: 'export', actionLabel: `Export ${format}`, format: format.toLowerCase() }, { source: 'ui' }));
+                            setContextMenu(null);
+                          }}>{format}</button>
                         ))}
                       </div>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    className="ctx-item danger"
-                    onClick={handleDeleteNode}
-                  >
-                    <span>Delete</span>
-                    <span className="ctx-shortcut">⌫</span>
+
+                  <div className="ctx-divider" />
+
+                  {/* Danger zone */}
+                  <button type="button" className="ctx-item danger" onClick={handleDeleteNode}>
+                    <span>Delete</span><span className="ctx-shortcut">⌫</span>
                   </button>
                 </>
               );
@@ -4296,6 +4435,7 @@ export function CollaborativeCanvas({
               canEdit={canEdit}
               isLocked={isLocked}
               sidebarOffset={64}
+              onAddAsset={() => handlePlusAction('upload')}
             />
           </>
         )}

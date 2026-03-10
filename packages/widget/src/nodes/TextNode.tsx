@@ -987,10 +987,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         border: 'none',
         outline: effectiveSelected
           ? `${2.5 / zoom}px solid #5857FD`
-          : is      Hove  
-          
-          
-          啊手动 你red
+          : isHovered
             ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
             : `${2 / zoom}px solid transparent`,
         outlineOffset: 0,

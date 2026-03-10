@@ -168,6 +168,18 @@
   box-shadow: 0 0 0 2px rgba(88, 87, 253, 0.2);
 }
 
+/* ─── Inpaint textarea (no focus styles, dark placeholder) ─── */
+
+.tc-inpaint-textarea {
+  outline: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.tc-inpaint-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.2);
+}
+
 /* ─── TextNode inline editor ─── */
 
 .tc-node-textarea {

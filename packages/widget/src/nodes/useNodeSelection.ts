@@ -10,9 +10,19 @@ export function useNodeSelection(
   containerRef: React.RefObject<HTMLElement | null>
 ) {
   const [localSelected, setLocalSelected] = React.useState(false);
+  const prevSelectedRef = React.useRef(!!selected);
 
   React.useEffect(() => {
-    setLocalSelected(!!selected);
+    const prev = prevSelectedRef.current;
+    const curr = !!selected;
+    prevSelectedRef.current = curr;
+
+    if (curr) {
+      setLocalSelected(true);
+    } else if (prev && !curr) {
+      // React Flow deselected this node (e.g. another node was clicked)
+      setLocalSelected(false);
+    }
   }, [selected]);
 
   const handlePointerDown = React.useCallback(() => {

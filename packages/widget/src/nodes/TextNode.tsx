@@ -986,10 +986,10 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         boxSizing: 'border-box',
         border: 'none',
         outline: effectiveSelected
-          ? `${2.5 / zoom}px solid #5857FD`
+          ? `${1 / zoom}px solid #5857FD`
           : isHovered
-            ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
-            : `${2 / zoom}px solid transparent`,
+            ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+            : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
         backgroundColor: resolvedBackgroundColor,
@@ -1059,7 +1059,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
                   height: handleSize,
                   borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: `${2 / zoom}px solid #5857FD`,
+                  border: `${1 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',

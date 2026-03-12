@@ -1,20 +1,10 @@
 import React from 'react';
 import { NodeToolbar, Position, useStore } from '@xyflow/react';
-import { VideoIcon, Music } from 'lucide-react';
-
-function FilledImageIcon({ size = 16, style }: { size?: number; style?: React.CSSProperties }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={style}>
-      <rect x="2" y="3" width="20" height="18" rx="3" fill="currentColor" opacity="0.35" />
-      <circle cx="8.5" cy="9.5" r="2" fill="currentColor" />
-      <path d="M22 16l-5.5-6L10 17.5 7.5 15 2 21h17a3 3 0 003-3v-2z" fill="currentColor" />
-    </svg>
-  );
-}
+import { Video, Music, Image } from 'lucide-react';
 
 const typeIcons: Record<string, React.ComponentType<{ size?: number; style?: React.CSSProperties }>> = {
-  IMAGE: FilledImageIcon,
-  VIDEO: VideoIcon,
+  IMAGE: Image,
+  VIDEO: Video,
   AUDIO: Music,
 };
 
@@ -24,11 +14,13 @@ type NodeLabelBarProps = {
   label: string;
   sizeLabel: string;
   nodeWidth: number;
+  /** Tool name badge shown for placeholder / generating nodes */
+  toolLabel?: string;
 };
 
-export function NodeLabelBar({ isVisible, nodeType, label, sizeLabel, nodeWidth }: NodeLabelBarProps) {
+export function NodeLabelBar({ isVisible, nodeType, label, sizeLabel, nodeWidth, toolLabel }: NodeLabelBarProps) {
   const zoom = useStore((state) => state.transform[2] ?? 1);
-  const Icon = typeIcons[nodeType.toUpperCase()] ?? ImageIcon;
+  const Icon = typeIcons[nodeType.toUpperCase()] ?? Image;
   const renderedWidth = nodeWidth * zoom;
   const showSize = renderedWidth >= 150;
 
@@ -53,12 +45,28 @@ export function NodeLabelBar({ isVisible, nodeType, label, sizeLabel, nodeWidth 
           userSelect: 'none',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', color: '#5857FD' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden', color: '#7781FF' }}>
           <Icon size={13} style={{ flexShrink: 0 }} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: showSize ? 150 : renderedWidth - 20 }}>{label}</span>
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: showSize ? 120 : renderedWidth - 20 }}>{label}</span>
+          {toolLabel && (
+            <span
+              style={{
+                flexShrink: 0,
+                fontSize: 10,
+                fontWeight: 500,
+                lineHeight: '16px',
+                padding: '0 5px',
+                borderRadius: 3,
+                background: 'rgba(119,129,255,0.12)',
+                color: 'rgba(119,129,255,0.7)',
+              }}
+            >
+              {toolLabel}
+            </span>
+          )}
         </div>
         {showSize && (
-          <div style={{ flexShrink: 0, color: '#5857FD' }}>
+          <div style={{ flexShrink: 0, color: '#7781FF' }}>
             {sizeLabel}
           </div>
         )}

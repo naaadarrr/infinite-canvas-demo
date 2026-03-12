@@ -8,16 +8,21 @@ import { useCollaboration } from './hooks';
 import { InfiniteCanvas } from './InfiniteCanvas';
 import { createWidgetEvent, widgetBridge } from './bridge';
 import { isDev } from './utils/env';
+import { getToolLabel } from './utils/toolLabels';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PlusIcon, LayersIcon } from './icons';
-import { Upload, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Command, Crown, LayoutTemplate, type LucideIcon } from 'lucide-react';
+import { Upload, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Command, Crown, type LucideIcon } from 'lucide-react';
 import { CanvasRoleProvider } from './CanvasRoleContext';
 import { SelectModeProvider, SelectModeState } from './SelectModeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
-import { DevPanel } from './DevPanel';
 import { BottomToolbar } from './BottomToolbar';
-import { TemplatePicker } from './TemplatePicker';
+import { TextToImagePanel } from './panels/TextToImagePanel';
+import { ProductPhotographyModal } from './panels/ProductPhotographyModal';
+import type { ImageToolTab, TextToImageState } from './panels/TextToImagePanel';
+import { AiCreateProvider, type AiCreateContextValue } from './AiCreateContext';
+import type { ProductPhotoState } from './panels/ProductPhotographyModal';
+import { Camera } from 'lucide-react';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
@@ -89,20 +94,20 @@ function ToolbarItemWithMenu({
     >
       {button}
       {!disabled && (
-        <div
-          style={{
-            position: 'absolute',
-            left: '100%',
-            top: '50%',
-            transform: open ? 'translateY(-50%) scale(1)' : 'translateY(-50%) scale(0.96)',
-            paddingLeft: 8,
-            zIndex: 60,
-            pointerEvents: open ? 'auto' : 'none',
-            opacity: open ? 1 : 0,
-            transition: 'opacity 130ms ease, transform 130ms ease',
-            transformOrigin: 'left center',
-          }}
-        >
+          <div
+            style={{
+              position: 'absolute',
+              left: '100%',
+              top: '0',
+              transform: open ? 'scale(1)' : 'scale(0.96)',
+              paddingLeft: 8,
+              zIndex: 60,
+              pointerEvents: open ? 'auto' : 'none',
+              opacity: open ? 1 : 0,
+              transition: 'opacity 130ms ease, transform 130ms ease',
+              transformOrigin: 'left top',
+            }}
+          >
           <div style={TOOLBAR_MENU_STYLE}>
             {menu}
           </div>
@@ -277,9 +282,6 @@ export function CollaborativeCanvas({
   } | null>(null);
   const [sessionBlocked, setSessionBlocked] = useState<{ message: string } | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [uiScheme, setUiScheme] = useState<'A' | 'B'>('A');
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const [templatePickerExpanded, setTemplatePickerExpanded] = useState(false);
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const [toasts, setToasts] = useState<
     Array<{ id: string; message: string; variant: 'info' | 'error' }>
@@ -317,42 +319,73 @@ export function CollaborativeCanvas({
     subActionId: string;
     nodeId: string;
     prompt: string;
+    referenceImageUrl?: string;
   } | null>(null);
+
+  // Product Photography immersive modal
+  const [ppModalState, setPpModalState] = useState<{
+    open: boolean;
+    nodeId: string;
+    initialProductImageUrl?: string;
+  } | null>(null);
+  // Tracks node IDs that are currently generating — prevents modal re-open
+  const ppGeneratingRef = useRef<Set<string>>(new Set());
+  // Ref mirror of ppModalState for use in event handlers without stale closures
+  const ppModalStateRef = useRef(ppModalState);
+  ppModalStateRef.current = ppModalState;
+  // Cooldown: suppress placeholder panel activation briefly after modal close
+  const ppClosedAtRef = useRef<number>(0);
   const reactFlowInstanceRef = useRef<ReactFlowInstance<FlowNode<CanvasNodeData>, Edge> | null>(null);
 
-  // Re-activate creation panel when clicking a placeholder/draft node
+  // Re-activate creation panel when clicking a placeholder/draft node.
+  // Uses a callback instead of a nodes-dependent useEffect to avoid the race
+  // condition where clicking an already-selected node doesn't change `nodes`,
+  // so the effect never re-fires.
+  const tryActivatePlaceholderPanel = useCallback((nodeId: string) => {
+    if (inpaintFocus || ppModalState?.open) return;
+    // Never re-open for nodes that are currently generating
+    if (ppGeneratingRef.current.has(nodeId)) return;
+    // Cooldown after modal close to prevent immediate re-trigger
+    if (Date.now() - ppClosedAtRef.current < 500) return;
+    const node = nodesRef.current.find((n) => n.id === nodeId);
+    if (!node) return;
+    const nodeAny = node as CanvasNodeData & { toolId?: string; toolCategory?: string; raw?: { status?: string } };
+    if (!nodeAny.toolId || node.url) return;
+    if (nodeAny.raw?.status) return;
+    if (nodeAny.toolId === 'inpaint') return;
+    if (nodeAny.toolId === 'product-photography') {
+      setPpModalState({ open: true, nodeId: node.id });
+      return;
+    }
+    const category = (nodeAny.toolCategory ?? 'ai-image') as 'ai-image' | 'ai-video' | 'ai-avatar' | 'ai-audio';
+    // Use functional update: if already open for this node, preserve prompt;
+    // otherwise (re-)activate with empty prompt. This also correctly handles
+    // the race where CanvasPanel's dismiss queued setAiCreateMode(null) in the
+    // same event — the functional update runs after the null, so we re-set it.
+    setAiCreateMode((prev) => {
+      if (prev?.nodeId === nodeId) return prev;
+      return {
+        type: category,
+        subActionId: nodeAny.toolId!,
+        nodeId: node.id,
+        prompt: '',
+      };
+    });
+  }, [inpaintFocus, ppModalState]);
+
+  // Also run on initial selection (e.g. node created with selected: true)
   useEffect(() => {
-    if (aiCreateMode || inpaintFocus) return;
+    if (aiCreateMode || inpaintFocus || ppModalState?.open) return;
+    if (Date.now() - ppClosedAtRef.current < 500) return;
     const selectedNode = nodes.find((n) => n.selected);
     if (!selectedNode) return;
-    const nodeAny = selectedNode as CanvasNodeData & { toolId?: string; toolCategory?: string };
-    if (!nodeAny.toolId || selectedNode.url) return;
-    if (nodeAny.toolId === 'inpaint') return;
-    const category = (nodeAny.toolCategory ?? 'ai-image') as 'ai-image' | 'ai-video' | 'ai-avatar' | 'ai-audio';
-    setAiCreateMode({
-      type: category,
-      subActionId: nodeAny.toolId,
-      nodeId: selectedNode.id,
-      prompt: '',
-    });
-  }, [nodes, aiCreateMode, inpaintFocus]);
+    if (ppGeneratingRef.current.has(selectedNode.id)) return;
+    if (selectedNode.url) return;
+    const nodeAny = selectedNode as CanvasNodeData & { raw?: { status?: string } };
+    if (nodeAny.raw?.status) return;
+    tryActivatePlaceholderPanel(selectedNode.id);
+  }, [nodes, aiCreateMode, inpaintFocus, ppModalState, tryActivatePlaceholderPanel]);
 
-  const getToolButtonStyle = (active: boolean, disabled: boolean): React.CSSProperties => ({
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    border: 'none',
-    background: active ? FLOW_UI.panelHighlight : 'transparent',
-    color: active ? FLOW_UI.panelText : FLOW_UI.panelTextMuted,
-    fontSize: 16,
-    fontWeight: 600,
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.35 : 1,
-    transition: 'all 0.15s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  });
 
   const collabRef = useRef<CollaborationState | null>(null);
   const seededRef = useRef(false);
@@ -1276,6 +1309,8 @@ export function CollaborativeCanvas({
         reactFlowInstanceRef.current?.zoomTo(1, { duration: 200 });
       }
       if (event.code === 'Space' && !spaceHeld) {
+        // Don't activate pan mode while an immersive modal is open
+        if (ppModalStateRef.current?.open) return;
         spaceHeld = true;
         event.preventDefault();
         setToolMode('pan');
@@ -1343,8 +1378,6 @@ export function CollaborativeCanvas({
         ) {
           const targetId = event.payload.nodeId;
           setInpaintFocus({ nodeId: targetId, prompt: '', maskTool: 'brush', brushSize: 30, step: 'edit' });
-          setTemplatePickerOpen(false);
-          setTemplatePickerExpanded(false);
           setNodes((prev) =>
             prev.map((n) => ({ ...n, selected: false }))
           );
@@ -2028,34 +2061,71 @@ export function CollaborativeCanvas({
     [canEdit, isLocked, toolMode]
   );
 
+  const getNewNodePosition = useCallback(
+    (placeholderSize: { width: number; height: number }) => {
+      const GAP = 40;
+      if (nodes.length > 0) {
+        let minX = Infinity, maxX = -Infinity, maxBottom = -Infinity;
+        for (const n of nodes) {
+          const nx = n.position.x;
+          const nRight = nx + n.size.width;
+          const nBottom = n.position.y + n.size.height;
+          if (nx < minX) minX = nx;
+          if (nRight > maxX) maxX = nRight;
+          if (nBottom > maxBottom) maxBottom = nBottom;
+        }
+        const centerX = (minX + maxX) / 2;
+        return {
+          x: centerX - placeholderSize.width / 2,
+          y: maxBottom + GAP,
+        };
+      }
+      const instance = reactFlowInstanceRef.current;
+      if (instance) {
+        const containerEl = document.querySelector('.react-flow');
+        const cw = containerEl?.clientWidth ?? 1200;
+        const ch = containerEl?.clientHeight ?? 800;
+        const center = instance.screenToFlowPosition({ x: cw / 2, y: ch / 2 });
+        return {
+          x: center.x - placeholderSize.width / 2,
+          y: center.y - placeholderSize.height / 2,
+        };
+      }
+      return { x: -placeholderSize.width / 2, y: -placeholderSize.height / 2 };
+    },
+    [nodes]
+  );
+
   const handlePlusAction = useCallback(
     (actionId: 'upload' | 'upload-image' | 'upload-video' | 'select-from-board' | 'ai-image' | 'ai-video' | 'ai-avatar' | 'ai-audio', subActionId?: string) => {
-      // Inpaint from sidebar → create placeholder node + enter upload step
-      if (subActionId === 'inpaint') {
-        const instance = reactFlowInstanceRef.current;
-        const placeholderSize = { width: 260, height: 260 };
-        let centerFlow = { x: 0, y: 0 };
-        if (instance) {
-          const containerEl = document.querySelector('.react-flow');
-          const cw = containerEl?.clientWidth ?? 1200;
-          const ch = containerEl?.clientHeight ?? 800;
-          const sidebarW = uiScheme === 'B' ? 64 : 0;
-          const bottomH = uiScheme === 'B' ? 64 : 0;
-          centerFlow = instance.screenToFlowPosition({
-            x: sidebarW + (cw - sidebarW) / 2,
-            y: (ch - bottomH) / 2,
-          });
-        }
+      // Product Photography → create placeholder + open immersive modal
+      if (subActionId === 'product-photography') {
+        const placeholderSize = { width: 320, height: 320 };
         const placeholderNode: CanvasNodeData = {
           id: generateId(),
           type: NodeType.IMAGE,
-          position: {
-            x: centerFlow.x - placeholderSize.width / 2,
-            y: centerFlow.y - placeholderSize.height / 2,
-          },
+          position: getNewNodePosition(placeholderSize),
           size: placeholderSize,
           url: '',
-          title: 'Inpaint',
+          title: 'Image',
+          zIndex: nodes.length,
+          toolId: 'product-photography',
+          toolCategory: 'ai-image',
+        } as CanvasNodeData;
+        setNodes((prev) => [...prev, placeholderNode]);
+        setPpModalState({ open: true, nodeId: placeholderNode.id });
+        return;
+      }
+      // Inpaint from sidebar → create placeholder node + enter upload step
+      if (subActionId === 'inpaint') {
+        const placeholderSize = { width: 260, height: 260 };
+        const placeholderNode: CanvasNodeData = {
+          id: generateId(),
+          type: NodeType.IMAGE,
+          position: getNewNodePosition(placeholderSize),
+          size: placeholderSize,
+          url: '',
+          title: 'Image',
           zIndex: nodes.length,
           toolId: 'inpaint',
           toolCategory: 'ai-image',
@@ -2063,8 +2133,6 @@ export function CollaborativeCanvas({
         } as CanvasNodeData;
         setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), placeholderNode]);
         setInpaintFocus({ nodeId: placeholderNode.id, prompt: '', maskTool: 'brush', brushSize: 30, step: 'upload' });
-        setTemplatePickerOpen(false);
-        setTemplatePickerExpanded(false);
         return;
       }
       if (actionId === 'upload' || actionId === 'upload-image' || actionId === 'upload-video' || actionId === 'select-from-board') {
@@ -2078,47 +2146,32 @@ export function CollaborativeCanvas({
         return;
       }
 
-      const instance = reactFlowInstanceRef.current;
       const placeholderSize = actionId === 'ai-image'
-        ? { width: 320, height: 320 }
+        ? { width: 1024, height: 1024 }
         : actionId === 'ai-audio'
-          ? { width: 200, height: 200 }
-          : { width: 480, height: 270 };
-      let centerFlow = { x: 0, y: 0 };
-      if (instance) {
-        const containerEl = document.querySelector('.react-flow');
-        const cw = containerEl?.clientWidth ?? 1200;
-        const ch = containerEl?.clientHeight ?? 800;
-        centerFlow = instance.screenToFlowPosition({
-          x: cw / 2,
-          y: ch / 2,
-        });
-      }
+          ? { width: 320, height: 80 }
+          : { width: 1280, height: 720 };
       const nodeType = actionId === 'ai-image' ? NodeType.IMAGE
         : actionId === 'ai-audio' ? NodeType.AUDIO
         : NodeType.VIDEO;
-      const nodeTitle = actionId === 'ai-image' ? 'New Image'
-        : actionId === 'ai-audio' ? 'New Audio'
-        : actionId === 'ai-avatar' ? 'New Avatar'
-        : 'New Video';
+      const nodeTitle = actionId === 'ai-image' ? 'Image'
+        : actionId === 'ai-audio' ? 'Audio'
+        : actionId === 'ai-avatar' ? 'Video'
+        : 'Video';
       const toolId = subActionId ?? actionId;
       const placeholderNode: CanvasNodeData = {
         id: generateId(),
         type: nodeType,
-        position: {
-          x: centerFlow.x - placeholderSize.width / 2,
-          y: centerFlow.y - placeholderSize.height / 2,
-        },
+        position: getNewNodePosition(placeholderSize),
         size: placeholderSize,
         url: '',
         title: nodeTitle,
         zIndex: nodes.length,
         toolId,
         toolCategory: actionId,
+        selected: true,
       } as CanvasNodeData;
-      setNodes((prev) => [...prev, placeholderNode]);
-      setTemplatePickerOpen(false);
-      setTemplatePickerExpanded(false);
+      setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), placeholderNode]);
       setAiCreateMode({
         type: actionId,
         subActionId: subActionId ?? actionId,
@@ -2126,16 +2179,18 @@ export function CollaborativeCanvas({
         prompt: '',
       });
       setTimeout(() => {
+        const instance = reactFlowInstanceRef.current;
         if (instance) {
           instance.fitView({
             nodes: [{ id: placeholderNode.id }] as any,
-            padding: 1.2,
-            duration: 300,
+            padding: 0.35,
+            maxZoom: 1,
+            duration: 400,
           });
         }
       }, 50);
     },
-    [nodes.length]
+    [nodes.length, getNewNodePosition]
   );
 
   const sortNodesByLayer = useCallback((list: CanvasNodeData[]) => {
@@ -2299,6 +2354,91 @@ export function CollaborativeCanvas({
     setContextMenu(null);
   }, [isViewer]);
 
+  const aiCreateContextValue = useMemo<AiCreateContextValue>(() => ({
+    aiCreateMode,
+    credits: userCredits ?? 25,
+    onSubmit: (tab, state, withWatermark) => {
+      if (!aiCreateMode) return;
+      const targetId = aiCreateMode.nodeId;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'CANVAS_CREATE_ACTION',
+          {
+            actionId: tab,
+            nodeId: targetId,
+            prompt: state.prompt,
+            model: state.model,
+            ratio: state.ratio,
+            resolution: state.resolution,
+            referenceImageUrl: state.referenceImageUrl || undefined,
+            withWatermark,
+          },
+          { source: 'ui' }
+        )
+      );
+      setAiCreateMode(null);
+
+      // Mock generation for demo: skeleton → reveal result image
+      if (tab === 'text-to-image' || tab === 'image-edit') {
+        const mockUrl = '/demo-text-to-image-result.png';
+
+        setNodes((prev) => {
+          const next = prev.map((n) => {
+            if (n.id !== targetId) return n;
+            return { ...n, raw: { status: 'init' }, url: '', selected: false };
+          });
+          nodesRef.current = next;
+          return next;
+        });
+        collab.updateNodes([{ nodeId: targetId, updates: { raw: { status: 'init' }, url: '' } }], true);
+
+        setTimeout(() => {
+          reactFlowInstanceRef.current?.fitView({
+            nodes: [{ id: targetId }] as any,
+            padding: 0.4,
+            maxZoom: 1.2,
+            duration: 400,
+          });
+        }, 100);
+
+        setTimeout(() => {
+          setNodes((prev) => {
+            const next = prev.map((n) => {
+              if (n.id !== targetId) return n;
+              return { ...n, raw: { status: 'success' }, url: mockUrl, thumbnailUrl: mockUrl };
+            });
+            nodesRef.current = next;
+            return next;
+          });
+          collab.updateNodes([{
+            nodeId: targetId,
+            updates: { raw: { status: 'success' }, url: mockUrl, thumbnailUrl: mockUrl },
+          }], true);
+        }, 2000);
+      }
+    },
+    onDismiss: () => setAiCreateMode(null),
+    onUploadReference: (nodeId) => {
+      widgetBridge.emit(
+        createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-reference', nodeId }, { source: 'ui' })
+      );
+    },
+    onSelectFromBoard: (nodeId) => {
+      widgetBridge.emit(
+        createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'image-edit', nodeId }, { source: 'ui' })
+      );
+    },
+    enterRemixMode: (nodeId, imageUrl) => {
+      setAiCreateMode({
+        type: 'ai-image',
+        subActionId: 'image-edit',
+        nodeId,
+        prompt: '',
+        referenceImageUrl: imageUrl,
+      });
+    },
+  }), [aiCreateMode, userCredits]);
+
   return (
     <main
       className={className}
@@ -2318,7 +2458,7 @@ export function CollaborativeCanvas({
         style={{
           position: 'absolute',
           top: 0,
-          left: uiScheme === 'B' ? 64 : 0,
+          left: 64,
           right: 0,
           height: 48,
           zIndex: 50,
@@ -2334,40 +2474,6 @@ export function CollaborativeCanvas({
       >
         {/* Left: Logo (tooltip "Home", click navigates home) + Board Title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          {uiScheme !== 'B' && (
-            <button
-              type="button"
-              aria-label="Back to home"
-              title="Back to home"
-              onMouseDown={(e) => { e.stopPropagation(); }}
-              onClick={(e) => {
-                e.stopPropagation();
-                widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'home' }, { source: 'ui' }));
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 32,
-                height: 32,
-                background: 'transparent',
-                border: 'none',
-                borderRadius: 8,
-                cursor: 'pointer',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-            >
-              {topBarLogoUrl ? (
-                <img src={topBarLogoUrl} alt="Home" style={{ width: 24, height: 24, objectFit: 'contain' }} />
-              ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </button>
-          )}
           <button
             type="button"
             onClick={() => {
@@ -2394,25 +2500,6 @@ export function CollaborativeCanvas({
 
         {/* Right: Credits + Keyboard shortcuts + Layout switcher + Share */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {userCredits != null && uiScheme !== 'B' && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                height: 30,
-                padding: '0 10px',
-                borderRadius: 16,
-                fontSize: 12,
-                fontWeight: 500,
-                color: 'rgba(255,255,255,0.6)',
-                background: 'rgba(255,255,255,0.06)',
-              }}
-            >
-              <Zap size={13} color="#facc15" />
-              <span>{userCredits.toLocaleString()}</span>
-            </div>
-          )}
           <div ref={layoutPanelRef} style={{ position: 'relative' }}>
             <button
               type="button"
@@ -2826,166 +2913,9 @@ export function CollaborativeCanvas({
             );
           })}
         </div>
-        {canEdit && !aiCreateMode && uiScheme === 'A' && (
-          <div
-            className="tc-left-toolbar"
-            style={{
-              position: 'absolute',
-              left: 12,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              zIndex: 5,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-              padding: 8,
-              borderRadius: 16,
-              background: FLOW_UI.panelBg,
-              border: `1px solid ${FLOW_UI.panelBorder}`,
-              boxShadow: FLOW_UI.panelShadow,
-              userSelect: 'none',
-              transition: 'background 150ms ease, border-color 150ms ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = '#23262b';
-              e.currentTarget.style.borderColor = 'rgba(255,255,255,0.06)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = FLOW_UI.panelBg;
-              e.currentTarget.style.borderColor = FLOW_UI.panelBorder;
-            }}
-          >
-            {/* + Import button with hover menu */}
-            <ToolbarItemWithMenu
-              button={
-                <button
-                  type="button"
-                  title="Import"
-                  disabled={isLocked}
-                  style={{
-                    width: 36, height: 36, borderRadius: 8, border: 'none',
-                    background: '#fff', color: '#1c1e22',
-                    cursor: isLocked ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.15s ease',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    opacity: isLocked ? 0.4 : 1,
-                  }}
-                >
-                  <PlusIcon size={16} />
-                </button>
-              }
-              menu={
-                <div style={{ padding: 6, minWidth: 200 }}>
-                  {([
-                    { id: 'upload-image', label: 'Upload Image', Icon: Upload },
-                    { id: 'upload-video', label: 'Upload Video', Icon: Video },
-                    { id: 'select-from-board', label: 'Select from Board', Icon: LayoutGrid },
-                  ] as const).map((item) => (
-                    <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={() => handlePlusAction(item.id as any)} />
-                  ))}
-                </div>
-              }
-              disabled={isLocked}
-            />
-
-            <div style={{ height: 1, margin: '2px 4px', background: FLOW_UI.divider }} />
-
-            {/* Image / Video / Avatar / Audio buttons with hover menus */}
-            {([
-              {
-                key: 'image' as const, title: 'Image', Icon: ImagePlus,
-                items: [
-                  { id: 'text-to-image', label: 'Text to Image', Icon: Type },
-                  { id: 'image-edit', label: 'Image Edit', Icon: Paintbrush },
-                  { id: 'inpaint', label: 'Inpaint', Icon: Eraser },
-                  { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat2 },
-                  { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile },
-                  { id: 'image-upscale', label: 'Image Upscale', Icon: ArrowUpRight },
-                  { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: RotateCcw },
-                ] as const,
-                actionType: 'ai-image' as const,
-              },
-              {
-                key: 'video' as const, title: 'Video', Icon: Video,
-                items: [
-                  { id: 'image-to-video', label: 'Image to Video', Icon: Clapperboard },
-                  { id: 'text-to-video', label: 'Text to Video', Icon: Type },
-                  { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2 },
-                  { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat2 },
-                  { id: 'video-upscale', label: 'Video Upscale', Icon: ArrowUpRight },
-                  { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding },
-                ] as const,
-                actionType: 'ai-video' as const,
-              },
-              {
-                key: 'avatar' as const, title: 'Avatar', Icon: PersonStanding,
-                items: [
-                  { id: 'ai-avatar', label: 'AI Avatar', Icon: PersonStanding },
-                  { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Clapperboard },
-                  { id: 'product-avatar', label: 'Product Avatar', Icon: Box },
-                  { id: 'design-avatar', label: 'Design My Avatar', Icon: Blend },
-                ] as const,
-                actionType: 'ai-avatar' as const,
-              },
-              {
-                key: 'audio' as const, title: 'Audio', Icon: AudioLines,
-                items: [
-                  { id: 'voiceover', label: 'Voiceover', Icon: AudioLines },
-                ] as const,
-                actionType: 'ai-audio' as const,
-              },
-            ]).map((tool) => (
-              <ToolbarItemWithMenu
-                key={tool.key}
-                button={
-                  <button
-                    type="button"
-                    title={tool.title}
-                    disabled={isLocked}
-                    style={getToolButtonStyle(false, isLocked)}
-                  >
-                    <tool.Icon size={16} />
-                  </button>
-                }
-                menu={
-                  <div style={{ padding: 6, minWidth: 220 }}>
-                    {tool.items.map((item) => (
-                      <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={() => handlePlusAction(tool.actionType, item.id)} />
-                    ))}
-                  </div>
-                }
-                disabled={isLocked}
-              />
-            ))}
-
-            <div style={{ height: 1, margin: '2px 4px', background: FLOW_UI.divider }} />
-
-            {/* Template button */}
-            <button
-              type="button"
-              title="Template"
-              disabled={isLocked}
-              onClick={() => setTemplatePickerOpen((prev) => !prev)}
-              style={getToolButtonStyle(templatePickerOpen, isLocked)}
-            >
-              <LayoutTemplate size={16} />
-            </button>
-          </div>
-        )}
-
-        {/* Template picker for Scheme A */}
-        {uiScheme === 'A' && templatePickerOpen && !inpaintFocus && !aiCreateMode && (
-          <TemplatePicker
-            open={templatePickerOpen}
-            onClose={() => { setTemplatePickerOpen(false); setTemplatePickerExpanded(false); }}
-            sidebarOffset={0}
-            expanded={templatePickerExpanded}
-            onExpandToggle={() => setTemplatePickerExpanded((prev) => !prev)}
-          />
-        )}
-
-        {/* ── Scheme B: full-height sidebar ── */}
-        {!aiCreateMode && uiScheme === 'B' && (
+        {/* ── Full-height sidebar ── */}
+        {/* Hide sidebar only for legacy generic panel tools, not for new Canvas Panel tools */}
+        {(!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit') && (
           <div
             className="tc-sidebar-b"
             onPointerDown={(e) => e.stopPropagation()}
@@ -2998,7 +2928,7 @@ export function CollaborativeCanvas({
               width: 64,
               display: 'flex',
               flexDirection: 'column',
-              background: '#17191c',
+              background: '#232326',
               borderRight: '1px solid rgba(255,255,255,0.05)',
               userSelect: 'none',
               fontFamily: 'Inter, -apple-system, sans-serif',
@@ -3011,7 +2941,6 @@ export function CollaborativeCanvas({
               justifyContent: 'center',
               height: 56,
               flexShrink: 0,
-              borderBottom: '1px solid rgba(255,255,255,0.05)',
             }}>
               <img 
                 alt="Home" 
@@ -3062,43 +2991,44 @@ export function CollaborativeCanvas({
                 {
                   key: 'image' as const, title: 'Image', Icon: ImagePlus,
                   items: [
-                    { id: 'text-to-image', label: 'Text to Image', Icon: Type },
-                    { id: 'image-edit', label: 'Image Edit', Icon: Paintbrush },
-                    { id: 'inpaint', label: 'Inpaint', Icon: Eraser },
-                    { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat2 },
-                    { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile },
-                    { id: 'image-upscale', label: 'Image Upscale', Icon: ArrowUpRight },
-                    { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: RotateCcw },
-                  ] as const,
+                    { id: 'text-to-image', label: 'Text to Image', Icon: Type, demoDisabled: false },
+                    { id: 'image-edit', label: 'Image Edit', Icon: Paintbrush, demoDisabled: false },
+                    { id: 'inpaint', label: 'Inpaint', Icon: Eraser, demoDisabled: true },
+                    { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat2, demoDisabled: true },
+                    { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile, demoDisabled: true },
+                    { id: 'image-upscale', label: 'Image Upscale', Icon: ArrowUpRight, demoDisabled: true },
+                    { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: RotateCcw, demoDisabled: true },
+                    { id: 'product-photography', label: 'Product Photography', Icon: Camera, demoDisabled: false },
+                  ],
                   actionType: 'ai-image' as const,
                 },
                 {
                   key: 'video' as const, title: 'Video', Icon: Video,
                   items: [
-                    { id: 'image-to-video', label: 'Image to Video', Icon: Clapperboard },
-                    { id: 'text-to-video', label: 'Text to Video', Icon: Type },
-                    { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2 },
-                    { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat2 },
-                    { id: 'video-upscale', label: 'Video Upscale', Icon: ArrowUpRight },
-                    { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding },
-                  ] as const,
+                    { id: 'image-to-video', label: 'Image to Video', Icon: Clapperboard, demoDisabled: true },
+                    { id: 'text-to-video', label: 'Text to Video', Icon: Type, demoDisabled: true },
+                    { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2, demoDisabled: true },
+                    { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat2, demoDisabled: true },
+                    { id: 'video-upscale', label: 'Video Upscale', Icon: ArrowUpRight, demoDisabled: true },
+                    { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding, demoDisabled: true },
+                  ],
                   actionType: 'ai-video' as const,
                 },
                 {
                   key: 'avatar' as const, title: 'Avatar', Icon: PersonStanding,
                   items: [
-                    { id: 'ai-avatar', label: 'AI Avatar', Icon: PersonStanding },
-                    { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Clapperboard },
-                    { id: 'product-avatar', label: 'Product Avatar', Icon: Box },
-                    { id: 'design-avatar', label: 'Design My Avatar', Icon: Blend },
-                  ] as const,
+                    { id: 'ai-avatar', label: 'AI Avatar', Icon: PersonStanding, demoDisabled: true },
+                    { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Clapperboard, demoDisabled: true },
+                    { id: 'product-avatar', label: 'Product Avatar', Icon: Box, demoDisabled: true },
+                    { id: 'design-avatar', label: 'Design My Avatar', Icon: Blend, demoDisabled: true },
+                  ],
                   actionType: 'ai-avatar' as const,
                 },
                 {
                   key: 'audio' as const, title: 'Audio', Icon: AudioLines,
                   items: [
-                    { id: 'voiceover', label: 'Voiceover', Icon: AudioLines },
-                  ] as const,
+                    { id: 'voiceover', label: 'Voiceover', Icon: AudioLines, demoDisabled: true },
+                  ],
                   actionType: 'ai-audio' as const,
                 },
               ]).map((tool) => (
@@ -3141,7 +3071,7 @@ export function CollaborativeCanvas({
                   menu={
                     <div style={{ padding: 6, minWidth: 220 }}>
                       {tool.items.map((item) => (
-                        <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={() => handlePlusAction(tool.actionType, item.id)} />
+                        <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={item.demoDisabled ? () => {} : () => handlePlusAction(tool.actionType, item.id)} />
                       ))}
                     </div>
                   }
@@ -3237,8 +3167,11 @@ export function CollaborativeCanvas({
           </div>
         )}
         <div
-          className={inpaintFocus ? 'tc-inpaint-active' : undefined}
-          style={{ width: '100%', height: '100%', marginLeft: uiScheme === 'B' ? 64 : 0 }}
+          className={[
+            inpaintFocus ? 'tc-inpaint-active' : '',
+            effectiveToolMode === 'pan' ? 'tc-pan-mode' : '',
+          ].filter(Boolean).join(' ') || undefined}
+          style={{ width: '100%', height: '100%', marginLeft: 64 }}
           onMouseMove={inpaintFocus?.step === 'edit' ? (e) => {
             const el = document.getElementById('tc-brush-cursor');
             if (el) { el.style.left = `${e.clientX}px`; el.style.top = `${e.clientY}px`; el.style.opacity = '1'; }
@@ -3248,6 +3181,7 @@ export function CollaborativeCanvas({
             if (el) el.style.opacity = '0';
           } : undefined}
         >
+          <AiCreateProvider value={aiCreateContextValue}>
           <SelectModeProvider value={selectMode}>
             <CanvasRoleProvider value={resolvedRole}>
               <DependencyFocusProvider
@@ -3259,6 +3193,7 @@ export function CollaborativeCanvas({
                 onNodesChange={handleNodesChange}
                 backgroundColor={backgroundColor}
                 onPaneClick={handlePaneClick}
+                onNodeClick={tryActivatePlaceholderPanel}
                 onNodeDragStart={handleNodeDragStart}
                 onNodeDrag={handleNodeDrag}
                 onNodeDragEnd={handleNodeDragEnd}
@@ -3275,13 +3210,13 @@ export function CollaborativeCanvas({
                         ? 'text'
                         : 'default'
                 }
-                nodesDraggable={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && !aiCreateMode}
-                elementsSelectable={!isLocked && !inpaintFocus && !aiCreateMode}
-                selectionOnDrag={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && !aiCreateMode}
+                nodesDraggable={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && (!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit')}
+                elementsSelectable={!isLocked && !inpaintFocus && (!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit')}
+                selectionOnDrag={!isLocked && effectiveToolMode === 'edit' && !inpaintFocus && (!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit')}
                 panOnDrag={isLocked ? [] : effectiveToolMode === 'pan' ? [0, 1, 2] : [1]}
                 onLockChange={setIsLocked}
                 isLocked={isLocked}
-                showControls={!aiCreateMode && uiScheme !== 'B'}
+                showControls={false}
                 config={canvasConfig}
                 width={width}
                 height={height}
@@ -3294,6 +3229,7 @@ export function CollaborativeCanvas({
               </DependencyFocusProvider>
             </CanvasRoleProvider>
           </SelectModeProvider>
+          </AiCreateProvider>
         </div>
         {/* Inpaint focus overlay + toolbar */}
         {inpaintFocus && (() => {
@@ -3301,7 +3237,7 @@ export function CollaborativeCanvas({
           if (inpaintFocus.step === 'upload') {
             const uploadNode = nodes.find((n) => n.id === inpaintFocus.nodeId);
             if (!uploadNode) return null;
-            const canvasOffsetX = uiScheme === 'B' ? 64 : 0;
+            const canvasOffsetX = 64;
             const ux = uploadNode.position.x * viewport.zoom + viewport.x + canvasOffsetX;
             const uy = uploadNode.position.y * viewport.zoom + viewport.y;
             const uw = uploadNode.size.width * viewport.zoom;
@@ -3317,9 +3253,9 @@ export function CollaborativeCanvas({
                   style={{
                     position: 'absolute',
                     top: 0,
-                    left: uiScheme === 'B' ? 64 : 0,
+                    left: 64,
                     right: 0,
-                    bottom: uiScheme === 'B' ? 64 : 0,
+                    bottom: 64,
                     zIndex: 39,
                   }}
                 />
@@ -3587,8 +3523,8 @@ export function CollaborativeCanvas({
                 }}
                 style={{
                   position: 'absolute',
-                  bottom: uiScheme === 'B' ? 64 : 16,
-                  left: `calc(50% + ${(uiScheme === 'B' ? 64 : 0) / 2}px)`,
+                  bottom: 64,
+                  left: 'calc(50% + 32px)',
                   transform: 'translateX(-50%)',
                   width: Math.min(440, typeof window !== 'undefined' ? window.innerWidth - 160 : 440),
                   zIndex: 42,
@@ -3721,140 +3657,94 @@ export function CollaborativeCanvas({
             </>
           );
         })()}
-        {/* AI Create mode overlay + toolbar */}
+        {/* AI Create mode — route to specific panel or fallback generic */}
         {aiCreateMode && (() => {
           const placeholderNode = nodes.find((n) => n.id === aiCreateMode.nodeId);
           if (!placeholderNode) return null;
-          const aiCanvasOffsetX = uiScheme === 'B' ? 64 : 0;
+          const aiCanvasOffsetX = 64;
           const screenX = placeholderNode.position.x * viewport.zoom + viewport.x + aiCanvasOffsetX;
           const screenY = placeholderNode.position.y * viewport.zoom + viewport.y;
           const screenW = placeholderNode.size.width * viewport.zoom;
           const screenH = placeholderNode.size.height * viewport.zoom;
+
+          const useNewPanel = aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit';
+
+          // text-to-image / image-edit panels are now rendered inside ImageNode
+          // via NodeToolbar for proper zoom/pan tracking
+          if (useNewPanel) return null;
+
+          /* ── Fallback: generic prompt-only panel for other tools ── */
           const isImage = aiCreateMode.type === 'ai-image';
           const isAvatar = aiCreateMode.type === 'ai-avatar';
           const isAudio = aiCreateMode.type === 'ai-audio';
           return (
             <>
-              {/* Transparent dismissal overlay (click outside exits create mode but keeps placeholder) */}
               <div
-                onClick={() => {
-                  setAiCreateMode(null);
-                }}
+                onClick={() => { setAiCreateMode(null); }}
                 style={{ position: 'absolute', inset: 0, zIndex: 39 }}
               />
-              {/* Selected border overlay on the placeholder node */}
               <div
                 style={{
                   position: 'absolute',
-                  left: screenX - 2,
-                  top: screenY - 2,
-                  width: screenW + 4,
-                  height: screenH + 4,
+                  left: screenX - 2, top: screenY - 2,
+                  width: screenW + 4, height: screenH + 4,
                   zIndex: 41,
-                  borderRadius: 4,
-                  border: '2px solid #5857FD',
-                  pointerEvents: 'none',
+                  border: '2px solid #5857FD', pointerEvents: 'none',
                 }}
               />
-              {/* Fixed-size creation panel below the placeholder */}
               <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
                   position: 'absolute',
                   left: screenX + screenW / 2 - 260,
                   top: screenY + screenH + 12,
-                  width: 520,
-                  zIndex: 42,
-                  padding: '12px 14px',
-                  borderRadius: 16,
+                  width: 520, zIndex: 42,
+                  padding: '12px 14px', borderRadius: 16,
                   background: FLOW_UI.panelBg,
                   border: `1px solid ${FLOW_UI.panelBorder}`,
                   boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
+                  display: 'flex', flexDirection: 'column', gap: 10,
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div
                     style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: 8,
-                      background: isImage
-                        ? 'rgba(88,87,253,0.15)'
-                        : isAvatar
-                          ? 'rgba(20,184,166,0.15)'
-                          : isAudio
-                            ? 'rgba(245,158,11,0.15)'
-                            : 'rgba(236,72,153,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                      width: 32, height: 32, borderRadius: 8,
+                      background: isImage ? 'rgba(88,87,253,0.15)' : isAvatar ? 'rgba(20,184,166,0.15)' : isAudio ? 'rgba(245,158,11,0.15)' : 'rgba(236,72,153,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                     }}
                   >
-                    {isImage
-                      ? <ImagePlus size={14} color="#818cf8" />
-                      : isAvatar
-                        ? <ScanFace size={14} color="#2dd4bf" />
-                        : isAudio
-                          ? <Mic size={14} color="#fbbf24" />
-                          : <Video size={14} color="#f472b6" />}
+                    {isImage ? <ImagePlus size={14} color="#818cf8" />
+                      : isAvatar ? <ScanFace size={14} color="#2dd4bf" />
+                      : isAudio ? <Mic size={14} color="#fbbf24" />
+                      : <Video size={14} color="#f472b6" />}
                   </div>
                   <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
-                    {aiCreateMode.subActionId
-                      .split('-')
-                      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                      .join(' ')}
+                    {aiCreateMode.subActionId.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                   </span>
                 </div>
                 <textarea
                   placeholder={
-                    isImage
-                      ? 'Describe anything you want to generate'
-                      : isAvatar
-                        ? 'Enter script for your avatar...'
-                        : isAudio
-                          ? 'Enter text to generate audio...'
-                          : 'Describe the video you want to create...'
+                    isImage ? 'Describe anything you want to generate'
+                      : isAvatar ? 'Enter script for your avatar...'
+                      : isAudio ? 'Enter text to generate audio...'
+                      : 'Describe the video you want to create...'
                   }
                   value={aiCreateMode.prompt}
-                  onChange={(e) =>
-                    setAiCreateMode((prev) =>
-                      prev ? { ...prev, prompt: e.target.value } : prev
-                    )
-                  }
+                  onChange={(e) => setAiCreateMode((prev) => prev ? { ...prev, prompt: e.target.value } : prev)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !e.shiftKey && aiCreateMode.prompt.trim()) {
                       e.preventDefault();
-                      widgetBridge.emit(
-                        createWidgetEvent(
-                          'CANVAS_CREATE_ACTION',
-                          {
-                            actionId: aiCreateMode.subActionId,
-                            nodeId: aiCreateMode.nodeId,
-                            prompt: aiCreateMode.prompt,
-                          },
-                          { source: 'ui' }
-                        )
-                      );
+                      widgetBridge.emit(createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: aiCreateMode.subActionId, nodeId: aiCreateMode.nodeId, prompt: aiCreateMode.prompt }, { source: 'ui' }));
                       setAiCreateMode(null);
                     }
                   }}
                   autoFocus
                   rows={3}
                   style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    borderRadius: 12,
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    background: 'rgba(255,255,255,0.04)',
-                    color: '#fff',
-                    fontSize: 13,
-                    lineHeight: '1.5',
-                    resize: 'none',
-                    fontFamily: 'inherit',
+                    width: '100%', padding: '10px 12px', borderRadius: 12,
+                    border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.04)',
+                    color: '#fff', fontSize: 13, lineHeight: '1.5', resize: 'none', fontFamily: 'inherit',
                   }}
                   className="tc-textarea-input"
                 />
@@ -3867,39 +3757,17 @@ export function CollaborativeCanvas({
                     type="button"
                     onClick={() => {
                       if (!aiCreateMode.prompt.trim()) return;
-                      widgetBridge.emit(
-                        createWidgetEvent(
-                          'CANVAS_CREATE_ACTION',
-                          {
-                            actionId: aiCreateMode.subActionId,
-                            nodeId: aiCreateMode.nodeId,
-                            prompt: aiCreateMode.prompt,
-                          },
-                          { source: 'ui' }
-                        )
-                      );
+                      widgetBridge.emit(createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: aiCreateMode.subActionId, nodeId: aiCreateMode.nodeId, prompt: aiCreateMode.prompt }, { source: 'ui' }));
                       setAiCreateMode(null);
                     }}
                     style={{
-                      width: 32,
-                      height: 32,
-                      borderRadius: '50%',
-                      border: 'none',
+                      width: 32, height: 32, borderRadius: '50%', border: 'none',
                       background: aiCreateMode.prompt.trim()
-                        ? isImage
-                          ? 'linear-gradient(135deg, #5857FD, #8b5cf6)'
-                          : isAvatar
-                            ? 'linear-gradient(135deg, #14b8a6, #2dd4bf)'
-                            : isAudio
-                              ? 'linear-gradient(135deg, #f59e0b, #fbbf24)'
-                              : 'linear-gradient(135deg, #ec4899, #f472b6)'
+                        ? isImage ? 'linear-gradient(135deg, #5857FD, #8b5cf6)' : isAvatar ? 'linear-gradient(135deg, #14b8a6, #2dd4bf)' : isAudio ? 'linear-gradient(135deg, #f59e0b, #fbbf24)' : 'linear-gradient(135deg, #ec4899, #f472b6)'
                         : 'rgba(255,255,255,0.06)',
                       color: aiCreateMode.prompt.trim() ? '#fff' : 'rgba(255,255,255,0.25)',
                       cursor: aiCreateMode.prompt.trim() ? 'pointer' : 'default',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                       transition: 'background 150ms ease, color 150ms ease',
                     }}
                   >
@@ -3910,6 +3778,129 @@ export function CollaborativeCanvas({
             </>
           );
         })()}
+        {/* Product Photography immersive modal */}
+        <ProductPhotographyModal
+          open={ppModalState?.open ?? false}
+          nodeId={ppModalState?.nodeId ?? ''}
+          initialState={ppModalState?.initialProductImageUrl ? { productImageUrl: ppModalState.initialProductImageUrl } : undefined}
+          credits={userCredits ?? 25}
+          onSubmit={(state) => {
+            widgetBridge.emit(
+              createWidgetEvent(
+                'CANVAS_CREATE_ACTION',
+                {
+                  actionId: 'product-photography',
+                  nodeId: ppModalState?.nodeId,
+                  productImageUrl: state.productImageUrl,
+                  backgroundPrompt: state.backgroundPrompt,
+                  backgroundImageUrl: state.backgroundImageUrl || undefined,
+                  selectedTemplateId: state.selectedTemplateId,
+                  ratio: state.ratio,
+                },
+                { source: 'ui' }
+              )
+            );
+            
+            // Mock generation: show skeleton → focus viewport → reveal image
+            if (ppModalState?.nodeId) {
+              const targetId = ppModalState.nodeId;
+              const mockUrl = "/demo-product-photo-result.png";
+
+              // Mark as generating so tryActivatePlaceholderPanel won't re-open the modal
+              ppGeneratingRef.current.add(targetId);
+
+              // 1. Enter loading skeleton and immediately sync nodesRef
+              setNodes((prevNodes) => {
+                const next = prevNodes.map(n => {
+                  if (n.id !== targetId) return n;
+                  return {
+                    ...n,
+                    raw: { status: 'init' },
+                    url: '',
+                  };
+                });
+                nodesRef.current = next;
+                return next;
+              });
+              collab.updateNodes([{ nodeId: targetId, updates: { raw: { status: 'init' }, url: '' } }], true);
+
+              // 2. Close modal, deselect the node so the useEffect won't re-trigger
+              ppClosedAtRef.current = Date.now();
+              setPpModalState(null);
+              setNodes((prev) => {
+                const next = prev.map(n =>
+                  n.id === targetId ? { ...n, selected: false } : n
+                );
+                nodesRef.current = next;
+                return next;
+              });
+              setTimeout(() => {
+                const instance = reactFlowInstanceRef.current;
+                if (instance) {
+                  instance.fitView({
+                    nodes: [{ id: targetId }] as any,
+                    padding: 0.4,
+                    maxZoom: 1.2,
+                    duration: 400,
+                  });
+                }
+              }, 100);
+
+              // 3. After delay, reveal the result (but do NOT select it,
+              //    to avoid re-triggering tryActivatePlaceholderPanel)
+              setTimeout(() => {
+                setNodes((prevNodes) => {
+                  const next = prevNodes.map(n => {
+                    if (n.id !== targetId) return n;
+                    return {
+                      ...n,
+                      raw: { status: 'success' },
+                      url: mockUrl,
+                      thumbnailUrl: mockUrl,
+                    };
+                  });
+                  nodesRef.current = next;
+                  return next;
+                });
+                collab.updateNodes([{
+                  nodeId: targetId,
+                  updates: {
+                    raw: { status: 'success' },
+                    url: mockUrl,
+                    thumbnailUrl: mockUrl,
+                  },
+                }], true);
+                ppGeneratingRef.current.delete(targetId);
+              }, 1500);
+            } else {
+              setPpModalState(null);
+            }
+          }}
+          onClose={() => {
+            const closingNodeId = ppModalState?.nodeId;
+            ppClosedAtRef.current = Date.now();
+            setPpModalState(null);
+            if (closingNodeId) {
+              setNodes((prev) => {
+                const next = prev.map(n =>
+                  n.id === closingNodeId ? { ...n, selected: false } : n
+                );
+                nodesRef.current = next;
+                return next;
+              });
+            }
+          }}
+          onUploadProduct={() => {
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-product', nodeId: ppModalState?.nodeId }, { source: 'ui' })
+            );
+          }}
+          onSelectFromBoard={() => {
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'product-photography', nodeId: ppModalState?.nodeId }, { source: 'ui' })
+            );
+          }}
+        />
         {contextMenu && (
           <div
             className="widget-context-menu"
@@ -4219,10 +4210,10 @@ export function CollaborativeCanvas({
                     const isAudio = node.type === 'audio';
                     const isVideo = node.type === 'video';
                     const isDraft = Boolean((node as any).toolId && !node.url);
-                    const label =
-                      (node as any).title ||
-                      raw?.title ||
-                      `${(node.type ?? 'image').charAt(0).toUpperCase()}${(node.type ?? 'image').slice(1)}_${node.id.slice(-4)}`;
+                    const rawStatus = String(raw?.status ?? '').toLowerCase();
+                    const typeName = `${(node.type ?? 'image').charAt(0).toUpperCase()}${(node.type ?? 'image').slice(1)}`;
+                    const primaryLabel = raw?.title || typeName;
+                    const label = primaryLabel;
                     const isDragging = layerDragId === node.id;
                     const isDragOver = layerDragOverId === node.id && layerDragId !== node.id;
                     return (
@@ -4387,60 +4378,23 @@ export function CollaborativeCanvas({
               </div>
             </div>
           )}
-          {uiScheme !== 'B' && (
-            <button
-              type="button"
-              onClick={() => setLayersPanelOpen((prev) => !prev)}
-              title="Layers"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 32,
-                height: 32,
-                padding: 0,
-                borderRadius: 10,
-                border: `1px solid ${FLOW_UI.panelBorder}`,
-                background: layersPanelOpen ? 'rgba(255,255,255,0.08)' : FLOW_UI.panelBg,
-                boxShadow: FLOW_UI.panelShadow,
-                color: FLOW_UI.panelText,
-                cursor: 'pointer',
-                float: 'right',
-                transition: 'background 120ms ease',
-              }}
-            >
-              <LayersIcon size={14} />
-            </button>
-          )}
         </div>
-        {/* Scheme B: Bottom center toolbar + Template picker */}
-        {uiScheme === 'B' && !aiCreateMode && (
-          <>
-            <TemplatePicker
-              open={templatePickerOpen}
-              onClose={() => { setTemplatePickerOpen(false); setTemplatePickerExpanded(false); }}
-              sidebarOffset={64}
-              expanded={templatePickerExpanded}
-              onExpandToggle={() => setTemplatePickerExpanded((prev) => !prev)}
-            />
-            <BottomToolbar
-              toolMode={effectiveToolMode}
-              onToolModeChange={setToolMode}
-              viewport={viewport}
-              reactFlowInstance={reactFlowInstanceRef.current}
-              layersPanelOpen={layersPanelOpen}
-              onLayersToggle={() => setLayersPanelOpen((prev) => !prev)}
-              templateOpen={templatePickerOpen}
-              onTemplateToggle={() => setTemplatePickerOpen((prev) => !prev)}
-              canEdit={canEdit}
-              isLocked={isLocked}
-              sidebarOffset={64}
-              onAddAsset={() => handlePlusAction('upload')}
-            />
-          </>
+        {/* Bottom center toolbar + Template picker */}
+        {(!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit') && (
+          <BottomToolbar
+            toolMode={effectiveToolMode}
+            onToolModeChange={setToolMode}
+            viewport={viewport}
+            reactFlowInstance={reactFlowInstanceRef.current}
+            layersPanelOpen={layersPanelOpen}
+            onLayersToggle={() => setLayersPanelOpen((prev) => !prev)}
+            canEdit={canEdit}
+            isLocked={isLocked}
+            sidebarOffset={64}
+            onAddAsset={() => handlePlusAction('upload')}
+          />
         )}
       </div>
-      <DevPanel value={uiScheme} onChange={setUiScheme} />
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </main>
   );

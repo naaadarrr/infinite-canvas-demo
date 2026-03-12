@@ -11,6 +11,7 @@ import { MediaSkeleton } from './MediaSkeleton';
 
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
+import { getToolLabel } from '../utils/toolLabels';
 
 export function VideoNode({ data, selected, dragging }: NodeProps) {
   const role = useCanvasRole();
@@ -31,10 +32,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const actualWidth = rawResult?.originVideo?.width ?? rawResult?.originImage?.width ?? rawResult?.width;
   const actualHeight =
     rawResult?.originVideo?.height ?? rawResult?.originImage?.height ?? rawResult?.height;
-  const sizeLabel =
-    typeof actualWidth === 'number' && typeof actualHeight === 'number'
-      ? `${Math.round(actualWidth)} x ${Math.round(actualHeight)}`
-      : `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
+  const sizeLabel = `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
@@ -358,12 +356,12 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         backgroundColor: 'transparent',
         cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
         outline: effectiveSelected
-          ? `${2.5 / zoom}px solid #5857FD`
+          ? `${1 / zoom}px solid #5857FD`
           : isFailed
-            ? `${2 / zoom}px solid #ef4444`
+            ? `${1 / zoom}px solid #ef4444`
             : isHovered
-              ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
-              : `${2 / zoom}px solid transparent`,
+              ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+              : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
       }}
@@ -430,7 +428,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                   height: handleSize,
                   borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: `${2 / zoom}px solid #5857FD`,
+                  border: `${1 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
@@ -580,6 +578,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         label={rawItem?.title || 'Video'}
         sizeLabel={sizeLabel}
         nodeWidth={nodeData.size.width}
+        toolLabel={undefined}
       />
       <QuickActionToolbar isVisible={showToolbar} actions={quickActions} moreActions={moreQuickActions} />
     </div>

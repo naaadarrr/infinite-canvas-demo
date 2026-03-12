@@ -249,7 +249,7 @@ export default function Home() {
       dependencyEdgesVisible={true}
       invisible={invisible}
       topBarLogoUrl="/logo.svg"
-      userCredits={2580}
+      userCredits={25}
     />
   );
 }

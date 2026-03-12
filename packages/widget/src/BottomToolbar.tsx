@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EditModeIcon, PanModeIcon, LayersIcon } from './icons';
-import { LayoutTemplate, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
 const TOOLBAR_BG = 'rgba(28, 30, 34, 1)';
 const TOOLBAR_BORDER = '1px solid rgba(255,255,255,0.08)';
@@ -10,9 +10,9 @@ const DIVIDER_COLOR = 'rgba(255,255,255,0.06)';
 function ZoomOutIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 16, height: 16, display: 'block' }}>
-      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -20,10 +20,10 @@ function ZoomOutIcon() {
 function ZoomInIcon() {
   return (
     <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 16, height: 16, display: 'block' }}>
-      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.3" />
-      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <path d="M7 5V9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M5 7H9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M7 5V9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -32,32 +32,45 @@ function ToolbarButton({
   label,
   active,
   disabled,
+  cursorOverride,
   onClick,
   children,
 }: {
   label: string;
   active?: boolean;
   disabled?: boolean;
+  /** Override the button cursor (e.g. 'grab' for the Hand tool when active). */
+  cursorOverride?: string;
   onClick: () => void;
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = React.useState(false);
+  const [pressed, setPressed] = React.useState(false);
   const bg = active
     ? '#ffffff'
     : hovered && !disabled
       ? 'rgba(255,255,255,0.08)'
       : 'transparent';
+
+  const cursor = disabled
+    ? 'not-allowed'
+    : cursorOverride
+      ? (pressed ? 'grabbing' : cursorOverride)
+      : 'pointer';
+
   return (
     <div
       style={{ position: 'relative' }}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
     >
       <button
         type="button"
         onClick={onClick}
         disabled={disabled}
         aria-label={label}
+        onMouseDown={() => setPressed(true)}
+        onMouseUp={() => setPressed(false)}
         style={{
           width: 28,
           height: 28,
@@ -69,7 +82,7 @@ function ToolbarButton({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          cursor: disabled ? 'not-allowed' : 'pointer',
+          cursor,
           transition: 'background 120ms ease, color 120ms ease',
         }}
       >
@@ -113,8 +126,6 @@ export type BottomToolbarProps = {
   reactFlowInstance: { zoomIn: (opts?: { duration?: number }) => void; zoomOut: (opts?: { duration?: number }) => void; zoomTo: (zoom: number, opts?: { duration?: number }) => void } | null;
   layersPanelOpen: boolean;
   onLayersToggle: () => void;
-  templateOpen: boolean;
-  onTemplateToggle: () => void;
   canEdit: boolean;
   isLocked: boolean;
   sidebarOffset?: number;
@@ -128,8 +139,6 @@ export function BottomToolbar({
   reactFlowInstance,
   layersPanelOpen,
   onLayersToggle,
-  templateOpen,
-  onTemplateToggle,
   canEdit,
   isLocked,
   sidebarOffset = 0,
@@ -187,7 +196,7 @@ export function BottomToolbar({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 2,
+          gap: 4,
           padding: '10px 8px',
           borderRadius: 14,
           background: TOOLBAR_BG,
@@ -196,12 +205,17 @@ export function BottomToolbar({
           fontFamily: 'Inter, sans-serif',
         }}
       >
-        {/* Move / Hand section */}
-        <ToolbarButton label="Move (V)" active={toolMode === 'edit'} onClick={() => onToolModeChange('edit')}>
-          <EditModeIcon size={16} />
+        {/* Select / Hand section */}
+        <ToolbarButton label="Select (V)" active={toolMode === 'edit'} onClick={() => onToolModeChange('edit')}>
+          <EditModeIcon size={20} />
         </ToolbarButton>
-        <ToolbarButton label="Hand (H)" active={toolMode === 'pan'} onClick={() => onToolModeChange('pan')}>
-          <PanModeIcon size={16} />
+        <ToolbarButton
+          label="Hand (H)"
+          active={toolMode === 'pan'}
+          cursorOverride={toolMode === 'pan' ? 'grab' : undefined}
+          onClick={() => onToolModeChange('pan')}
+        >
+          <PanModeIcon size={20} />
         </ToolbarButton>
 
         <Divider />
@@ -213,25 +227,15 @@ export function BottomToolbar({
               width: 16,
               height: 16,
               borderRadius: 4,
-              border: '1.5px solid currentColor',
+              border: '1.2px solid currentColor',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              <Plus size={10} strokeWidth={3} />
+              <Plus size={12} strokeWidth={2.4} />
             </div>
           </ToolbarButton>
         )}
-
-        {/* Template */}
-        <ToolbarButton
-          label="Template"
-          active={templateOpen}
-          disabled={!canEdit || isLocked}
-          onClick={onTemplateToggle}
-        >
-          <LayoutTemplate size={16} />
-        </ToolbarButton>
 
         <Divider />
 
@@ -254,11 +258,12 @@ export function BottomToolbar({
               }
             }}
             style={{
-              width: 28,
+              width: 44,
               textAlign: 'center',
-              background: 'transparent',
+              background: 'rgba(255,255,255,0.08)',
               border: 'none',
               outline: 'none',
+              borderRadius: 8,
               color: '#fff',
               fontSize: 12,
               fontWeight: 500,
@@ -267,9 +272,9 @@ export function BottomToolbar({
             }}
           />
         ) : (
-          <div
-            role="button"
-            tabIndex={0}
+          <button
+            type="button"
+            aria-label={`Zoom ${zoomPercent}%, click to set`}
             onClick={() => {
               setTempZoomValue(zoomPercent.toString());
               setIsEditingZoom(true);
@@ -277,8 +282,12 @@ export function BottomToolbar({
             onMouseEnter={() => setZoomHovered(true)}
             onMouseLeave={() => setZoomHovered(false)}
             style={{
-              minWidth: 28,
-              textAlign: 'center',
+              minWidth: 44,
+              height: 28,
+              padding: '0 4px',
+              borderRadius: 8,
+              border: 'none',
+              background: zoomHovered ? 'rgba(255,255,255,0.08)' : 'transparent',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -287,13 +296,12 @@ export function BottomToolbar({
               fontWeight: 500,
               color: zoomHovered ? '#fff' : 'rgba(255,255,255,0.6)',
               cursor: 'pointer',
-              transition: 'color 120ms ease',
+              transition: 'background 120ms ease, color 120ms ease',
               userSelect: 'none',
-              height: 28,
             }}
           >
             {zoomPercent}%
-          </div>
+          </button>
         )}
         <ToolbarButton label="Zoom in (⌘ +)" disabled={!canZoomIn} onClick={handleZoomIn}>
           <ZoomInIcon />
@@ -303,7 +311,7 @@ export function BottomToolbar({
 
         {/* Layers */}
         <ToolbarButton label="Layers" active={layersPanelOpen} onClick={onLayersToggle}>
-          <LayersIcon size={14} />
+          <LayersIcon size={16} />
         </ToolbarButton>
       </div>
     </div>

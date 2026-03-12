@@ -1,9 +1,29 @@
-/* Node cursor: grab when idle, grabbing during drag */
+/* ─── Edit mode: grab on selectable nodes, grabbing while dragging ─── */
 .react-flow__node.selectable {
   cursor: grab !important;
 }
 .react-flow__node.dragging,
 .react-flow__node.dragging * {
+  cursor: grabbing !important;
+}
+
+/* ─── Pan mode: grab / grabbing across the entire canvas ─── */
+
+/* All surfaces show grab in pan mode — higher specificity than selectable rule */
+.tc-pan-mode .react-flow__pane,
+.tc-pan-mode .react-flow__node.selectable,
+.tc-pan-mode .react-flow__node,
+.tc-pan-mode .react-flow__node *,
+.tc-pan-mode .react-flow__renderer {
+  cursor: grab !important;
+}
+
+/* While mouse is held down anywhere in pan mode, switch to grabbing */
+.tc-pan-mode:active .react-flow__pane,
+.tc-pan-mode:active .react-flow__node.selectable,
+.tc-pan-mode:active .react-flow__node,
+.tc-pan-mode:active .react-flow__node *,
+.tc-pan-mode:active .react-flow__renderer {
   cursor: grabbing !important;
 }
 

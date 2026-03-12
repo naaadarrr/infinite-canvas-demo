@@ -11,6 +11,7 @@ import { MediaSkeleton } from './MediaSkeleton';
 
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
+import { getToolLabel } from '../utils/toolLabels';
 
 // 默认波形高度
 const defaultWaveformHeights = [
@@ -340,12 +341,12 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         gap: '12px',
         cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
         outline: effectiveSelected
-          ? `${2.5 / zoom}px solid #5857FD`
+          ? `${1 / zoom}px solid #5857FD`
           : isFailed
-            ? `${2 / zoom}px solid #ef4444`
+            ? `${1 / zoom}px solid #ef4444`
             : isHovered
-              ? `${2 / zoom}px solid rgba(88,87,253,0.7)`
-              : `${2 / zoom}px solid transparent`,
+              ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+              : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
       }}
@@ -412,7 +413,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
                   height: handleSize,
                   borderRadius: 2 / zoom,
                   background: '#fff',
-                  border: `${2 / zoom}px solid #5857FD`,
+                  border: `${1 / zoom}px solid #5857FD`,
                   cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
@@ -708,9 +709,10 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
       <NodeLabelBar
         isVisible={showToolbar}
         nodeType={nodeData.type}
-        label={nodeData.title || rawItem?.title || 'Audio'}
+        label={rawItem?.title || 'Audio'}
         sizeLabel={`${Math.round(nodeData.size.width)} × ${Math.round(nodeData.size.height)}`}
         nodeWidth={nodeData.size.width}
+        toolLabel={undefined}
       />
       <QuickActionToolbar isVisible={showToolbar} actions={quickActions} />
     </div>

@@ -105,6 +105,7 @@ export interface InfiniteCanvasProps {
   onPaneMouseMove?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
   onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
   onPaneClick?: (position: { x: number; y: number }, event: React.MouseEvent) => void;
+  onNodeClick?: (nodeId: string) => void;
   paneCursor?: string;
   nodesDraggable?: boolean;
   elementsSelectable?: boolean;
@@ -142,6 +143,7 @@ export function InfiniteCanvas({
   onPaneMouseMove,
   onViewportChange,
   onPaneClick,
+  onNodeClick: onNodeClickCallback,
   paneCursor,
   nodesDraggable = true,
   elementsSelectable = true,
@@ -165,6 +167,8 @@ export function InfiniteCanvas({
   const [edges, setEdges] = React.useState<Edge[]>(initialEdges);
   const isInitialMount = React.useRef(true);
   const [snapLines, setSnapLines] = React.useState<SnapLines>(null);
+  const [isNodeDragging, setIsNodeDragging] = React.useState(false);
+  const [isPanDragging, setIsPanDragging] = React.useState(false);
   const [viewport, setViewport] = React.useState({ x: 0, y: 0, zoom: 1 });
   const reactFlowInstanceRef = React.useRef<ReactFlowInstance<Node<CanvasNodeData>, Edge> | null>(null);
   const [instanceReady, setInstanceReady] = React.useState(false);
@@ -344,10 +348,14 @@ export function InfiniteCanvas({
             ...node,
             data: newData,
           };
-          // 如果 patch 包含 size，同步更新 node 的 width/height
+          // 如果 patch 包含 size，同步更新 node 的 width/height/measured
           if (dataPatch.size) {
             updatedNode.width = newData.size.width;
             updatedNode.height = newData.size.height;
+            updatedNode.measured = {
+              width: newData.size.width,
+              height: newData.size.height,
+            };
           }
           // 如果 patch 包含 position，同步更新 node 的 position
           if (dataPatch.position) {
@@ -432,8 +440,14 @@ export function InfiniteCanvas({
     if (!pane) {
       return;
     }
-    pane.style.cursor = paneCursor ?? '';
-  }, [paneCursor]);
+    if (isNodeDragging) {
+      pane.style.cursor = 'move';
+    } else if (paneCursor === 'grab' && isPanDragging) {
+      pane.style.cursor = 'grabbing';
+    } else {
+      pane.style.cursor = paneCursor ?? '';
+    }
+  }, [paneCursor, isNodeDragging, isPanDragging]);
 
   React.useEffect(() => {
     updatePaneCursor();
@@ -481,7 +495,7 @@ export function InfiniteCanvas({
           onNodeDataChange: handleNodeDataUpdate,
         } as CanvasNodeData,
         zIndex: node.zIndex,
-        selected: prevNode?.selected ?? false,
+        selected: prevNode?.selected ?? node.selected ?? false,
         dragging: prevNode?.dragging ?? false,
         width: node.size.width,
         height: node.size.height,
@@ -512,6 +526,7 @@ export function InfiniteCanvas({
         fontFamily?: string;
         color?: string;
         content?: string;
+        raw?: { status?: string };
       };
       const rating = nodeAny.rating ?? 0;
       const fontSize = nodeAny.fontSize ?? 0;
@@ -522,7 +537,9 @@ export function InfiniteCanvas({
       const fontFamily = nodeAny.fontFamily ?? '';
       const color = nodeAny.color ?? '';
       const content = nodeAny.content ?? '';
-      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}:${zIndex}:${rating}:${fontSize}:${fontWeight}:${textAlign}:${backgroundColor}:${backgroundOpacity}:${fontFamily}:${color}:${content}`;
+      const url = node.url ?? '';
+      const rawStatus = String(nodeAny.raw?.status ?? '');
+      return `${node.id}:${Math.round(node.position.x * 10)}:${Math.round(node.position.y * 10)}:${depFocus}:${zIndex}:${rating}:${fontSize}:${fontWeight}:${textAlign}:${backgroundColor}:${backgroundOpacity}:${fontFamily}:${color}:${content}:${url}:${rawStatus}`;
     }).join('|');
   }, [initialNodes]);
 
@@ -585,11 +602,13 @@ export function InfiniteCanvas({
             (flowData.fontFamily ?? '') !== (initialData.fontFamily ?? '') ||
             (flowData.color ?? '') !== (initialData.color ?? '') ||
             (flowData.content ?? '') !== (initialData.content ?? '');
+
+          const urlChanged = (flowNode.data as CanvasNodeData).url !== initialNode.url;
+          const flowRaw = (flowNode.data as CanvasNodeData & { raw?: { status?: string } }).raw;
+          const initialRaw = (initialNode as CanvasNodeData & { raw?: { status?: string } }).raw;
+          const rawStatusChanged = String(flowRaw?.status ?? '') !== String(initialRaw?.status ?? '');
           
-          // 注意：不同步 selected 状态，因为这会干扰本地的选择操作
-          // selected 状态由 React Flow 内部管理，通过 onNodesChange 回调同步
-          
-          if (posChanged || dependencyFocusChanged || zIndexChanged || ratingChanged || textStyleChanged) {
+          if (posChanged || dependencyFocusChanged || zIndexChanged || ratingChanged || textStyleChanged || urlChanged || rawStatusChanged) {
             nodeUpdates.push({
               id: initialNode.id,
               position: initialNode.position,
@@ -791,7 +810,7 @@ export function InfiniteCanvas({
     [onEdgesChangeCallback]
   );
 
-  // 合并容器样式
+  // 合并容器样式（拖拽素材时显示四向箭头 move 光标）
   const containerStyle: React.CSSProperties = {
     width,
     height,
@@ -799,7 +818,7 @@ export function InfiniteCanvas({
     minHeight,
     backgroundColor,
     position: 'relative',
-    cursor: paneCursor,
+    cursor: isNodeDragging ? 'move' : (paneCursor === 'grab' && isPanDragging ? 'grabbing' : paneCursor),
     ...style,
   };
 
@@ -835,14 +854,17 @@ export function InfiniteCanvas({
         onEdgesChange={handleEdgesChange}
         onConnect={handleConnect}
         onNodeDragStart={(_, node) => {
+          setIsNodeDragging(true);
+          document.body.style.cursor = 'move';
           onNodeDragStart?.(node.id, node.position);
         }}
         onNodeDrag={(_, node) => {
-          // 获取所有选中的节点ID
           const selectedNodeIds = nodes.filter(n => n.selected).map(n => n.id);
           onNodeDrag?.(node.id, node.position, selectedNodeIds.length > 1 ? selectedNodeIds : undefined);
         }}
         onNodeDragStop={(_, node) => {
+          setIsNodeDragging(false);
+          document.body.style.cursor = '';
           setSnapLines(null);
           onNodeDragEnd?.(node.id, node.position);
         }}
@@ -861,7 +883,11 @@ export function InfiniteCanvas({
           onPaneContextMenu(event as unknown as React.MouseEvent);
         }}
         deleteKeyCode={null}
+        onMoveStart={() => {
+          setIsPanDragging(true);
+        }}
         onMoveEnd={(_, nextViewport) => {
+          setIsPanDragging(false);
           setViewport((prevViewport) => {
             if (
               prevViewport.x === nextViewport.x &&
@@ -890,6 +916,9 @@ export function InfiniteCanvas({
             return;
           }
           onPaneMouseMove(point, event);
+        }}
+        onNodeClick={(_, node) => {
+          onNodeClickCallback?.(node.id);
         }}
         onPaneClick={(event) => {
           if (!onPaneClick) {

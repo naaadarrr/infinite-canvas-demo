@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import type { CanvasConfig, CanvasNodeData, LayoutConfig, RawDataItem } from '@tc/infinite-core';
 import { NodeType, generateId, parseRawData } from '@tc/infinite-core';
 import type { Edge, Node as FlowNode, ReactFlowInstance } from '@xyflow/react';
@@ -12,7 +13,7 @@ import { getToolLabel } from './utils/toolLabels';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PlusIcon, LayersIcon } from './icons';
-import { Upload, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Command, Crown, type LucideIcon } from 'lucide-react';
+import { Upload, Image as ImageIcon, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, Frame, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Star, PenTool, Repeat, Maximize2, Rotate3d, ImagePlay, MoveDiagonal, Link2, CircleUser, ShoppingBag, UserPen, Speech, Command, Crown, type LucideIcon } from 'lucide-react';
 import { CanvasRoleProvider } from './CanvasRoleContext';
 import { SelectModeProvider, SelectModeState } from './SelectModeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -65,15 +66,130 @@ type SubCanvasInfo = {
   anchorNodeId?: string;
 };
 
+// ─── Sidebar style constants (inline, no Tailwind — widget has no Tailwind) ──
+
+/** Nav item label: 11px / 14px lh / #D4D4D4 */
+const NAV_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 400,
+  lineHeight: '14px',
+  letterSpacing: 'normal',
+  color: '#D4D4D4',
+};
+
+/** Footer item label: 10px / #fff */
+const FOOTER_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 400,
+  lineHeight: 1,
+  color: '#fff',
+};
+
+/** Shared nav button base style */
+const NAV_BTN_BASE: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 4,           // gap-1 = 4px
+  padding: 8,       // p-2 = 8px
+  borderRadius: 8,  // rounded-lg
+  border: 'none',
+  background: 'transparent',
+  color: 'rgba(255,255,255,0.6)',  // text-white/60
+  cursor: 'pointer',
+  transition: 'background 120ms ease, color 120ms ease',
+  fontFamily: 'Inter, -apple-system, sans-serif',
+};
+
+/** Footer button base style */
+const FOOTER_BTN_BASE: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  gap: 4,
+  padding: 8,
+  borderRadius: 8,
+  border: 'none',
+  background: 'transparent',
+  color: '#fff',
+  cursor: 'pointer',
+  transition: 'background 120ms ease',
+  fontFamily: 'Inter, -apple-system, sans-serif',
+};
+
+function SidebarNavBtn({
+  children,
+  onClick,
+  disabled,
+  'aria-label': ariaLabel,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  disabled?: boolean;
+  'aria-label'?: string;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...NAV_BTN_BASE,
+        background: hovered && !disabled ? 'rgba(255,255,255,0.05)' : 'transparent',
+        color: disabled ? 'rgba(255,255,255,0.2)' : hovered ? '#fff' : 'rgba(255,255,255,0.6)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.4 : 1,
+      }}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SidebarFooterBtn({
+  children,
+  onClick,
+  'aria-label': ariaLabel,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  'aria-label'?: string;
+}) {
+  const [hovered, setHovered] = React.useState(false);
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={onClick}
+      style={{
+        ...FOOTER_BTN_BASE,
+        background: hovered ? 'rgba(255,255,255,0.05)' : 'transparent',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {children}
+    </button>
+  );
+}
+
 // ─── Toolbar hover-menu primitives ───────────────────────────────────────────
 
 const TOOLBAR_MENU_STYLE: React.CSSProperties = {
-  borderRadius: 12,
-  background: 'rgb(28,30,34)',
-  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 8,
+  background: '#252525',
+  border: '1px solid rgba(255,255,255,0.1)',
   boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
   userSelect: 'none',
   overflow: 'hidden',
+  padding: '4px',
+  minWidth: 200,
 };
 
 function ToolbarItemWithMenu({
@@ -86,32 +202,66 @@ function ToolbarItemWithMenu({
   disabled?: boolean;
 }) {
   const [open, setOpen] = React.useState(false);
+  const btnRef = React.useRef<HTMLDivElement>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const closeTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelClose = React.useCallback(() => {
+    if (closeTimer.current) { clearTimeout(closeTimer.current); closeTimer.current = null; }
+  }, []);
+  const scheduleClose = React.useCallback(() => {
+    cancelClose();
+    closeTimer.current = setTimeout(() => { setOpen(false); closeTimer.current = null; }, 100);
+  }, [cancelClose]);
+
+  React.useEffect(() => () => { if (closeTimer.current) clearTimeout(closeTimer.current); }, []);
+
   return (
     <div
+      ref={btnRef}
       style={{ position: 'relative' }}
-      onMouseEnter={() => !disabled && setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
+      onMouseEnter={() => {
+        if (disabled) return;
+        cancelClose();
+        setOpen(true);
+        if (btnRef.current) {
+          const rect = btnRef.current.getBoundingClientRect();
+          const sidebar = btnRef.current.closest('aside');
+          const sidebarRight = sidebar ? sidebar.getBoundingClientRect().right : rect.right;
+          setPos({ top: rect.top, left: sidebarRight });
+        }
+      }}
+      onMouseLeave={scheduleClose}
     >
       {button}
-      {!disabled && (
-          <div
-            style={{
-              position: 'absolute',
-              left: '100%',
-              top: '0',
-              transform: open ? 'scale(1)' : 'scale(0.96)',
-              paddingLeft: 8,
-              zIndex: 60,
-              pointerEvents: open ? 'auto' : 'none',
-              opacity: open ? 1 : 0,
-              transition: 'opacity 130ms ease, transform 130ms ease',
-              transformOrigin: 'left top',
-            }}
-          >
+      {!disabled && open && pos && ReactDOM.createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left + 4,
+            zIndex: 1050,
+            paddingLeft: 4, // 桥接间隙
+          }}
+          onMouseEnter={cancelClose}
+          onMouseLeave={scheduleClose}
+        >
+          {/* Bridge div to prevent closing when moving from button to menu */}
+          <div 
+            style={{ 
+              position: 'absolute', 
+              left: -8, 
+              top: 0, 
+              width: 8, 
+              height: '100%',
+              background: 'transparent'
+            }} 
+          />
           <div style={TOOLBAR_MENU_STYLE}>
             {menu}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -135,23 +285,25 @@ function ToolbarMenuItem({
       onMouseLeave={() => setHovered(false)}
       style={{
         width: '100%',
-        padding: '9px 12px',
+        height: 40,
+        padding: '0 8px',
         border: 'none',
-        background: hovered ? 'rgba(255,255,255,0.08)' : 'transparent',
-        color: 'rgba(255,255,255,0.9)',
-        fontSize: 13,
-        fontWeight: 500,
+        background: hovered ? 'rgba(255,255,255,0.05)' : 'transparent',
+        color: hovered ? '#fff' : '#D4D4D4',
+        fontSize: 14,
+        fontWeight: 400,
+        lineHeight: '20px',
         textAlign: 'left',
         borderRadius: 8,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
-        gap: 10,
-        transition: 'background 100ms ease',
+        gap: 8,
+        transition: 'background 100ms ease, color 100ms ease',
         whiteSpace: 'nowrap',
       }}
     >
-      <Icon size={15} color="rgba(255,255,255,0.6)" />
+      <Icon size={18} color={hovered ? '#fff' : '#A3A3A3'} style={{ flexShrink: 0 }} />
       {label}
     </button>
   );
@@ -2916,14 +3068,12 @@ export function CollaborativeCanvas({
         {/* ── Full-height sidebar ── */}
         {/* Hide sidebar only for legacy generic panel tools, not for new Canvas Panel tools */}
         {(!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit') && (
-          <div
+          <aside
             className="tc-sidebar-b"
             onPointerDown={(e) => e.stopPropagation()}
             style={{
               position: 'absolute',
-              left: 0,
-              top: 0,
-              bottom: 0,
+              left: 0, top: 0, bottom: 0,
               zIndex: 51,
               width: 64,
               display: 'flex',
@@ -2935,236 +3085,175 @@ export function CollaborativeCanvas({
             }}
           >
             {/* Logo */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 56,
-              flexShrink: 0,
-            }}>
-              <img 
-                alt="Home" 
-                src="/logo.svg" 
-                style={{ width: 24, height: 24, objectFit: 'contain' }} 
-              />
-            </div>
-
-            {/* Nav items — Board + tools */}
-            <div style={{ flex: 1, padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {/* Board — plain button, no hover menu */}
-              {canEdit && (
-                <button
-                  type="button"
-                  title="Board"
-                  disabled={isLocked}
-                  onClick={() => {
-                    widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'board' }, { source: 'ui' }));
-                  }}
-                  style={{
-                    width: '100%', padding: '9px 4px 7px', borderRadius: 10, border: 'none',
-                    background: 'transparent', color: 'rgba(255,255,255,0.5)',
-                    cursor: isLocked ? 'not-allowed' : 'pointer',
-                    transition: 'background 120ms ease, color 120ms ease',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-                    opacity: isLocked ? 0.4 : 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isLocked) {
-                      e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
-                      e.currentTarget.style.color = '#fff';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'transparent';
-                    e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
-                  }}
-                >
-                  <LayoutGrid size={20} />
-                  <span style={{ fontSize: 10, fontWeight: 500, lineHeight: 1, letterSpacing: '0.01em' }}>Board</span>
-                </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 56, flexShrink: 0 }}>
+              {topBarLogoUrl ? (
+                <img alt="Logo" src={topBarLogoUrl} style={{ width: 28, height: 28, objectFit: 'contain' }} />
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 210 210" fill="none">
+                  <path d="M162 0C188.51 0 210 21.4905 210 48V162C210 188.51 188.51 210 162 210H48C21.4903 210 0 188.51 0 162V48C0.000166991 21.4905 21.4904 0 48 0H162ZM161.586 69.124C161.556 69.1758 134.717 116.108 128.961 116.008C123.202 115.907 110.372 90.457 110.372 90.457C110.28 90.6044 84.343 131.966 79.5771 132.879C74.8031 133.799 74.6333 114.812 66.125 114.416C57.6174 114.013 36.9155 152.357 36.9111 152.365L46.6514 168.272L70.5635 132.722C70.5732 132.751 76.9933 152.315 89.2393 153.278C101.495 154.242 119.117 120.336 119.117 120.336C119.117 120.336 130.48 143.758 138.443 146.644C146.396 149.531 176.822 95.2796 176.911 95.1211L161.586 69.124ZM77.7305 36.3477C77.7303 52.0516 65.3453 64.9004 50.209 64.9004C65.3454 64.9004 77.7305 77.7491 77.7305 93.4531C77.7305 77.7491 90.1145 64.9004 105.251 64.9004C90.1146 64.9004 77.7306 52.0516 77.7305 36.3477Z" fill="white"/>
+                </svg>
               )}
-
-              <div style={{ height: 1, margin: '4px 6px', background: 'rgba(255,255,255,0.06)' }} />
-
-              {/* Image / Video / Avatar / Audio */}
-              {([
-                {
-                  key: 'image' as const, title: 'Image', Icon: ImagePlus,
-                  items: [
-                    { id: 'text-to-image', label: 'Text to Image', Icon: Type, demoDisabled: false },
-                    { id: 'image-edit', label: 'Image Edit', Icon: Paintbrush, demoDisabled: false },
-                    { id: 'inpaint', label: 'Inpaint', Icon: Eraser, demoDisabled: true },
-                    { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat2, demoDisabled: true },
-                    { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile, demoDisabled: true },
-                    { id: 'image-upscale', label: 'Image Upscale', Icon: ArrowUpRight, demoDisabled: true },
-                    { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: RotateCcw, demoDisabled: true },
-                    { id: 'product-photography', label: 'Product Photography', Icon: Camera, demoDisabled: false },
-                  ],
-                  actionType: 'ai-image' as const,
-                },
-                {
-                  key: 'video' as const, title: 'Video', Icon: Video,
-                  items: [
-                    { id: 'image-to-video', label: 'Image to Video', Icon: Clapperboard, demoDisabled: true },
-                    { id: 'text-to-video', label: 'Text to Video', Icon: Type, demoDisabled: true },
-                    { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2, demoDisabled: true },
-                    { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat2, demoDisabled: true },
-                    { id: 'video-upscale', label: 'Video Upscale', Icon: ArrowUpRight, demoDisabled: true },
-                    { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding, demoDisabled: true },
-                  ],
-                  actionType: 'ai-video' as const,
-                },
-                {
-                  key: 'avatar' as const, title: 'Avatar', Icon: PersonStanding,
-                  items: [
-                    { id: 'ai-avatar', label: 'AI Avatar', Icon: PersonStanding, demoDisabled: true },
-                    { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Clapperboard, demoDisabled: true },
-                    { id: 'product-avatar', label: 'Product Avatar', Icon: Box, demoDisabled: true },
-                    { id: 'design-avatar', label: 'Design My Avatar', Icon: Blend, demoDisabled: true },
-                  ],
-                  actionType: 'ai-avatar' as const,
-                },
-                {
-                  key: 'audio' as const, title: 'Audio', Icon: AudioLines,
-                  items: [
-                    { id: 'voiceover', label: 'Voiceover', Icon: AudioLines, demoDisabled: true },
-                  ],
-                  actionType: 'ai-audio' as const,
-                },
-              ]).map((tool) => (
-                <ToolbarItemWithMenu
-                  key={tool.key}
-                  button={
-                    <button
-                      type="button"
-                      title={tool.title}
-                      disabled={!canEdit || isLocked}
-                      style={{
-                        width: '100%',
-                        padding: '9px 4px 7px',
-                        borderRadius: 10,
-                        border: 'none',
-                        background: 'transparent',
-                        color: (!canEdit || isLocked) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)',
-                        cursor: (!canEdit || isLocked) ? 'not-allowed' : 'pointer',
-                        transition: 'background 120ms ease, color 120ms ease',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: 5,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (canEdit && !isLocked) {
-                          e.currentTarget.style.background = 'rgba(255,255,255,0.07)';
-                          e.currentTarget.style.color = '#fff';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = 'transparent';
-                        e.currentTarget.style.color = (!canEdit || isLocked) ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.5)';
-                      }}
-                    >
-                      <tool.Icon size={20} />
-                      <span style={{ fontSize: 10, fontWeight: 500, lineHeight: 1, letterSpacing: '0.01em' }}>{tool.title}</span>
-                    </button>
-                  }
-                  menu={
-                    <div style={{ padding: 6, minWidth: 220 }}>
-                      {tool.items.map((item) => (
-                        <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={item.demoDisabled ? () => {} : () => handlePlusAction(tool.actionType, item.id)} />
-                      ))}
-                    </div>
-                  }
-                  disabled={!canEdit || isLocked}
-                />
-              ))}
             </div>
 
-            {/* Bottom section: sale badge + credits + avatar */}
-            <div style={{
-              flexShrink: 0,
-              padding: '8px 6px 12px',
-              borderTop: '1px solid rgba(255,255,255,0.05)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 6,
-            }}>
-              {/* Sale badge */}
-              <div style={{
-                width: '100%',
-                padding: '7px 4px 5px',
-                borderRadius: 10,
-                background: 'transparent',
-                border: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: 3,
-                cursor: 'pointer',
-              }}>
-                <span style={{ fontSize: 20, lineHeight: 1 }}>🎁</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.04em', lineHeight: 1 }}>47% OFF</span>
+            {/* Nav — flex:1, p:8px, gap:4px between items */}
+            <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+
+                {/* Board */}
+                {canEdit && (
+                  <SidebarNavBtn
+                    aria-label="Board"
+                    disabled={isLocked}
+                    onClick={() => widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'board' }, { source: 'ui' }))}
+                  >
+                    <Frame style={{ width: 20, height: 20, flexShrink: 0 }} />
+                    <span style={NAV_LABEL_STYLE}>Board</span>
+                  </SidebarNavBtn>
+                )}
+
+                {/* Separator */}
+                <div style={{ margin: '8px 0', display: 'flex', justifyContent: 'center' }}>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="1" viewBox="0 0 40 1" fill="none">
+                    <path d="M0 0.25H40" stroke="url(#sb-nav-sep)" strokeWidth="0.5" />
+                    <defs>
+                      <linearGradient id="sb-nav-sep" x1="0" y1="0.75" x2="40" y2="0.75" gradientUnits="userSpaceOnUse">
+                        <stop stopColor="white" stopOpacity="0" />
+                        <stop offset="0.5" stopColor="white" />
+                        <stop offset="1" stopColor="white" stopOpacity="0" />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+                </div>
+
+                {/* Image / Video / Avatar / Audio */}
+                {([
+                  {
+                    key: 'image' as const, title: 'Image', Icon: ImageIcon,
+                    items: [
+                      { id: 'text-to-image', label: 'Text to Image', Icon: Type, demoDisabled: false },
+                      { id: 'image-edit', label: 'Image Edit', Icon: PenTool, demoDisabled: false },
+                      { id: 'inpaint', label: 'Inpaint', Icon: Paintbrush, demoDisabled: true },
+                      { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat, demoDisabled: true },
+                      { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile, demoDisabled: true },
+                      { id: 'image-upscale', label: 'Image Upscale', Icon: Maximize2, demoDisabled: true },
+                      { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: Rotate3d, demoDisabled: true },
+                      { id: 'product-photography', label: 'Product Photography', Icon: Camera, demoDisabled: false },
+                    ],
+                    actionType: 'ai-image' as const,
+                  },
+                  {
+                    key: 'video' as const, title: 'Video', Icon: Video,
+                    items: [
+                      { id: 'image-to-video', label: 'Image to Video', Icon: ImagePlay, demoDisabled: true },
+                      { id: 'text-to-video', label: 'Text to Video', Icon: Type, demoDisabled: true },
+                      { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2, demoDisabled: true },
+                      { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat, demoDisabled: true },
+                      { id: 'video-upscale', label: 'Video Upscale', Icon: MoveDiagonal, demoDisabled: true },
+                      { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding, demoDisabled: true },
+                    ],
+                    actionType: 'ai-video' as const,
+                  },
+                  {
+                    key: 'avatar' as const, title: 'Avatar', Icon: User,
+                    items: [
+                      { id: 'ai-avatar', label: 'AI Avatar', Icon: CircleUser, demoDisabled: true },
+                      { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Speech, demoDisabled: true },
+                      { id: 'product-avatar', label: 'Product Avatar', Icon: ShoppingBag, demoDisabled: true },
+                      { id: 'design-avatar', label: 'Design My Avatar', Icon: UserPen, demoDisabled: true },
+                    ],
+                    actionType: 'ai-avatar' as const,
+                  },
+                  {
+                    key: 'audio' as const, title: 'Audio', Icon: AudioLines,
+                    items: [
+                      { id: 'voiceover', label: 'Voiceover', Icon: Mic, demoDisabled: true },
+                    ],
+                    actionType: 'ai-audio' as const,
+                  },
+                ]).map((tool) => (
+                  <ToolbarItemWithMenu
+                    key={tool.key}
+                    button={
+                      <SidebarNavBtn
+                        aria-label={tool.title}
+                        disabled={!canEdit || isLocked}
+                      >
+                        <tool.Icon style={{ width: 20, height: 20, flexShrink: 0 }} />
+                        <span style={NAV_LABEL_STYLE}>{tool.title}</span>
+                      </SidebarNavBtn>
+                    }
+                    menu={
+                      <div style={{ padding: '4px 8px', minWidth: 200 }}>
+                        {tool.items.map((item) => (
+                          <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={item.demoDisabled ? () => {} : () => handlePlusAction(tool.actionType, item.id)} />
+                        ))}
+                      </div>
+                    }
+                    disabled={!canEdit || isLocked}
+                  />
+                ))}
               </div>
+            </nav>
+
+            {/* Bottom Section — p:8px, space-y:4px */}
+            <div style={{
+              position: 'relative', zIndex: 10, flexShrink: 0,
+              padding: 8, display: 'flex', flexDirection: 'column', gap: 4,
+              borderTop: '1px solid rgba(255,255,255,0.05)',
+            }}>
+              {/* Promotion */}
+              <SidebarFooterBtn aria-label="Promotion">
+                <img
+                  src="https://d1735p3aqhycef.cloudfront.net/topview/dc4c14f2aba1b71f8de715e760306463b4e4c2f1.png"
+                  alt="Promotion"
+                  style={{ width: 20, height: 20, display: 'block' }}
+                />
+                <span style={FOOTER_LABEL_STYLE}>47% OFF</span>
+              </SidebarFooterBtn>
 
               {/* Credits */}
               {userCredits != null && (
-                <div style={{
-                  width: '100%',
-                  padding: '7px 4px 5px',
-                  borderRadius: 10,
-                  background: 'transparent',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 3,
-                  cursor: 'default',
-                }}>
-                  <Zap size={18} color="#facc15" />
-                  <span style={{ fontSize: 10, fontWeight: 600, color: 'rgba(255,255,255,0.7)', lineHeight: 1 }}>{userCredits.toLocaleString()}</span>
-                  <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', lineHeight: 1 }}>Free</span>
-                </div>
+                <SidebarFooterBtn aria-label="Credits">
+                  <img
+                    src="https://d1735p3aqhycef.cloudfront.net/topview/ic_credit.svg"
+                    alt="Credits"
+                    style={{ width: 20, height: 20, display: 'block', pointerEvents: 'none' }}
+                  />
+                  <span style={{
+                    ...FOOTER_LABEL_STYLE,
+                    fontSize: String(userCredits.toLocaleString()).length > 6 ? 8 : 10,
+                  }}>
+                    {userCredits.toLocaleString()}
+                  </span>
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', lineHeight: 1, marginTop: 2 }}>Pro</span>
+                </SidebarFooterBtn>
               )}
 
               {/* Avatar */}
-              <button
-                type="button"
-                aria-label="User profile"
-                onClick={() => {
-                  widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'profile' }, { source: 'ui' }));
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 36,
-                  height: 36,
-                  padding: 0,
-                  background: userAvatarUrl ? 'transparent' : '#2a2d32',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '50%',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  overflow: 'hidden',
-                  transition: 'border-color 0.15s, background-color 0.15s',
-                }}
-                onMouseEnter={(e) => { 
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; 
-                  if (!userAvatarUrl) e.currentTarget.style.backgroundColor = '#3f4248';
-                }}
-                onMouseLeave={(e) => { 
-                  e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; 
-                  if (!userAvatarUrl) e.currentTarget.style.backgroundColor = '#2a2d32';
-                }}
-              >
-                {userAvatarUrl ? (
-                  <img src={userAvatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <User size={15} color="rgba(255,255,255,0.6)" />
-                )}
-              </button>
+              <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  aria-label="User profile"
+                  onClick={() => widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'profile' }, { source: 'ui' }))}
+                  style={{
+                    width: 32, height: 32, padding: 0, border: 'none',
+                    borderRadius: '50%', cursor: 'pointer', overflow: 'hidden',
+                    background: 'linear-gradient(to bottom right, #facc15, #fb923c, #ef4444, #a855f7)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                    transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.8'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+                >
+                  {userAvatarUrl
+                    ? <img src={userAvatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <div style={{ width: '100%', height: '100%', background: 'linear-gradient(to bottom right, #facc15, #fb923c, #ef4444, #a855f7)', borderRadius: '50%' }} />
+                  }
+                </button>
+              </div>
             </div>
-          </div>
+          </aside>
         )}
         <div
           className={[

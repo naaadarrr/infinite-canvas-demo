@@ -4,7 +4,7 @@
   "private": true,
   "description": "Infinite canvas library based on React Flow",
   "scripts": {
-    "dev": "concurrently \"pnpm dev:core\" \"pnpm dev:widget\" \"pnpm dev:demo\"",
+    "dev": "pnpm build && concurrently \"pnpm dev:core\" \"pnpm dev:widget\" \"pnpm dev:demo\"",
     "dev:server": "pnpm --filter @tc/infinite-server dev",
     "dev:all": "concurrently \"pnpm dev:server\" \"pnpm dev\"",
     "dev:core": "pnpm --filter @tc/infinite-core dev",
@@ -26,5 +26,6 @@
   "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=8.0.0"
-  }
+  },
+  "packageManager": "pnpm@8.15.5"
 }

@@ -1,6 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rootDirectory": "apps/demo",
   "installCommand": "cd ../.. && corepack enable && pnpm install --ignore-scripts --filter @tc/infinite-core... --filter @tc/infinite-widget... --filter demo...",
   "buildCommand": "pnpm run vercel-build",
   "outputDirectory": ".next",

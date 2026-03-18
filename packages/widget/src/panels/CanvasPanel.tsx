@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 
-const DEFAULT_PANEL_WIDTH = 520;
+const DEFAULT_PANEL_WIDTH = 600;
 const GAP = 8;
 
 // CanvasPanel does NOT use a full-canvas dismiss overlay — that would block
@@ -88,7 +89,7 @@ export function CanvasPanel({
         style={{
           width: PANEL_WIDTH,
           borderRadius: 12,
-          background: '#18191d',
+          background: '#1a1a1a',
           border: '1px solid rgba(255,255,255,0.07)',
           boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
           display: 'flex',
@@ -96,28 +97,49 @@ export function CanvasPanel({
           fontFamily: 'Inter, -apple-system, sans-serif',
         }}
       >
-        {hasTabs && (
-          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 8px 0', flexShrink: 0, gap: 4 }}>
-            {tabs.map((tab) => {
-              const isActive = tab.id === activeTab;
-              return (
-                <button key={tab.id} type="button" onClick={() => onTabChange?.(tab.id)}
-                  style={{
-                    height: 24, margin: 0, padding: '0 8px', borderRadius: 6, border: 'none',
-                    background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
-                    color: isActive ? '#fff' : 'rgba(255,255,255,0.65)',
-                    fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 120ms ease', whiteSpace: 'nowrap',
-                  }}
-                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }}
-                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.65)'; }}
-                >{tab.label}</button>
-              );
-            })}
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 8px 0', flexShrink: 0, gap: 4 }}>
+          {hasTabs && tabs.map((tab) => {
+            const isActive = tab.id === activeTab;
+            return (
+              <button key={tab.id} type="button" onClick={() => onTabChange?.(tab.id)}
+                style={{
+                  height: 24, margin: 0, padding: '0 8px', borderRadius: 6, border: 'none',
+                  background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  color: isActive ? '#fff' : 'rgba(255,255,255,0.65)',
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 120ms ease', whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.65)'; }}
+              >{tab.label}</button>
+            );
+          })}
+          <div style={{ flex: 1 }} />
+          {onDismiss && (
+            <button
+              type="button"
+              onClick={onDismiss}
+              style={{
+                width: 24, height: 24, borderRadius: 6, border: 'none',
+                background: 'transparent', color: 'rgba(255,255,255,0.35)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, transition: 'background 100ms, color 100ms',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+                e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+                e.currentTarget.style.color = 'rgba(255,255,255,0.35)';
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
         <div style={{ flex: 1, padding: '8px 8px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
         {bottomBar && (
-          <div style={{ padding: '0 8px 8px', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>{bottomBar}</div>
+          <div style={{ padding: '0 8px 12px', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>{bottomBar}</div>
         )}
       </div>
     );
@@ -139,7 +161,7 @@ export function CanvasPanel({
         width: PANEL_WIDTH,
         zIndex: 42,
         borderRadius: 12,
-        background: '#18191d',
+        background: '#1a1a1a',
         border: '1px solid rgba(255,255,255,0.07)',
         boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
         display: 'flex',
@@ -150,51 +172,71 @@ export function CanvasPanel({
         transition: 'opacity 160ms ease, transform 160ms ease',
       }}
     >
-      {/* Tab bar — underline style matching reference */}
-      {hasTabs && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '8px 8px 0',
-          borderBottom: 'none',
-          flexShrink: 0,
-          gap: 4,
-        }}>
-          {tabs.map((tab) => {
-            const isActive = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onTabChange?.(tab.id)}
-                style={{
-                  height: 24,
-                  margin: 0,
-                  padding: '0 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  color: isActive ? '#fff' : 'rgba(255,255,255,0.65)',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  position: 'relative',
-                  transition: 'all 120ms ease',
-                  whiteSpace: 'nowrap',
-                }}
-                onMouseEnter={(e) => {
-                  if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
-                }}
-                onMouseLeave={(e) => {
-                  if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.65)';
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Tab bar + close button */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: '8px 8px 0',
+        flexShrink: 0,
+        gap: 4,
+      }}>
+        {hasTabs && tabs.map((tab) => {
+          const isActive = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => onTabChange?.(tab.id)}
+              style={{
+                height: 24,
+                margin: 0,
+                padding: '0 8px',
+                borderRadius: 6,
+                border: 'none',
+                background: isActive ? 'rgba(255,255,255,0.08)' : 'transparent',
+                color: isActive ? '#fff' : 'rgba(255,255,255,0.65)',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+                position: 'relative',
+                transition: 'all 120ms ease',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.color = 'rgba(255,255,255,0.65)';
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+        <div style={{ flex: 1 }} />
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            style={{
+              width: 24, height: 24, borderRadius: 6, border: 'none',
+              background: 'transparent', color: 'rgba(255,255,255,0.35)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0, transition: 'background 100ms, color 100ms',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+              e.currentTarget.style.color = 'rgba(255,255,255,0.35)';
+            }}
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
 
       {/* Main content — no divider at bottom */}
       <div style={{ flex: 1, padding: '8px 8px 8px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -204,10 +246,10 @@ export function CanvasPanel({
       {/* Bottom bar — no top border, seamlessly attached */}
       {bottomBar && (
         <div style={{
-          padding: '0 8px 8px',
+          padding: '0 8px 12px',
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 4,
           flexShrink: 0,
         }}>
           {bottomBar}

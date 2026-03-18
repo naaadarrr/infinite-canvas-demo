@@ -1,0 +1,434 @@
+{
+  "imageToVideo": [
+    {
+      "providerId": "seedance",
+      "providerName": "Seedance",
+      "logoS3Path": "/model-logo/seedance.png",
+      "models": [
+        {
+          "id": "seedance-1.5-pro",
+          "name": "Seedance 1.5 pro",
+          "badges": [
+            "HOT",
+            "NEW"
+          ],
+          "tags": [
+            "Audio Support",
+            "End Frame"
+          ]
+        },
+        {
+          "id": "seedance-1.0-pro-fast",
+          "name": "Seedance 1.0 Pro Fast",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "seedance-1.0-pro",
+          "name": "Seedance 1.0 Pro",
+          "badges": [],
+          "tags": [
+            "End Frame"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "kling",
+      "providerName": "Kling 2.6/O1",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "models": [
+        {
+          "id": "kling-v2-6-pro",
+          "name": "Kling 2.6",
+          "badges": [
+            "HOT",
+            "NEW"
+          ],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "kling-video-o1-pro",
+          "name": "Kling O1 Reference-to-Video",
+          "badges": [
+            "NEW"
+          ],
+          "tags": [
+            "Reference to Video"
+          ]
+        },
+        {
+          "id": "kling-2.5-turbo-pro",
+          "name": "Kling 2.5 Turbo Pro",
+          "badges": [],
+          "tags": [
+            "End Frame"
+          ]
+        },
+        {
+          "id": "kling-2.5-turbo-std",
+          "name": "Kling 2.5 Turbo Std",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "sora2",
+      "providerName": "Sora 2",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/sora.png",
+      "models": [
+        {
+          "id": "gpt-sora2",
+          "name": "Sora 2",
+          "badges": [
+            "HOT"
+          ],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "gpt-sora2-pro",
+          "name": "Sora 2 Pro",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "gemini",
+      "providerName": "Gemini",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/gemini-color.png",
+      "models": [
+        {
+          "id": "gemini-veo-3.1",
+          "name": "Veo 3.1",
+          "badges": [],
+          "tags": [
+            "Audio Support",
+            "End Frame"
+          ]
+        },
+        {
+          "id": "gemini-veo-3.1-ref",
+          "name": "Veo 3.1 Reference to video",
+          "badges": [],
+          "tags": [
+            "Reference to Video",
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "gemini-veo-3.1-fast",
+          "name": "Veo 3.1 Fast",
+          "badges": [],
+          "tags": [
+            "Audio Support",
+            "End Frame"
+          ]
+        },
+        {
+          "id": "gemini-veo-3.1-fast-ref",
+          "name": "Veo 3.1 Fast Reference to video",
+          "badges": [],
+          "tags": [
+            "Reference to Video",
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "minimax",
+      "providerName": "Minimax",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/minimax-color.png",
+      "models": [
+        {
+          "id": "minimax-hailuo-02",
+          "name": "MiniMax-Hailuo-02",
+          "badges": [],
+          "tags": [
+            "End Frame"
+          ]
+        },
+        {
+          "id": "minimax-hailuo-2.3",
+          "name": "MiniMax-Hailuo-2.3",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "vidu",
+      "providerName": "Vidu Q2 Reference to Video",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/vidu.png",
+      "models": [
+        {
+          "id": "vidu-q2-ref",
+          "name": "Vidu Q2 Reference to Video",
+          "badges": [],
+          "tags": [
+            "Reference to Video"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "qwen",
+      "providerName": "Wan 2.6",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/qwen.png",
+      "models": [
+        {
+          "id": "qwen-wan2.6-i2v",
+          "name": "Wan 2.6",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "topview",
+      "providerName": "Topview",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/topview.png",
+      "models": [
+        {
+          "id": "topview-lite",
+          "name": "Lite",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-pro",
+          "name": "Pro",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-plus",
+          "name": "Plus",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-best",
+          "name": "Best",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    }
+  ],
+  "textToVideo": [
+    {
+      "providerId": "seedance",
+      "providerName": "Seedance",
+      "logoS3Path": "/model-logo/seedance.png",
+      "models": [
+        {
+          "id": "seedance-1.5-pro",
+          "name": "Seedance 1.5 pro",
+          "badges": [
+            "HOT",
+            "NEW"
+          ],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "seedance-1.0-pro-fast",
+          "name": "Seedance 1.0 Pro Fast",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "seedance-1.0-pro",
+          "name": "Seedance 1.0 Pro",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "kling",
+      "providerName": "Kling",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "models": [
+        {
+          "id": "kling-v2-6-pro",
+          "name": "Kling 2.6",
+          "badges": [
+            "HOT",
+            "NEW"
+          ],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "kling-2.5-turbo-pro",
+          "name": "Kling 2.5 Turbo Pro",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "kling-2.5-turbo-std",
+          "name": "Kling 2.5 Turbo Std",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "sora2",
+      "providerName": "Sora 2",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/sora.png",
+      "models": [
+        {
+          "id": "gpt-sora2",
+          "name": "Sora 2",
+          "badges": [
+            "HOT"
+          ],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "gpt-sora2-pro",
+          "name": "Sora 2 Pro",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "gemini",
+      "providerName": "Gemini",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/gemini-color.png",
+      "models": [
+        {
+          "id": "gemini-veo-3.1",
+          "name": "Veo 3.1",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        },
+        {
+          "id": "gemini-veo-3.1-fast",
+          "name": "Veo 3.1 Fast",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "minimax",
+      "providerName": "Minimax",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/minimax-color.png",
+      "models": [
+        {
+          "id": "minimax-hailuo-02",
+          "name": "MiniMax-Hailuo-02",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "minimax-hailuo-2.3",
+          "name": "MiniMax-Hailuo-2.3",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "vidu",
+      "providerName": "Vidu Q2",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/vidu.png",
+      "models": [
+        {
+          "id": "vidu-q2-text",
+          "name": "Vidu Q2",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    },
+    {
+      "providerId": "qwen",
+      "providerName": "Wan 2.6",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/qwen.png",
+      "models": [
+        {
+          "id": "qwen-wan2.6-t2v",
+          "name": "Wan 2.6",
+          "badges": [],
+          "tags": [
+            "Audio Support"
+          ]
+        }
+      ]
+    },
+    {
+      "providerId": "topview",
+      "providerName": "Topview",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/topview.png",
+      "models": [
+        {
+          "id": "topview-lite",
+          "name": "Lite",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-pro",
+          "name": "Pro",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-plus",
+          "name": "Plus",
+          "badges": [],
+          "tags": []
+        },
+        {
+          "id": "topview-best",
+          "name": "Best",
+          "badges": [],
+          "tags": []
+        }
+      ]
+    }
+  ],
+  "videoEdit": [
+    {
+      "providerId": "kling",
+      "providerName": "Kling O1 Video-Edit",
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "models": [
+        {
+          "id": "kling-video-o1-pro",
+          "name": "Kling O1 Video-Edit",
+          "badges": [
+            "NEW"
+          ],
+          "tags": []
+        }
+      ]
+    }
+  ]
+}

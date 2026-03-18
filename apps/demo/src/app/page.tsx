@@ -225,6 +225,13 @@ export default function Home() {
         widgetBridge.command('NODE_DELETE_CONFIRM', { nodeId });
       }
     });
+    const unsubscribeBatchDeleteRequest = widgetBridge.on<{ nodeIds?: string[] }>('NODE_BATCH_DELETE_REQUEST', (event) => {
+      console.log('[Widget Event] NODE_BATCH_DELETE_REQUEST', event);
+      const nodeIds = event.payload?.nodeIds;
+      if (Array.isArray(nodeIds) && nodeIds.length > 0) {
+        widgetBridge.command('NODE_BATCH_DELETE_CONFIRM', { nodeIds });
+      }
+    });
     const unsubscribeDeleted = widgetBridge.on('NODE_DELETED', (event) => {
       console.log('[Widget Event] NODE_DELETED', event);
     });
@@ -232,6 +239,7 @@ export default function Home() {
     return () => {
       unsubscribeQuickAction();
       unsubscribeDeleteRequest();
+      unsubscribeBatchDeleteRequest();
       unsubscribeDeleted();
     };
   }, []);

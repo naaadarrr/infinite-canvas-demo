@@ -2,10 +2,11 @@ import React from 'react';
 import { Handle, NodeProps, NodeToolbar, Position, useStore } from '@xyflow/react';
 import type { ImageNodeData, RawDataItem } from '@tc/infinite-core';
 import { NodeType } from '@tc/infinite-core';
-import { ArrowUpRight, Download, MessageSquare, Paintbrush, RotateCw, ScanFace, Shuffle, Trash2, Video } from 'lucide-react';
+import { ArrowUpRight, CircleUser, Download, Paintbrush, RotateCw, Shuffle, Video } from 'lucide-react';
+import { ExpandIcon } from '../icons';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { NodeLabelBar } from './NodeLabelBar';
-import { useToolbarVisibility } from './useToolbarVisibility';
+import { useToolbarVisibility, useLabelBarVisibility } from './useToolbarVisibility';
 import { useNodeSelection } from './useNodeSelection';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
@@ -17,6 +18,8 @@ import { SelectionOverlay } from './components/SelectionOverlay';
 import { useAiCreate } from '../AiCreateContext';
 import { TextToImagePanel } from '../panels/TextToImagePanel';
 import type { ImageToolTab } from '../panels/TextToImagePanel';
+import { AIVideoPanel } from '../panels/AIVideoPanel';
+import type { VideoToolTab } from '../panels/AIVideoPanel';
 import { getToolLabel } from '../utils/toolLabels';
 
 export function ImageNode({ data, selected, dragging }: NodeProps) {
@@ -39,6 +42,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     return node?.position ?? nodeData.position;
   });
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const selectedCount = useStore((state) => state.nodes.filter((n) => n.selected).length);
   const rawItem = (nodeData as ImageNodeData & { raw?: RawDataItem }).raw;
   const rawResult = rawItem?.result ?? undefined;
   const status = String(rawItem?.status ?? '').toLowerCase();
@@ -76,14 +80,17 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     && !!aiCreate.aiCreateMode?.referenceImageUrl;
 
   const showHighlight = (effectiveSelected || dragging) && !isPlaceholder;
-  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed && !isPlaceholder && !isRemixMode;
-  const showLabelBar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed;
+  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed && !isPlaceholder;
+  const showLabelBar = useLabelBarVisibility(effectiveSelected) && !isSkeleton && !isFailed;
 
   const nodeScreenWidth = nodeData.size.width * zoom;
   const showAiPanel = (isPlaceholder || isRemixMode) && effectiveSelected && !dragging
     && aiCreate.aiCreateMode?.nodeId === nodeData.id
     && (aiCreate.aiCreateMode?.subActionId === 'text-to-image' || aiCreate.aiCreateMode?.subActionId === 'image-edit')
     && nodeScreenWidth < 1200;
+  const showAiVideoPanel = !isPlaceholder && effectiveSelected && !dragging
+    && aiCreate.aiCreateMode?.nodeId === nodeData.id
+    && aiCreate.aiCreateMode?.type === 'ai-video';
   const handleQuickAction = React.useCallback(
     (actionId: string, actionLabel: string) => {
       const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
@@ -159,22 +166,51 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
     }
   }, [nodeData.id, nodeData.url, rawItem, aiCreate, handleQuickAction]);
 
-  const { visibleActions, moreActions: moreQuickActions } = React.useMemo(() => {
-    const visible: QuickAction[] = [
-      { id: 'reference', label: 'Remix', icon: Shuffle, onClick: handleRemix },
-      { id: 'inpaint', label: 'Inpaint', icon: Paintbrush, onClick: () => handleQuickAction('inpaint', 'Inpaint') },
-      { id: 'video', label: 'Generate Video', icon: Video, onClick: () => handleQuickAction('video', 'Generate Video') },
-      { id: 'edit-angles', label: 'Edit Angles', icon: RotateCw, onClick: () => handleQuickAction('edit-angles', 'Edit Angles') },
-      { id: 'avatar', label: 'AI Avatar', icon: ScanFace, onClick: () => handleQuickAction('avatar', 'AI Avatar') },
-      { id: 'upscale', label: 'Upscale', icon: ArrowUpRight, onClick: () => handleQuickAction('upscale', 'Upscale') },
-      { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true },
-    ];
-    const more: QuickAction[] = [
-      { id: 'feedback', label: 'Feedback', icon: MessageSquare, onClick: () => handleQuickAction('feedback', 'Feedback') },
-      { id: 'delete', label: 'Delete', icon: Trash2, onClick: () => handleQuickAction('delete', 'Delete') },
-    ];
-    return { visibleActions: visible, moreActions: more };
-  }, [handleQuickAction, handleRemix]);
+  const visibleActions = React.useMemo(() => [
+    { id: 'reference', label: 'Remix', icon: Shuffle, onClick: handleRemix },
+    { id: 'inpaint', label: 'Inpaint', icon: Paintbrush, onClick: () => handleQuickAction('inpaint', 'Inpaint') },
+    { id: 'video', label: 'Generate Video', icon: Video, onClick: () => handleQuickAction('video', 'Generate Video') },
+    { id: 'edit-angles', label: 'Edit Angles', icon: RotateCw, onClick: () => handleQuickAction('edit-angles', 'Edit Angles') },
+    { id: 'avatar', label: 'AI Avatar', icon: CircleUser, onClick: () => handleQuickAction('avatar', 'AI Avatar') },
+    { id: 'upscale', label: 'Upscale', icon: ArrowUpRight, onClick: () => handleQuickAction('upscale', 'Upscale'),
+      dropdownItems: (() => {
+        const imgW = actualWidth || Math.round(nodeData.size.width);
+        const imgH = actualHeight || Math.round(nodeData.size.height);
+        const imageUrl = nodeData.url || rawItem?.result?.originImage?.url || rawItem?.result?.compressedImage?.url || '';
+        const resolutions: { value: string; label: string; scale: number; creditCost: number }[] = [
+          { value: '1k', label: '1K', scale: 1, creditCost: 0.8 },
+          { value: '2k', label: '2K', scale: 2, creditCost: 0.8 },
+          { value: '4k', label: '4K', scale: 4, creditCost: 1.4 },
+        ];
+        return resolutions.map((r) => ({
+          id: r.value,
+          label: r.label,
+          detail: `${imgW * r.scale}×${imgH * r.scale}`,
+          creditCost: r.creditCost,
+          onClick: () => {
+            const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+            widgetBridge.emit(
+              createWidgetEvent(
+                'NODE_QUICK_ACTION',
+                {
+                  nodeId: nodeData.id,
+                  nodeType: nodeData.type,
+                  actionId: 'upscale',
+                  actionLabel: `Upscale ${r.label}`,
+                  resolution: r.value,
+                  imageUrl,
+                  node: nodeSnapshot,
+                },
+                { source: 'ui' }
+              )
+            );
+          },
+        }));
+      })(),
+    },
+    { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true, iconOnly: true },
+    { id: 'fullscreen', label: 'Full Screen', icon: ExpandIcon, onClick: () => handleQuickAction('fullscreen', 'Full Screen'), iconOnly: true },
+  ], [handleQuickAction, handleRemix, actualWidth, actualHeight, nodeData, rawItem]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -286,8 +322,8 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         cursor: isSkeleton || isFailed ? 'default' : dragging ? 'move' : 'default',
         outline: (isPlaceholder && dragging)
           ? `${2 / zoom}px solid transparent`
-          : effectiveSelected
-            ? `${1 / zoom}px solid #7781FF`
+          : effectiveSelected && !dragging
+            ? (isFailed ? `${1 / zoom}px solid #ef4444` : `${1 / zoom}px solid #7781FF`)
             : isFailed
               ? `${1 / zoom}px solid #ef4444`
               : isHovered && !isPlaceholder
@@ -441,11 +477,11 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           onClick={handleSelectRequest}
         />
       </div>
-      {showHighlight && !isPlaceholder && (
+      {showHighlight && !isPlaceholder && selectedCount <= 1 && !dragging && (
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
-            const handleSize = 12 / zoom;
+            const handleSize = 8 / zoom;
             const handleOffset = -(handleSize / 2);
             return (
               <div
@@ -454,19 +490,28 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: handleSize,
-                  height: handleSize,
-                  borderRadius: 2 / zoom,
-                  background: '#fff',
-                  border: `${1 / zoom}px solid #7781FF`,
-                  cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
                   top: corner.includes('top') ? handleOffset : 'auto',
                   bottom: corner.includes('bottom') ? handleOffset : 'auto',
+                  width: handleSize,
+                  height: handleSize,
                   zIndex: 2,
                 }}
-              />
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    background: '#fff',
+                    border: '1px solid #7781FF',
+                    cursor: cursorStyle,
+                    boxSizing: 'border-box',
+                    transform: `scale(${1 / zoom})`,
+                    transformOrigin: '0 0',
+                  }}
+                />
+              </div>
             );
           })}
         </>
@@ -479,7 +524,7 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
         nodeWidth={nodeData.size.width}
         toolLabel={undefined}
       />
-      <QuickActionToolbar isVisible={showToolbar} actions={visibleActions} moreActions={moreQuickActions} />
+      <QuickActionToolbar isVisible={showToolbar} actions={visibleActions} />
       {/* AI Create panel — rendered via NodeToolbar for proper zoom/pan tracking */}
       <NodeToolbar
         isVisible={showAiPanel}
@@ -499,6 +544,30 @@ export function ImageNode({ data, selected, dragging }: NodeProps) {
           onSubmit={aiCreate.onSubmit}
           onDismiss={aiCreate.onDismiss}
           onUploadReference={() => aiCreate.onUploadReference?.(nodeData.id)}
+          onSelectFromBoard={() => aiCreate.onSelectFromBoard?.(nodeData.id)}
+        />
+      </NodeToolbar>
+      {/* AI Video panel — shown when "Generate Video" is clicked on this image */}
+      <NodeToolbar
+        isVisible={showAiVideoPanel}
+        position={Position.Bottom}
+        offset={8}
+        align="center"
+      >
+        <AIVideoPanel
+          inline
+          width={480}
+          initialTab={aiCreate.aiCreateMode?.subActionId as VideoToolTab}
+          initialState={{
+            prompt: aiCreate.aiCreateMode?.prompt ?? '',
+            firstFrameUrl: aiCreate.aiCreateMode?.referenceImageUrl ?? '',
+          }}
+          credits={aiCreate.credits}
+          onSubmit={aiCreate.onVideoSubmit}
+          onDismiss={aiCreate.onDismiss}
+          onUploadFirstFrame={() => aiCreate.onUploadFirstFrame?.(nodeData.id)}
+          onUploadEndFrame={() => aiCreate.onUploadEndFrame?.(nodeData.id)}
+          onUploadMedia={() => aiCreate.onUploadMedia?.(nodeData.id)}
           onSelectFromBoard={() => aiCreate.onSelectFromBoard?.(nodeData.id)}
         />
       </NodeToolbar>

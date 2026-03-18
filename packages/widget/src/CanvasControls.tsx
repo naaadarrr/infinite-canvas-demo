@@ -1,6 +1,8 @@
 import React from 'react';
 import { useReactFlow, useStore } from '@xyflow/react';
 
+import { ShortcutBadge } from './components/ShortcutBadge';
+
 export type CanvasControlsProps = {
   isLocked?: boolean;
   onLockChange?: (locked: boolean) => void;
@@ -36,8 +38,9 @@ function ZoomInIcon() {
   );
 }
 
-function ControlButton({ label, onClick, disabled, ariaLabel, children }: {
+function ControlButton({ label, shortcutKeys, onClick, disabled, ariaLabel, children }: {
   label: string;
+  shortcutKeys?: string[];
   onClick: () => void;
   disabled?: boolean;
   ariaLabel: string;
@@ -89,8 +92,11 @@ function ControlButton({ label, onClick, disabled, ariaLabel, children }: {
           whiteSpace: 'nowrap',
           pointerEvents: 'none',
           zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
         }}>
-          {label}
+          <span>{label}</span>
+          {shortcutKeys && <ShortcutBadge keys={shortcutKeys} />}
         </div>
       )}
     </div>
@@ -152,7 +158,8 @@ export function CanvasControls({
       >
         {/* Zoom group */}
         <ControlButton
-          label="Zoom out (⌘ −)"
+          label="Zoom out"
+          shortcutKeys={['⌘', '−']}
           onClick={() => zoomOut({ duration: 0 })}
           disabled={!canZoomOut}
           ariaLabel="Zoom out"
@@ -185,7 +192,8 @@ export function CanvasControls({
           {zoomPercent}%
         </div>
         <ControlButton
-          label="Zoom in (⌘ +)"
+          label="Zoom in"
+          shortcutKeys={['⌘', '+']}
           onClick={() => zoomIn({ duration: 0 })}
           disabled={!canZoomIn}
           ariaLabel="Zoom in"

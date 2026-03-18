@@ -1,0 +1,1359 @@
+{
+  "imageToVideo": [
+    {
+      "models": [
+        {
+          "badges": ["HOT", "NEW"],
+          "estimatedTime": {
+            "11": 2,
+            "11_sound": 2,
+            "12": 2,
+            "9_sound": 2,
+            "10_sound": 2,
+            "12_sound": 2,
+            "5_sound": 1,
+            "8_sound": 1,
+            "4_sound": 1,
+            "6_sound": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 2,
+            "7_sound": 1,
+            "10": 2
+          },
+          "name": "Seedance 1.5 pro",
+          "promptPlaceholderKey": "kling2-6PromptPlaceholder",
+          "remark": "",
+          "id": "seedance-1.5-pro",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [4, 5, 6, 7, 8, 9, 10, 11, 12]
+          },
+          "pricing": {
+            "11": 1.65,
+            "11_sound": 3.3,
+            "12": 1.8,
+            "9_sound": 2.7,
+            "10_sound": 3,
+            "12_sound": 3.6,
+            "5_sound": 1.5,
+            "8_sound": 2.4,
+            "4_sound": 1.2,
+            "6_sound": 1.8,
+            "4": 0.6,
+            "5": 0.75,
+            "6": 0.9,
+            "7": 1.05,
+            "8": 1.2,
+            "9": 1.35,
+            "7_sound": 2.1,
+            "10": 1.5
+          },
+          "status": 1,
+          "tags": ["Audio Support", "End Frame"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 3,
+            "720_5": 2,
+            "720_12": 3.5,
+            "720_10": 3,
+            "1080_12": 3.5
+          },
+          "name": "Seedance 1.0 Pro Fast",
+          "remark": "",
+          "id": "seedance-1.0-pro-fast",
+          "sort": 2,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 12]
+          },
+          "pricing": {
+            "1080_5": 1.5,
+            "1080_10": 3,
+            "720_5": 1,
+            "720_12": 2.4,
+            "720_10": 2,
+            "1080_12": 3.6
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 3,
+            "1080_10": 4,
+            "720_5": 3,
+            "720_12": 5,
+            "720_10": 4,
+            "1080_12": 5
+          },
+          "name": "Seedance 1.0 Pro",
+          "remark": "",
+          "id": "seedance-1.0-pro",
+          "sort": 3,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 12]
+          },
+          "pricing": {
+            "1080_5": 3,
+            "1080_10": 6,
+            "720_5": 2,
+            "720_12": 4.8,
+            "720_10": 4,
+            "1080_12": 7.2
+          },
+          "status": 1,
+          "tags": ["End Frame"]
+        }
+      ],
+      "providerId": "seedance",
+      "sort": 4,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/seedance.png",
+      "providerName": "Seedance",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": ["HOT", "NEW"],
+          "estimatedTime": {
+            "5": 3,
+            "10_sound": 5,
+            "5_sound": 4,
+            "10": 4
+          },
+          "name": "Kling 2.6",
+          "promptPlaceholderKey": "kling2-6PromptPlaceholder",
+          "remark": "",
+          "id": "kling-v2-6-pro",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [5, 10]
+          },
+          "pricing": {
+            "5": 2.5,
+            "10_sound": 10,
+            "5_sound": 5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": ["NEW"],
+          "estimatedTime": {
+            "1080_4": 3,
+            "1080_5": 4,
+            "1080_10": 9,
+            "1080_6": 4,
+            "1080_7": 7,
+            "1080_3": 3,
+            "1080_8": 8,
+            "1080_9": 9
+          },
+          "name": "Kling O1 Reference-to-Video",
+          "promptPlaceholderKey": "imageToVideoKlingO1PromptPlaceholder",
+          "remark": "",
+          "id": "kling-video-o1-pro",
+          "sort": 2,
+          "parameters": {
+            "imageOptional": true,
+            "inputImageMode": "multiImage",
+            "promptSupport": ["supportRefPrompt"],
+            "resolutions": [1080],
+            "durations": [3, 4, 5, 6, 7, 8, 9, 10],
+            "maxRefImageCount": 7,
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "1080_4": 4,
+            "1080_5": 5,
+            "1080_10": 10,
+            "1080_6": 6,
+            "1080_7": 7,
+            "1080_3": 3,
+            "1080_8": 8,
+            "1080_9": 9
+          },
+          "status": 1,
+          "tags": ["Reference to Video"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 3
+          },
+          "name": "Kling 2.5 Turbo Pro",
+          "remark": "",
+          "id": "kling-2.5-turbo-pro",
+          "sort": 3,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [5, 10]
+          },
+          "pricing": {
+            "1080_5": 4,
+            "1080_10": 8
+          },
+          "status": 1,
+          "tags": ["End Frame"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 4
+          },
+          "name": "Kling 2.5 Turbo Std",
+          "remark": "",
+          "id": "kling-2.5-turbo-std",
+          "sort": 4,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [5, 10]
+          },
+          "pricing": {
+            "1080_5": 2,
+            "1080_10": 4
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "kling",
+      "sort": 1,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "providerName": "Kling 2.6/O1",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": ["HOT"],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Sora 2",
+          "remark": "",
+          "id": "gpt-sora2",
+          "sort": 1,
+          "parameters": {
+            "noRealisticHumanFigures": true,
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [10, 15],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "15": 5,
+            "10": 3.5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 10
+          },
+          "name": "Sora 2 Pro",
+          "remark": "",
+          "id": "gpt-sora2-pro",
+          "sort": 2,
+          "parameters": {
+            "noRealisticHumanFigures": true,
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [10, 15, 25],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "25": 10,
+            "15": 7.5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        }
+      ],
+      "providerId": "sora2",
+      "sort": 2,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/sora.png",
+      "providerName": "Sora 2",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1",
+          "remark": "",
+          "id": "gemini-veo-3.1",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "nativeAudio": true,
+            "durationByResolution": {
+              "1080": [8],
+              "720": [4, 6, 8],
+              "2160": [8]
+            },
+            "promptSupport": ["positive"],
+            "durations": [4, 6, 8],
+            "resolutions": [720, 1080, 2160],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 8.8,
+            "720_6": 6.6,
+            "720_4_sound": 8.8,
+            "720_4": 4.4,
+            "720_6_sound": 13.2,
+            "1080_8_sound": 17.6,
+            "1080_8": 8.8,
+            "2160_8": 26.4,
+            "2160_8_sound": 26.4,
+            "720_8_sound": 17.6
+          },
+          "status": 1,
+          "tags": ["Audio Support", "End Frame"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1 Reference to video",
+          "remark": "",
+          "id": "gemini-veo-3.1-ref",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "multiImage",
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [8],
+            "resolutions": [720, 1080, 2160],
+            "maxRefImageCount": 3,
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 8.8,
+            "1080_8_sound": 17.6,
+            "1080_8": 8.8,
+            "2160_8": 26.4,
+            "2160_8_sound": 26.4,
+            "720_8_sound": 17.6
+          },
+          "status": 1,
+          "tags": ["Reference to Video", "Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1 Fast",
+          "remark": "",
+          "id": "gemini-veo-3.1-fast",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "nativeAudio": true,
+            "durationByResolution": {
+              "1080": [8],
+              "720": [4, 6, 8],
+              "2160": [8]
+            },
+            "promptSupport": ["positive"],
+            "durations": [4, 6, 8],
+            "resolutions": [720, 1080, 2160],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 4.8,
+            "720_6": 3.6,
+            "720_4_sound": 3.6,
+            "720_4": 2.4,
+            "720_6_sound": 5.4,
+            "1080_8_sound": 7.2,
+            "1080_8": 4.8,
+            "2160_8": 16,
+            "2160_8_sound": 16,
+            "720_8_sound": 7.2
+          },
+          "status": 1,
+          "tags": ["Audio Support", "End Frame"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1 Fast Reference to video",
+          "remark": "",
+          "id": "gemini-veo-3.1-fast-ref",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "multiImage",
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [8],
+            "resolutions": [720, 1080, 2160],
+            "maxRefImageCount": 3,
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 4.8,
+            "1080_8_sound": 7.2,
+            "1080_8": 4.8,
+            "2160_8": 16,
+            "2160_8_sound": 16,
+            "720_8_sound": 7.2
+          },
+          "status": 1,
+          "tags": ["Reference to Video", "Audio Support"]
+        }
+      ],
+      "providerId": "gemini",
+      "sort": 3,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/gemini-color.png",
+      "providerName": "Gemini",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "MiniMax-Hailuo-02",
+          "remark": "",
+          "id": "minimax-hailuo-02",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "startEndFrame",
+            "durationByResolution": {
+              "1080": [6],
+              "768": [6, 10]
+            },
+            "promptSupport": ["positive"],
+            "durations": [6, 10],
+            "resolutions": [768, 1080],
+            "ratios": []
+          },
+          "pricing": {
+            "768_6": 1.6,
+            "768_8": 3.2,
+            "1080_6": 2.8
+          },
+          "status": 1,
+          "tags": ["End Frame"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "MiniMax-Hailuo-2.3",
+          "remark": "",
+          "id": "minimax-hailuo-2.3",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "durationByResolution": {
+              "1080": [6],
+              "768": [6, 10]
+            },
+            "promptSupport": ["positive"],
+            "durations": [6, 10],
+            "resolutions": [768, 1080],
+            "ratios": []
+          },
+          "pricing": {
+            "768_6": 1.6,
+            "768_8": 3.2,
+            "1080_6": 2.8
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "minimax",
+      "sort": 4,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/minimax-color.png",
+      "providerName": "Minimax",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_4": 3,
+            "1080_5": 4,
+            "1080_10": 9,
+            "1080_6": 4,
+            "1080_7": 7,
+            "1080_2": 1,
+            "1080_3": 3,
+            "1080_8": 8,
+            "1080_9": 9
+          },
+          "name": "Vidu Q2 Reference to Video",
+          "remark": "",
+          "id": "vidu-q2-ref",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "multiImage",
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "maxRefImageCount": 7,
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "1080_4": 4,
+            "1080_5": 4.5,
+            "1080_10": 7,
+            "1080_6": 5,
+            "1080_7": 5.5,
+            "1080_2": 3,
+            "1080_3": 3.5,
+            "1080_8": 6,
+            "1080_9": 6.5
+          },
+          "status": 1,
+          "tags": ["Reference to Video"]
+        }
+      ],
+      "providerId": "vidu",
+      "sort": 5,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/vidu.png",
+      "providerName": "Vidu Q2 Reference to Video",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "720_10_sound": 6,
+            "1080_5": 3,
+            "1080_10": 6,
+            "1080_15_sound": 10,
+            "720_5": 3,
+            "720_5_sound": 3,
+            "720_15_sound": 10,
+            "1080_10_sound": 6,
+            "1080_15": 10,
+            "720_10": 6,
+            "1080_5_sound": 3,
+            "720_15": 10
+          },
+          "name": "Wan 2.6",
+          "remark": "",
+          "id": "qwen-wan2.6-i2v",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 15]
+          },
+          "pricing": {
+            "720_10_sound": 7,
+            "1080_5": 6,
+            "1080_10": 12,
+            "1080_15_sound": 18,
+            "720_5": 3.5,
+            "720_5_sound": 3.5,
+            "720_15_sound": 10.5,
+            "1080_10_sound": 12,
+            "1080_15": 18,
+            "720_10": 7,
+            "1080_5_sound": 6,
+            "720_15": 10.5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        }
+      ],
+      "providerId": "qwen",
+      "sort": 6,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/qwen.png",
+      "providerName": "Wan 2.6",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 1,
+            "10": 1
+          },
+          "name": "Lite",
+          "remark": "",
+          "id": "topview-lite",
+          "sort": 1,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "5": 2.5,
+            "10": 3.5
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 1,
+            "10": 3
+          },
+          "name": "Pro",
+          "remark": "",
+          "id": "topview-pro",
+          "sort": 2,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "5": 3.5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 3,
+            "10": 4
+          },
+          "name": "Plus",
+          "remark": "",
+          "id": "topview-plus",
+          "sort": 3,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "5": 5,
+            "10": 10
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 4,
+            "10": 10
+          },
+          "name": "Best",
+          "remark": "",
+          "id": "topview-best",
+          "sort": 4,
+          "parameters": {
+            "inputImageMode": "singleImage",
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "5": 10,
+            "10": 20
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "topview",
+      "sort": 7,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/topview.png",
+      "providerName": "Topview",
+      "status": 1
+    }
+  ],
+  "videoEdit": [
+    {
+      "models": [
+        {
+          "badges": ["NEW"],
+          "estimatedTime": {
+            "default": 5
+          },
+          "name": "Kling O1 Video-Edit",
+          "promptPlaceholderKey": "videoEditKlingO1PromptPlaceholder",
+          "remark": "",
+          "id": "kling-video-o1-pro",
+          "sort": 1,
+          "parameters": {
+            "imageOptional": true,
+            "inputImageMode": "multiImage",
+            "keepVideoSound": true,
+            "videoEditMode": ["base", "feature"],
+            "promptSupport": ["supportRefPrompt"],
+            "resolutions": [1080],
+            "maxRefImageCount": 4,
+            "inputVideoMode": "singleVideo"
+          },
+          "pricing": {
+            "per_second": 1.5
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "kling",
+      "sort": 1,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "providerName": "Kling O1 Video-Edit",
+      "status": 1
+    }
+  ],
+  "textToVideo": [
+    {
+      "models": [
+        {
+          "badges": ["HOT", "NEW"],
+          "estimatedTime": {
+            "11": 2,
+            "11_sound": 2,
+            "12": 2,
+            "9_sound": 2,
+            "10_sound": 2,
+            "12_sound": 2,
+            "5_sound": 1,
+            "8_sound": 1,
+            "4_sound": 1,
+            "6_sound": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 2,
+            "7_sound": 1,
+            "10": 2
+          },
+          "name": "Seedance 1.5 pro",
+          "promptPlaceholderKey": "kling2-6PromptPlaceholder",
+          "remark": "",
+          "id": "seedance-1.5-pro",
+          "sort": 1,
+          "parameters": {
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [4, 5, 6, 7, 8, 9, 10, 11, 12],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "11": 1.65,
+            "11_sound": 3.3,
+            "12": 1.8,
+            "9_sound": 2.7,
+            "10_sound": 3,
+            "12_sound": 3.6,
+            "5_sound": 1.5,
+            "8_sound": 2.4,
+            "4_sound": 1.2,
+            "6_sound": 1.8,
+            "4": 0.6,
+            "5": 0.75,
+            "6": 0.9,
+            "7": 1.05,
+            "8": 1.2,
+            "9": 1.35,
+            "7_sound": 2.1,
+            "10": 1.5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 3,
+            "720_5": 2,
+            "720_12": 3.5,
+            "720_10": 3,
+            "1080_12": 3.5
+          },
+          "name": "Seedance 1.0 Pro Fast",
+          "remark": "",
+          "id": "seedance-1.0-pro-fast",
+          "sort": 2,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 12],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "1080_5": 1.5,
+            "1080_10": 3,
+            "720_5": 1,
+            "720_12": 2.4,
+            "720_10": 2,
+            "1080_12": 3.6
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 3,
+            "1080_10": 4,
+            "720_5": 3,
+            "720_12": 5,
+            "720_10": 4,
+            "1080_12": 5
+          },
+          "name": "Seedance 1.0 Pro",
+          "remark": "",
+          "id": "seedance-1.0-pro",
+          "sort": 3,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 12],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "1080_5": 3,
+            "1080_10": 6,
+            "720_5": 2,
+            "720_12": 4.8,
+            "720_10": 4,
+            "1080_12": 7.2
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "seedance",
+      "sort": 4,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/seedance.png",
+      "providerName": "Seedance",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": ["HOT", "NEW"],
+          "estimatedTime": {
+            "5": 3,
+            "10_sound": 5,
+            "5_sound": 4,
+            "10": 4
+          },
+          "name": "Kling 2.6",
+          "promptPlaceholderKey": "kling2-6PromptPlaceholder",
+          "remark": "",
+          "id": "kling-v2-6-pro",
+          "sort": 1,
+          "parameters": {
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "5": 2.5,
+            "10_sound": 10,
+            "5_sound": 5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 3
+          },
+          "name": "Kling 2.5 Turbo Pro",
+          "remark": "",
+          "id": "kling-2.5-turbo-pro",
+          "sort": 1,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "1080_5": 4,
+            "1080_10": 8
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_5": 2,
+            "1080_10": 4
+          },
+          "name": "Kling 2.5 Turbo Std",
+          "remark": "",
+          "id": "kling-2.5-turbo-std",
+          "sort": 2,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "1080_5": 2,
+            "1080_10": 4
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "kling",
+      "sort": 1,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/kling.png",
+      "providerName": "Kling",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": ["HOT"],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Sora 2",
+          "remark": "",
+          "id": "gpt-sora2",
+          "sort": 1,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [10, 15],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "15": 5,
+            "10": 3.5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 10
+          },
+          "name": "Sora 2 Pro",
+          "remark": "",
+          "id": "gpt-sora2-pro",
+          "sort": 2,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [10, 15, 25],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "25": 10,
+            "15": 7.5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        }
+      ],
+      "providerId": "sora2",
+      "sort": 2,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/sora.png",
+      "providerName": "Sora 2",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1",
+          "remark": "",
+          "id": "gemini-veo-3.1",
+          "sort": 1,
+          "parameters": {
+            "nativeAudio": true,
+            "durationByResolution": {
+              "1080": [8],
+              "720": [4, 6, 8],
+              "2160": [8]
+            },
+            "promptSupport": ["positive"],
+            "durations": [4, 6, 8],
+            "resolutions": [720, 1080, 2160],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 8.8,
+            "720_6": 6.6,
+            "720_4_sound": 8.8,
+            "720_4": 4.4,
+            "720_6_sound": 13.2,
+            "1080_8_sound": 17.6,
+            "1080_8": 8.8,
+            "2160_8": 26.4,
+            "2160_8_sound": 26.4,
+            "720_8_sound": 17.6
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "Veo 3.1 Fast",
+          "remark": "",
+          "id": "gemini-veo-3.1-fast",
+          "sort": 1,
+          "parameters": {
+            "nativeAudio": true,
+            "durationByResolution": {
+              "1080": [8],
+              "720": [4, 6, 8],
+              "2160": [8]
+            },
+            "promptSupport": ["positive"],
+            "durations": [4, 6, 8],
+            "resolutions": [720, 1080, 2160],
+            "ratios": ["9:16", "16:9"]
+          },
+          "pricing": {
+            "720_8": 4.8,
+            "720_6": 3.6,
+            "720_4_sound": 3.6,
+            "720_4": 2.4,
+            "720_6_sound": 5.4,
+            "1080_8_sound": 7.2,
+            "1080_8": 4.8,
+            "2160_8": 16,
+            "2160_8_sound": 16,
+            "720_8_sound": 7.2
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        }
+      ],
+      "providerId": "gemini",
+      "sort": 3,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/gemini-color.png",
+      "providerName": "Gemini",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "MiniMax-Hailuo-02",
+          "remark": "",
+          "id": "minimax-hailuo-02",
+          "sort": 1,
+          "parameters": {
+            "durationByResolution": {
+              "1080": [6],
+              "768": [6, 10]
+            },
+            "promptSupport": ["positive"],
+            "durations": [6, 10],
+            "resolutions": [768, 1080],
+            "ratios": []
+          },
+          "pricing": {
+            "768_6": 1.6,
+            "768_8": 3.2,
+            "1080_6": 2.8
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "default": 7
+          },
+          "name": "MiniMax-Hailuo-2.3",
+          "remark": "",
+          "id": "minimax-hailuo-2.3",
+          "sort": 1,
+          "parameters": {
+            "durationByResolution": {
+              "1080": [6],
+              "768": [6, 10]
+            },
+            "promptSupport": ["positive"],
+            "durations": [6, 10],
+            "resolutions": [768, 1080],
+            "ratios": []
+          },
+          "pricing": {
+            "768_6": 1.6,
+            "768_8": 3.2,
+            "1080_6": 2.8
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "minimax",
+      "sort": 4,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/minimax-color.png",
+      "providerName": "Minimax",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "1080_4": 1,
+            "1080_5": 1,
+            "1080_10": 3,
+            "1080_6": 1,
+            "default": 1,
+            "1080_7": 2,
+            "1080_2": 1,
+            "1080_3": 1,
+            "1080_8": 2,
+            "1080_9": 3
+          },
+          "name": "Vidu Q2",
+          "remark": "",
+          "id": "vidu-q2-text",
+          "sort": 1,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "resolutions": [1080],
+            "durations": [2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "1080_4": 2,
+            "1080_5": 2.5,
+            "1080_10": 5,
+            "1080_6": 3,
+            "1080_7": 3.5,
+            "1080_2": 1,
+            "1080_3": 1.5,
+            "1080_8": 4,
+            "1080_9": 4.5
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "vidu",
+      "sort": 5,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/vidu.png",
+      "providerName": "Vidu Q2",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "720_10_sound": 6,
+            "1080_5": 3,
+            "1080_10": 6,
+            "1080_15_sound": 10,
+            "720_5": 3,
+            "720_5_sound": 3,
+            "720_15_sound": 10,
+            "1080_10_sound": 6,
+            "1080_15": 10,
+            "720_10": 6,
+            "1080_5_sound": 3,
+            "720_15": 10
+          },
+          "name": "Wan 2.6",
+          "remark": "",
+          "id": "qwen-wan2.6-t2v",
+          "sort": 1,
+          "parameters": {
+            "nativeAudio": true,
+            "promptSupport": ["positive"],
+            "resolutions": [720, 1080],
+            "durations": [5, 10, 15],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "720_10_sound": 7,
+            "1080_5": 6,
+            "1080_10": 12,
+            "1080_15_sound": 18,
+            "720_5": 3.5,
+            "720_5_sound": 3.5,
+            "720_15_sound": 10.5,
+            "1080_10_sound": 12,
+            "1080_15": 18,
+            "720_10": 7,
+            "1080_5_sound": 6,
+            "720_15": 10.5
+          },
+          "status": 1,
+          "tags": ["Audio Support"]
+        }
+      ],
+      "providerId": "qwen",
+      "sort": 6,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/qwen.png",
+      "providerName": "Wan 2.6",
+      "status": 1
+    },
+    {
+      "models": [
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 1,
+            "10": 1
+          },
+          "name": "Lite",
+          "remark": "",
+          "id": "topview-lite",
+          "sort": 1,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "5": 2.5,
+            "10": 3.5
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 1,
+            "10": 3
+          },
+          "name": "Pro",
+          "remark": "",
+          "id": "topview-pro",
+          "sort": 2,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "3:4", "1:1", "4:3", "16:9"]
+          },
+          "pricing": {
+            "5": 3.5,
+            "10": 5
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 3,
+            "10": 4
+          },
+          "name": "Plus",
+          "remark": "",
+          "id": "topview-plus",
+          "sort": 3,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "5": 5,
+            "10": 10
+          },
+          "status": 1,
+          "tags": []
+        },
+        {
+          "badges": [],
+          "estimatedTime": {
+            "5": 4,
+            "10": 10
+          },
+          "name": "Best",
+          "remark": "",
+          "id": "topview-best",
+          "sort": 4,
+          "parameters": {
+            "promptSupport": ["positive"],
+            "durations": [5, 10],
+            "ratios": ["9:16", "1:1", "16:9"]
+          },
+          "pricing": {
+            "5": 10,
+            "10": 20
+          },
+          "status": 1,
+          "tags": []
+        }
+      ],
+      "providerId": "topview",
+      "sort": 7,
+      "logoS3Path": "aigc-web/public/ai-creation/ai-video/model-logo/topview.png",
+      "providerName": "Topview",
+      "status": 1
+    }
+  ]
+}

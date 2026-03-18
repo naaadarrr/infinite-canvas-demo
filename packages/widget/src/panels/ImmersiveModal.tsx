@@ -20,6 +20,7 @@ export interface ImmersiveModalProps {
 }
 
 const MODAL_PADDING = 24;
+const MODAL_TOP_PADDING = 48;
 
 export function ImmersiveModal({
   open,
@@ -31,7 +32,7 @@ export function ImmersiveModal({
   footer,
   onClose,
   children,
-  maxWidth = 880,
+  maxWidth = 1800,
 }: ImmersiveModalProps) {
   const [visible, setVisible] = useState(false);
   const [animating, setAnimating] = useState(false);
@@ -67,11 +68,11 @@ export function ImmersiveModal({
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        zIndex: 1100,
         display: 'flex',
         alignItems: 'stretch',
         justifyContent: 'center',
-        padding: `${MODAL_PADDING}px ${MODAL_PADDING}px ${MODAL_PADDING}px ${MODAL_PADDING + 64}px`,
+        padding: `${MODAL_TOP_PADDING}px ${MODAL_PADDING}px ${MODAL_PADDING}px ${MODAL_PADDING + 64}px`,
         fontFamily: 'Inter, -apple-system, sans-serif',
       }}
     >
@@ -92,7 +93,8 @@ export function ImmersiveModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative',
-          width: '100%',
+          width: '84vw',
+          minWidth: 300,
           maxWidth,
           borderRadius: 16,
           background: '#000000',
@@ -126,25 +128,25 @@ export function ImmersiveModal({
           <X size={18} />
         </button>
 
-        {/* Header — fixed height, never shifts */}
+        {/* Header */}
         <div style={{
-          padding: '28px 32px 20px',
+          padding: '32px 32px 16px',
           flexShrink: 0,
           textAlign: 'center',
         }}>
           <h2 style={{
             margin: 0,
-            fontSize: 36,
+            fontSize: 32,
             fontFamily: 'Outfit, sans-serif',
             fontWeight: 600,
             color: '#fff',
-            lineHeight: '44px',
+            lineHeight: '40px',
           }}>
             {title}
           </h2>
           {subtitle && (
             <p style={{
-              margin: '6px 0 0',
+              margin: '4px 0 0',
               fontSize: 13,
               color: 'rgba(255,255,255,0.4)',
               lineHeight: '18px',
@@ -156,7 +158,7 @@ export function ImmersiveModal({
             <div style={{
               display: 'flex',
               gap: 0,
-              marginTop: 16,
+              marginTop: 12,
               justifyContent: 'center',
               borderBottom: '1px solid rgba(255,255,255,0.06)',
             }}>
@@ -213,11 +215,11 @@ export function ImmersiveModal({
         {/* Footer */}
         {footer && (
           <div style={{
-            padding: '16px 32px',
+            padding: '16px 32px 48px',
             borderTop: '1px solid rgba(255,255,255,0.06)',
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
+            gap: 12,
             flexShrink: 0,
           }}>
             {footer}

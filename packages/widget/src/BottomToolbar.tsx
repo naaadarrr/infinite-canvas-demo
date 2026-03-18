@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { EditModeIcon, PanModeIcon, LayersIcon } from './icons';
 import { Plus } from 'lucide-react';
+import { ShortcutBadge } from './components/ShortcutBadge';
 
-const TOOLBAR_BG = 'rgba(28, 30, 34, 1)';
+const TOOLBAR_BG = 'rgba(31, 31, 31, 1)';
 const TOOLBAR_BORDER = '1px solid rgba(255,255,255,0.08)';
 const TOOLBAR_SHADOW = '0 4px 16px rgba(0,0,0,0.2)';
 const DIVIDER_COLOR = 'rgba(255,255,255,0.06)';
@@ -30,6 +31,7 @@ function ZoomInIcon() {
 
 function ToolbarButton({
   label,
+  shortcutKeys,
   active,
   disabled,
   cursorOverride,
@@ -37,6 +39,7 @@ function ToolbarButton({
   children,
 }: {
   label: string;
+  shortcutKeys?: string[];
   active?: boolean;
   disabled?: boolean;
   /** Override the button cursor (e.g. 'grab' for the Hand tool when active). */
@@ -72,13 +75,13 @@ function ToolbarButton({
         onMouseDown={() => setPressed(true)}
         onMouseUp={() => setPressed(false)}
         style={{
-          width: 28,
-          height: 28,
+          width: 32,
+          height: 32,
           padding: 0,
-          borderRadius: 8,
+          borderRadius: 4,
           border: 'none',
           background: bg,
-          color: disabled ? 'rgba(255,255,255,0.25)' : active ? '#000000' : 'rgba(255,255,255,0.7)',
+          color: disabled ? 'rgba(255,255,255,0.25)' : active ? '#000000' : 'rgba(255,255,255,0.95)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -106,9 +109,12 @@ function ToolbarButton({
             whiteSpace: 'nowrap',
             pointerEvents: 'none',
             zIndex: 10,
+            display: 'flex',
+            alignItems: 'center',
           }}
         >
-          {label}
+          <span>{label}</span>
+          {shortcutKeys && <ShortcutBadge keys={shortcutKeys} />}
         </div>
       )}
     </div>
@@ -116,10 +122,11 @@ function ToolbarButton({
 }
 
 function Divider() {
-  return <div style={{ width: 1, height: 18, background: DIVIDER_COLOR, margin: '0 4px', flexShrink: 0 }} />;
+  return <div style={{ width: 1, height: 24, background: DIVIDER_COLOR, margin: '0 4px', flexShrink: 0 }} />;
 }
 
 export type BottomToolbarProps = {
+  visible?: boolean;
   toolMode: 'pan' | 'edit';
   onToolModeChange: (mode: 'pan' | 'edit') => void;
   viewport: { x: number; y: number; zoom: number };
@@ -133,6 +140,7 @@ export type BottomToolbarProps = {
 };
 
 export function BottomToolbar({
+  visible = true,
   toolMode,
   onToolModeChange,
   viewport,
@@ -144,7 +152,8 @@ export function BottomToolbar({
   sidebarOffset = 0,
   onAddAsset,
 }: BottomToolbarProps) {
-  const zoomPercent = Math.round(viewport.zoom * 100);
+  const displayZoom = Math.round(viewport.zoom * 100);
+
   const canZoomIn = viewport.zoom < 3.99;
   const canZoomOut = viewport.zoom > 0.11;
   const [zoomHovered, setZoomHovered] = React.useState(false);
@@ -187,9 +196,11 @@ export function BottomToolbar({
         position: 'absolute',
         bottom: 12,
         left: `calc(50% + ${sidebarOffset / 2}px)`,
-        transform: 'translateX(-50%)',
-        zIndex: 20,
-        pointerEvents: 'auto',
+        transform: visible ? 'translateX(-50%) translateY(0)' : 'translateX(-50%) translateY(28px)',
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1), transform 0.7s cubic-bezier(0.22, 1, 0.36, 1)',
+        zIndex: 200,
+        pointerEvents: visible ? 'auto' : 'none',
       }}
     >
       <div
@@ -197,8 +208,8 @@ export function BottomToolbar({
           display: 'flex',
           alignItems: 'center',
           gap: 4,
-          padding: '10px 8px',
-          borderRadius: 14,
+          padding: 8,
+          borderRadius: 8,
           background: TOOLBAR_BG,
           border: TOOLBAR_BORDER,
           boxShadow: TOOLBAR_SHADOW,
@@ -206,11 +217,12 @@ export function BottomToolbar({
         }}
       >
         {/* Select / Hand section */}
-        <ToolbarButton label="Select (V)" active={toolMode === 'edit'} onClick={() => onToolModeChange('edit')}>
+        <ToolbarButton label="Select" shortcutKeys={['V']} active={toolMode === 'edit'} onClick={() => onToolModeChange('edit')}>
           <EditModeIcon size={20} />
         </ToolbarButton>
         <ToolbarButton
-          label="Hand (H)"
+          label="Hand"
+          shortcutKeys={['H']}
           active={toolMode === 'pan'}
           cursorOverride={toolMode === 'pan' ? 'grab' : undefined}
           onClick={() => onToolModeChange('pan')}
@@ -240,7 +252,7 @@ export function BottomToolbar({
         <Divider />
 
         {/* Zoom section */}
-        <ToolbarButton label="Zoom out (⌘ −)" disabled={!canZoomOut} onClick={handleZoomOut}>
+        <ToolbarButton label="Zoom out" shortcutKeys={['⌘', '−']} disabled={!canZoomOut} onClick={handleZoomOut}>
           <ZoomOutIcon />
         </ToolbarButton>
         
@@ -267,23 +279,23 @@ export function BottomToolbar({
               color: '#fff',
               fontSize: 12,
               fontWeight: 500,
-              height: 28,
+              height: 32,
               padding: 0,
             }}
           />
         ) : (
           <button
             type="button"
-            aria-label={`Zoom ${zoomPercent}%, click to set`}
+            aria-label={`Zoom ${Math.round(displayZoom)}%, click to set`}
             onClick={() => {
-              setTempZoomValue(zoomPercent.toString());
+              setTempZoomValue(String(Math.round(displayZoom)));
               setIsEditingZoom(true);
             }}
             onMouseEnter={() => setZoomHovered(true)}
             onMouseLeave={() => setZoomHovered(false)}
             style={{
               minWidth: 44,
-              height: 28,
+              height: 32,
               padding: '0 4px',
               borderRadius: 8,
               border: 'none',
@@ -294,16 +306,17 @@ export function BottomToolbar({
               fontSize: 12,
               lineHeight: '16px',
               fontWeight: 500,
-              color: zoomHovered ? '#fff' : 'rgba(255,255,255,0.6)',
+              color: zoomHovered ? '#fff' : 'rgba(255,255,255,0.95)',
               cursor: 'pointer',
               transition: 'background 120ms ease, color 120ms ease',
               userSelect: 'none',
+              fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {zoomPercent}%
+            {Math.round(displayZoom)}%
           </button>
         )}
-        <ToolbarButton label="Zoom in (⌘ +)" disabled={!canZoomIn} onClick={handleZoomIn}>
+        <ToolbarButton label="Zoom in" shortcutKeys={['⌘', '+']} disabled={!canZoomIn} onClick={handleZoomIn}>
           <ZoomInIcon />
         </ToolbarButton>
 

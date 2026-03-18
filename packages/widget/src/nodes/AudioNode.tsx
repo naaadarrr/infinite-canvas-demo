@@ -4,7 +4,7 @@ import type { AudioNodeData, RawDataItem } from '@tc/infinite-core';
 import { Download, RefreshCw, Play, Pause } from 'lucide-react';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { NodeLabelBar } from './NodeLabelBar';
-import { useToolbarVisibility } from './useToolbarVisibility';
+import { useToolbarVisibility, useLabelBarVisibility } from './useToolbarVisibility';
 import { useNodeSelection } from './useNodeSelection';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
@@ -32,6 +32,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
     return node?.position ?? nodeData.position;
   });
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const selectedCount = useStore((state) => state.nodes.filter((n) => n.selected).length);
   const rawItem = (nodeData as AudioNodeData & { raw?: RawDataItem }).raw;
   const status = String(rawItem?.status ?? '').toLowerCase();
   const isSkeleton = status === 'init';
@@ -200,6 +201,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
       label: 'Download',
       icon: Download,
       onClick: () => handleQuickAction('download', 'Download'),
+      iconOnly: true,
     });
 
     return actions;
@@ -219,6 +221,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
   const { effectiveSelected, handlePointerDown: handleNodePointerDown } = useNodeSelection(selected, containerRef);
   const showHighlight = effectiveSelected || dragging;
   const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed;
+  const showLabelBar = useLabelBarVisibility(effectiveSelected) && !isSkeleton && !isFailed;
   const scaleStateRef = React.useRef<{
     anchorX: number;
     anchorY: number;
@@ -340,12 +343,12 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         flexDirection: 'column',
         gap: '12px',
         cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
-        outline: effectiveSelected
-          ? `${1 / zoom}px solid #5857FD`
+        outline: effectiveSelected && !dragging
+          ? `${1 / zoom}px solid #7781FF`
           : isFailed
             ? `${1 / zoom}px solid #ef4444`
             : isHovered
-              ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+              ? `${1 / zoom}px solid rgba(119,129,255,0.7)`
               : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
@@ -396,11 +399,11 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
           onChange={canEdit ? handleRatingChange : undefined}
         />
       )}
-      {showHighlight && (
+      {showHighlight && selectedCount <= 1 && !dragging && (
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
-            const handleSize = 12 / zoom;
+            const handleSize = 8 / zoom;
             const handleOffset = -(handleSize / 2);
             return (
               <div
@@ -409,19 +412,28 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: handleSize,
-                  height: handleSize,
-                  borderRadius: 2 / zoom,
-                  background: '#fff',
-                  border: `${1 / zoom}px solid #5857FD`,
-                  cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
                   top: corner.includes('top') ? handleOffset : 'auto',
                   bottom: corner.includes('bottom') ? handleOffset : 'auto',
+                  width: handleSize,
+                  height: handleSize,
                   zIndex: 2,
                 }}
-              />
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    background: '#fff',
+                    border: '1px solid #7781FF',
+                    cursor: cursorStyle,
+                    boxSizing: 'border-box',
+                    transform: `scale(${1 / zoom})`,
+                    transformOrigin: '0 0',
+                  }}
+                />
+              </div>
             );
           })}
         </>
@@ -707,7 +719,7 @@ export function AudioNode({ data, selected, dragging }: NodeProps) {
         </div>
       ) : null}
       <NodeLabelBar
-        isVisible={showToolbar}
+        isVisible={showLabelBar}
         nodeType={nodeData.type}
         label={rawItem?.title || 'Audio'}
         sizeLabel={`${Math.round(nodeData.size.width)} × ${Math.round(nodeData.size.height)}`}

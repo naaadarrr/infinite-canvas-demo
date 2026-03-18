@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, LayoutGrid, Crown, CloudUpload, RefreshCw, ChevronRight } from 'lucide-react';
+import { Upload, LayoutGrid, Crown, CloudUpload, RefreshCw, ChevronRight, Paintbrush } from 'lucide-react';
 import { ImmersiveModal } from './ImmersiveModal';
 
 // ── Categorized template data with generated placeholder thumbnails ──────────
@@ -136,6 +136,7 @@ type BgMode = 'image' | 'prompt';
 
 export interface ProductPhotoState {
   productImageUrl: string;
+  productMaskDataUrl?: string;
   backgroundPrompt: string;
   backgroundImageUrl: string;
   selectedTemplateId: string;
@@ -144,6 +145,7 @@ export interface ProductPhotoState {
 
 const DEFAULT_STATE: ProductPhotoState = {
   productImageUrl: '',
+  productMaskDataUrl: undefined,
   backgroundPrompt: '',
   backgroundImageUrl: '',
   selectedTemplateId: '',
@@ -313,14 +315,14 @@ export function ProductPhotographyModal({
       open={open}
       title="Product Photography"
       onClose={onClose}
-      maxWidth={1400}
+      maxWidth={1800}
       footer={
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, width: '100%' }}>
           <button
             type="button"
             onClick={() => canSubmit && handleSubmit(false)}
             style={{
-              height: 40, width: 400, padding: '0 24px', borderRadius: 10, border: 'none',
+              height: 40, width: 400, padding: '0 24px', borderRadius: 12, border: 'none',
               fontSize: 16, fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               transition: 'all 120ms ease',
               background: canSubmit ? '#3643FF' : 'rgba(255,255,255,0.08)',
@@ -395,6 +397,7 @@ export function ProductPhotographyModal({
                   >
                     ×
                   </button>
+                  {/* Manually mask: shown when ProductPhotography is added */}
                 </div>
 
                 {/* Ratios */}
@@ -489,7 +492,7 @@ export function ProductPhotographyModal({
                       type="button"
                       onClick={() => update('productImageUrl', s.url)}
                       style={{
-                        width: 56, height: 56, borderRadius: 10, padding: 0,
+                        width: 56, height: 56, borderRadius: 12, padding: 0,
                         border: state.productImageUrl === s.url ? '2px solid #ffffff' : '2px solid transparent',
                         background: '#2c2c2c', cursor: 'pointer',
                         overflow: 'hidden', flexShrink: 0,
@@ -518,7 +521,7 @@ export function ProductPhotographyModal({
             {/* BG mode tabs — text-only, reference style */}
             <div style={{
               display: 'flex', gap: 0, padding: 3,
-              borderRadius: 10, background: 'rgba(255,255,255,0.04)',
+              borderRadius: 12, background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.06)',
             }}>
               <button type="button" onClick={() => setBgMode('image')} style={tabBtnStyle('image')}>
@@ -536,7 +539,7 @@ export function ProductPhotographyModal({
                 {state.backgroundImageUrl && (
                   <div style={{
                     position: 'relative', width: '100%', height: 100,
-                    borderRadius: 10, overflow: 'hidden', background: '#111', flexShrink: 0,
+                    borderRadius: 12, overflow: 'hidden', background: '#111', flexShrink: 0,
                   }}>
                     <img
                       src={state.backgroundImageUrl}
@@ -563,7 +566,7 @@ export function ProductPhotographyModal({
                 {/* Source tabs — pill style like Components/Snippets reference */}
                 <div style={{
                   display: 'flex', gap: 0, flexShrink: 0,
-                  borderRadius: 10, background: 'rgba(255,255,255,0.04)', padding: 3,
+                  borderRadius: 12, background: 'rgba(255,255,255,0.04)', padding: 3,
                 }}>
                   {([
                     { key: 'templates' as BgSourceMode, icon: <LayoutGrid size={13} />, label: 'Templates' },
@@ -641,7 +644,7 @@ export function ProductPhotographyModal({
                         <div
                           key={i}
                           style={{
-                            aspectRatio: '1', borderRadius: 10, overflow: 'hidden',
+                            aspectRatio: '1', borderRadius: 12, overflow: 'hidden',
                             background: 'rgba(255,255,255,0.04)',
                             border: '1px solid rgba(255,255,255,0.06)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -678,7 +681,7 @@ export function ProductPhotographyModal({
                   rows={6}
                   style={{
                     width: '100%', flex: 1,
-                    padding: '12px 14px', borderRadius: 10,
+                    padding: '12px 14px', borderRadius: 12,
                     border: '1px solid rgba(255,255,255,0.08)',
                     background: 'rgba(255,255,255,0.03)',
                     color: '#fff', fontSize: 13, lineHeight: '1.6',
@@ -690,6 +693,7 @@ export function ProductPhotographyModal({
             )}
           </div>
         </div>
+
     </ImmersiveModal>
   );
 }

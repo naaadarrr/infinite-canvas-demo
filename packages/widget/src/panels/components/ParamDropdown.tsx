@@ -74,12 +74,11 @@ export function ParamDropdown({ label, icon, value, options, onChange, renderOpt
         <div
           style={{
             position: 'absolute',
-            bottom: '100%',
+            top: 'calc(100% + 6px)',
             left: 0,
-            marginBottom: 6,
             padding: 4,
             borderRadius: 10,
-            background: '#1c1e22',
+            background: '#1e1e1e',
             border: '1px solid rgba(255,255,255,0.08)',
             boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
             zIndex: 10,

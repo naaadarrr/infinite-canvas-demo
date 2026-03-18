@@ -2,7 +2,8 @@ import React from 'react';
 import { NodeToolbar, Position, useStore } from '@xyflow/react';
 import { Video, Music, Image } from 'lucide-react';
 
-const typeIcons: Record<string, React.ComponentType<{ size?: number; style?: React.CSSProperties }>> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const typeIcons: Record<string, React.ComponentType<any>> = {
   IMAGE: Image,
   VIDEO: Video,
   AUDIO: Music,

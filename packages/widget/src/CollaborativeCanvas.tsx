@@ -13,17 +13,28 @@ import { getToolLabel } from './utils/toolLabels';
 import { DependencyFocusProvider } from './nodes/DependencyFocusContext';
 import { BoardTaskItem } from '@tc/infinite-core';
 import { EditModeIcon, LockModeIcon, PlusIcon, LayersIcon } from './icons';
-import { Upload, Image as ImageIcon, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, Frame, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Star, PenTool, Repeat, Maximize2, Rotate3d, ImagePlay, MoveDiagonal, Link2, CircleUser, ShoppingBag, UserPen, Speech, Command, Crown, type LucideIcon } from 'lucide-react';
+import { Upload, Image as ImageIcon, ImagePlus, Video, Send, X, Check, Paintbrush, Eraser, Undo2, Redo2, Plus, Sparkles, Share, UserPlus, ChevronDown, LayoutGrid, Frame, User, AudioLines, Mic, ScanFace, Box, Blend, Clapperboard, Type, Repeat2, Smile, ArrowUpRight, ArrowUp, RotateCcw, Tv, Wand2, ScanSearch, PersonStanding, Zap, Star, PenTool, Repeat, Maximize2, Rotate3d, ImagePlay, MoveDiagonal, Link2, CircleUser, ShoppingBag, UserPen, MicVocal, Command, Crown, type LucideIcon } from 'lucide-react';
 import { CanvasRoleProvider } from './CanvasRoleContext';
 import { SelectModeProvider, SelectModeState } from './SelectModeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { BottomToolbar } from './BottomToolbar';
 import { TextToImagePanel } from './panels/TextToImagePanel';
 import { ProductPhotographyModal } from './panels/ProductPhotographyModal';
+import { InpaintTutorialModal } from './panels/InpaintTutorialModal';
+import { ImageUpscaleModal } from './panels/ImageUpscaleModal';
+import { VideoUpscaleModal } from './panels/VideoUpscaleModal';
+import { AIVideoModal } from './panels/AIVideoModal';
+import type { AIVideoTab } from './panels/AIVideoModal';
 import type { ImageToolTab, TextToImageState } from './panels/TextToImagePanel';
 import { AiCreateProvider, type AiCreateContextValue } from './AiCreateContext';
 import type { ProductPhotoState } from './panels/ProductPhotographyModal';
+import { AIAvatarModal } from './panels/AIAvatarModal';
+import { VideoLipSyncModal } from './panels/VideoLipSyncModal';
+import { DesignMyAvatarModal } from './panels/DesignMyAvatarModal';
+import { ProductAvatarModal } from './panels/ProductAvatarModal';
 import { Camera } from 'lucide-react';
+import { MultiSelectToolbar, MultiSelectCornerHandles, type AlignDirection } from './MultiSelectBar';
+import { useMultiSelectInfo } from './hooks/useMultiSelectActions';
 
 const DEFAULT_SUBCANVAS_KEY = '__default__';
 const FLOW_UI = {
@@ -188,7 +199,7 @@ const TOOLBAR_MENU_STYLE: React.CSSProperties = {
   boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
   userSelect: 'none',
   overflow: 'hidden',
-  padding: '4px',
+  padding: 8,
   minWidth: 200,
 };
 
@@ -303,7 +314,7 @@ function ToolbarMenuItem({
         whiteSpace: 'nowrap',
       }}
     >
-      <Icon size={18} color={hovered ? '#fff' : '#A3A3A3'} style={{ flexShrink: 0 }} />
+      <Icon size={18} color={hovered ? '#fff' : '#D4D4D4'} style={{ flexShrink: 0 }} />
       {label}
     </button>
   );
@@ -342,6 +353,10 @@ export interface CollaborativeCanvasProps {
   userAvatarUrl?: string;
   /** 用户积分/credits 数量 */
   userCredits?: number;
+  /** AI Avatar 模型预览视频 URL（如 /avatar-demo.mp4，需 host 在 public 提供） */
+  modelPreviewVideoUrl?: string;
+  /** AI Avatar 模型预览封面图 URL */
+  modelPreviewPosterUrl?: string;
 }
 
 export function CollaborativeCanvas({
@@ -366,6 +381,8 @@ export function CollaborativeCanvas({
   topBarLogoUrl,
   userAvatarUrl,
   userCredits,
+  modelPreviewVideoUrl,
+  modelPreviewPosterUrl,
 }: CollaborativeCanvasProps) {
   const resolvedRole = role ?? (invisible ? 'viewer' : 'editor');
   const isViewer = resolvedRole === 'viewer';
@@ -428,8 +445,9 @@ export function CollaborativeCanvas({
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
-    type: 'canvas' | 'node';
+    type: 'canvas' | 'node' | 'multi-node';
     nodeId?: string;
+    nodeIds?: string[];
     exportSubmenuOpen?: boolean;
   } | null>(null);
   const [sessionBlocked, setSessionBlocked] = useState<{ message: string } | null>(null);
@@ -446,8 +464,39 @@ export function CollaborativeCanvas({
   });
 
   const [layersPanelOpen, setLayersPanelOpen] = useState(false);
+
+  const selectedNodes = useMemo(() => nodes.filter((n) => n.selected), [nodes]);
+  const multiSelectInfo = useMultiSelectInfo(selectedNodes);
+
+  // Snapshot of selected node IDs — updated whenever selection changes.
+  // Used by Shift+2 because React Flow clears selection on Shift keydown
+  // (multiSelectionKeyCode="Shift") before the digit key arrives.
+  const lastSelectedIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    if (selectedNodes.length > 0) {
+      lastSelectedIdsRef.current = selectedNodes.map((n) => n.id);
+    }
+  }, [selectedNodes]);
   const [layoutPanelOpen, setLayoutPanelOpen] = useState(false);
   const layoutPanelRef = useRef<HTMLDivElement | null>(null);
+
+  // Inpaint tutorial modal (shown before entering focus mode from sidebar, or from quick action toolbar)
+  const [inpaintTutorialOpen, setInpaintTutorialOpen] = useState<{ open: boolean; initialImageUrl?: string }>({ open: false });
+
+  // Image Upscale immersive modal
+  const [imageUpscaleOpen, setImageUpscaleOpen] = useState(false);
+
+  // Video Upscale immersive modal
+  const [videoUpscaleOpen, setVideoUpscaleOpen] = useState(false);
+
+  // Phase 3 Avatar modals
+  const [aiAvatarModal, setAiAvatarModal] = useState<{ open: boolean; initialAvatarUrl?: string }>({ open: false });
+  const [lipSyncModal, setLipSyncModal] = useState<{ open: boolean; initialVideoUrl?: string }>({ open: false });
+  const [designAvatarOpen, setDesignAvatarOpen] = useState(false);
+  const [productAvatarModal, setProductAvatarModal] = useState<{ open: boolean; initialProductImageUrl?: string }>({ open: false });
+
+  const isImmersiveModalOpen = imageUpscaleOpen || videoUpscaleOpen || inpaintTutorialOpen.open
+    || aiAvatarModal.open || lipSyncModal.open || designAvatarOpen || productAvatarModal.open;
 
   // Inpaint focus mode
   const [inpaintFocus, setInpaintFocus] = useState<{
@@ -488,6 +537,10 @@ export function CollaborativeCanvas({
   // Cooldown: suppress placeholder panel activation briefly after modal close
   const ppClosedAtRef = useRef<number>(0);
   const reactFlowInstanceRef = useRef<ReactFlowInstance<FlowNode<CanvasNodeData>, Edge> | null>(null);
+  const [isFlowReady, setIsFlowReady] = useState(false);
+  const [canvasReady, setCanvasReady] = useState(false);
+  const [toolbarVisible, setToolbarVisible] = useState(false);
+  const initialMediaLoadedRef = useRef(false);
 
   // Re-activate creation panel when clicking a placeholder/draft node.
   // Uses a callback instead of a nodes-dependent useEffect to avoid the race
@@ -562,6 +615,115 @@ export function CollaborativeCanvas({
     const hash = Array.from(userId).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
     return palette[hash % palette.length];
   }, [userId]);
+
+  useEffect(() => {
+    if (canvasReady) {
+      const timer = setTimeout(() => setToolbarVisible(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [canvasReady]);
+
+  useEffect(() => {
+    // Don't start until both ReactFlow is ready AND data has been seeded.
+    // readyForRawMergeRef is set synchronously before setNodes() in the seeding
+    // path, so by the time this effect fires (after React commit) it is reliable.
+    if (initialMediaLoadedRef.current || !readyForRawMergeRef.current || !isFlowReady) {
+      return;
+    }
+    // Wait for actual nodes data — if still empty, a subsequent effect run
+    // (triggered by the nodes state change) will catch it.
+    if (nodes.length === 0) {
+      return;
+    }
+
+    initialMediaLoadedRef.current = true;
+
+    // Hard fallback: never leave the overlay blocking forever
+    const fallbackTimer = setTimeout(() => setCanvasReady(true), 6000);
+
+    const revealAfterPaint = () => {
+      clearTimeout(fallbackTimer);
+      // Two rAFs ensure the browser has composited the decoded pixels to screen
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          setCanvasReady(true);
+        });
+      });
+    };
+
+    const hasMediaNodes = nodes.some(
+      n => (n.type === 'image' || n.type === 'video') && typeof n.url === 'string' && n.url.length > 0
+    );
+
+    if (!hasMediaNodes) {
+      // No image/video content — reveal after InfiniteCanvas's extra render cycle
+      requestAnimationFrame(() => requestAnimationFrame(revealAfterPaint));
+      return () => clearTimeout(fallbackTimer);
+    }
+
+    // InfiniteCanvas has its own internal useEffect([initialNodes]) that runs
+    // ONE render cycle after CollaborativeCanvas's nodes state update. The actual
+    // <img> elements are only inserted into the ReactFlow DOM after that extra
+    // cycle. We must wait for them to exist before we can listen for their load.
+    //
+    // Strategy: poll with rAF until ReactFlow <img>/<video> elements appear,
+    // then wait for each one to fully decode (img.decode() = pixels ready to
+    // composite), then reveal. Retries cap at ~500ms to handle edge cases.
+    const container = canvasRef.current;
+
+    const waitForDomImages = (retriesLeft: number) => {
+      const imgs = container
+        ? (Array.from(container.querySelectorAll('.react-flow__node img')) as HTMLImageElement[])
+        : [];
+      const videos = container
+        ? (Array.from(container.querySelectorAll('.react-flow__node video')) as HTMLVideoElement[])
+        : [];
+
+      if (imgs.length === 0 && videos.length === 0) {
+        if (retriesLeft > 0) {
+          requestAnimationFrame(() => waitForDomImages(retriesLeft - 1));
+        } else {
+          // No img elements found after retries (e.g. all skeleton nodes) — reveal
+          revealAfterPaint();
+        }
+        return;
+      }
+
+      const imgPromises: Promise<void>[] = imgs.map(img => {
+        // Already decoded and painted
+        if (img.complete && img.naturalWidth > 0) {
+          return (img.decode ? img.decode().catch(() => {}) : Promise.resolve());
+        }
+        return new Promise<void>(resolve => {
+          const onLoad = () => {
+            (img.decode ? img.decode().catch(() => {}) : Promise.resolve()).then(() => resolve());
+          };
+          img.addEventListener('load', onLoad, { once: true });
+          img.addEventListener('error', () => resolve(), { once: true });
+        });
+      });
+
+      const videoPromises: Promise<void>[] = videos.map(video => {
+        if (video.readyState >= 1) return Promise.resolve(); // HAVE_METADATA
+        return new Promise<void>(resolve => {
+          video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+          video.addEventListener('error', () => resolve(), { once: true });
+        });
+      });
+
+      Promise.all([...imgPromises, ...videoPromises]).then(revealAfterPaint);
+    };
+
+    // Start after double rAF — gives InfiniteCanvas's internal useEffect time
+    // to run and ReactFlow to insert <img> nodes into the DOM
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        waitForDomImages(30); // ~500ms worth of retries at 60fps
+      });
+    });
+
+    return () => clearTimeout(fallbackTimer);
+  }, [nodes, isFlowReady]);
   const pushImmediateUpdates = useCallback(
     (updates: Array<{ nodeId: string; updates: Partial<CanvasNodeData> }>) => {
       if (!canEdit || updates.length === 0) {
@@ -1413,13 +1575,60 @@ export function CollaborativeCanvas({
   }, [collab.connected, sessionBlocked]);
   useEffect(() => {
     let spaceHeld = false;
+
+    // Capture-phase handler: runs BEFORE React Flow can consume Shift events
+    const handleKeyDownCapture = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) {
+        return;
+      }
+
+      // Shift+1: fit all to screen
+      if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && event.code === 'Digit1') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        reactFlowInstanceRef.current?.fitView({ padding: 0.15, duration: 300 });
+        return;
+      }
+      // Shift+2: zoom to selection
+      if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && event.code === 'Digit2') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const instance = reactFlowInstanceRef.current;
+        if (instance) {
+          const selectedIds = lastSelectedIdsRef.current;
+          if (selectedIds.length > 0) {
+            const rfNodes = instance.getNodes();
+            const targets = rfNodes.filter((n: any) => selectedIds.includes(n.id));
+            if (targets.length > 0) {
+              instance.fitView({ nodes: targets, padding: 0.1, maxZoom: 3, duration: 300 });
+            } else {
+              instance.fitView({ padding: 0.15, duration: 300 });
+            }
+          } else {
+            instance.fitView({ padding: 0.15, duration: 300 });
+          }
+        }
+        return;
+      }
+
+      // ⌘+= / ⌘++: zoom in (preventDefault to block browser zoom)
+      if ((event.metaKey || event.ctrlKey) && (event.key === '=' || event.key === '+')) {
+        event.preventDefault();
+        reactFlowInstanceRef.current?.zoomIn({ duration: 0 });
+        return;
+      }
+      // ⌘+-: zoom out (preventDefault to block browser zoom)
+      if ((event.metaKey || event.ctrlKey) && event.key === '-') {
+        event.preventDefault();
+        reactFlowInstanceRef.current?.zoomOut({ duration: 0 });
+        return;
+      }
+    };
+
+    // Bubble-phase handler: normal shortcuts
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-      if (!canEdit) {
-        return;
-      }
       const target = event.target as HTMLElement | null;
       const tagName = target?.tagName?.toLowerCase();
       if (tagName === 'input' || tagName === 'textarea' || target?.isContentEditable) {
@@ -1427,41 +1636,27 @@ export function CollaborativeCanvas({
       }
       const key = event.key.toLowerCase();
       const hasModifier = event.metaKey || event.ctrlKey || event.altKey;
-      if (!hasModifier && key === 'v') {
+
+      // F: fit all to screen
+      if (!hasModifier && !event.shiftKey && key === 'f') {
+        reactFlowInstanceRef.current?.fitView({ padding: 0.15, duration: 300 });
+        return;
+      }
+
+      if (!canEdit) {
+        return;
+      }
+      if (!hasModifier && !event.shiftKey && key === 'v') {
         setToolMode('edit');
         setActiveTool('select');
       }
-      if (!hasModifier && key === 'h') {
+      if (!hasModifier && !event.shiftKey && key === 'h') {
         setToolMode('pan');
-      }
-      if (!hasModifier && key === 'z') {
-        const instance = reactFlowInstanceRef.current;
-        if (instance) {
-          const selectedNodes = instance.getNodes().filter((n: any) => n.selected);
-          if (selectedNodes.length > 0) {
-            instance.fitView({ nodes: selectedNodes, padding: 0.3, duration: 300 });
-          }
-        }
-      }
-      if (!hasModifier && key === 'f') {
-        const instance = reactFlowInstanceRef.current;
-        if (instance) {
-          instance.fitView({ padding: 0.15, duration: 300 });
-        }
       }
       if (key === '/' || key === '?') {
         setShortcutsOpen((prev) => !prev);
       }
-      if ((event.metaKey || event.ctrlKey) && key === '0') {
-        event.preventDefault();
-        reactFlowInstanceRef.current?.fitView({ padding: 0.15, duration: 300 });
-      }
-      if ((event.metaKey || event.ctrlKey) && key === '1') {
-        event.preventDefault();
-        reactFlowInstanceRef.current?.zoomTo(1, { duration: 200 });
-      }
       if (event.code === 'Space' && !spaceHeld) {
-        // Don't activate pan mode while an immersive modal is open
         if (ppModalStateRef.current?.open) return;
         spaceHeld = true;
         event.preventDefault();
@@ -1474,9 +1669,11 @@ export function CollaborativeCanvas({
         setToolMode('edit');
       }
     };
+    window.addEventListener('keydown', handleKeyDownCapture, true);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
+      window.removeEventListener('keydown', handleKeyDownCapture, true);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
@@ -1518,7 +1715,7 @@ export function CollaborativeCanvas({
     return unsubscribe;
   }, []);
 
-  // Listen for inpaint quick action → enter focus mode
+  // Listen for inpaint quick action → open immersive modal with node image
   useEffect(() => {
     const unsubscribe = widgetBridge.on(
       'NODE_QUICK_ACTION',
@@ -1529,43 +1726,47 @@ export function CollaborativeCanvas({
           event.source !== 'inpaint-toolbar'
         ) {
           const targetId = event.payload.nodeId;
-          setInpaintFocus({ nodeId: targetId, prompt: '', maskTool: 'brush', brushSize: 30, step: 'edit' });
-          setNodes((prev) =>
-            prev.map((n) => ({ ...n, selected: false }))
-          );
-          setTimeout(() => {
-            const instance = reactFlowInstanceRef.current;
-            if (!instance) return;
-            const node = nodesRef.current.find((n) => n.id === targetId);
-            if (!node) return;
-            const containerEl = document.querySelector('.react-flow');
-            if (!containerEl) return;
-            const cw = containerEl.clientWidth;
-            const ch = containerEl.clientHeight;
-            const hasSidebar = !!document.querySelector('.tc-sidebar-b');
-            const sidebarW = hasSidebar ? 64 : 0;
-            const bottomBarH = hasSidebar ? 64 : 0;
-            const inpaintPanelH = 180;
-            const maskBarH = 56;
-            const gap = 12;
-            const availLeft = sidebarW;
-            const availTop = maskBarH + gap;
-            const availW = cw - availLeft;
-            const availH = ch - availTop - bottomBarH - inpaintPanelH;
-            const availCenterX = availLeft + availW / 2;
-            const availCenterY = availTop + availH / 2;
-            const fitFrac = 0.75;
-            const zoomX = (availW * fitFrac) / node.size.width;
-            const zoomY = (availH * fitFrac) / node.size.height;
-            const zoom = Math.min(zoomX, zoomY, 2.5);
-            const nodeCX = node.position.x + node.size.width / 2;
-            const nodeCY = node.position.y + node.size.height / 2;
-            instance.setViewport({
-              x: availCenterX - nodeCX * zoom,
-              y: availCenterY - nodeCY * zoom,
-              zoom,
-            }, { duration: 300 });
-          }, 50);
+          const node = nodesRef.current.find((n) => n.id === targetId);
+          const nodeUrl = (node?.url as string) || '';
+          setInpaintTutorialOpen({ open: true, initialImageUrl: nodeUrl || undefined });
+        }
+      }
+    );
+    return unsubscribe;
+  }, []);
+
+  // Listen for avatar quick actions → open corresponding modal
+  useEffect(() => {
+    const unsubscribe = widgetBridge.on(
+      'NODE_QUICK_ACTION',
+      (event: { payload?: { actionId?: string; nodeId?: string; imageUrl?: string; videoUrl?: string; node?: any }; source?: string }) => {
+        const { actionId, nodeId } = event.payload ?? {};
+        if (!actionId || !nodeId) return;
+        const node = nodesRef.current.find((n) => n.id === nodeId);
+        if (!node) return;
+        const nodeUrl = (node.url as string) || '';
+
+        if (actionId === 'avatar') {
+          if (node.type === NodeType.VIDEO) {
+            setLipSyncModal({ open: true, initialVideoUrl: nodeUrl });
+          } else {
+            setAiAvatarModal({ open: true, initialAvatarUrl: nodeUrl });
+          }
+        }
+        if (actionId === 'product-avatar') {
+          setProductAvatarModal({ open: true, initialProductImageUrl: nodeUrl });
+        }
+        if (actionId === 'video-lip-sync') {
+          setLipSyncModal({ open: true, initialVideoUrl: nodeUrl });
+        }
+        if (actionId === 'video' && node.type === NodeType.IMAGE) {
+          setAiCreateMode({
+            type: 'ai-video',
+            subActionId: 'image-to-video',
+            nodeId,
+            prompt: '',
+            referenceImageUrl: nodeUrl,
+          });
         }
       }
     );
@@ -2168,7 +2369,27 @@ export function CollaborativeCanvas({
         return;
       }
       const selectedNodes = nodesRef.current.filter((item) => item.selected);
+
       if (selectedNodes.length > 1) {
+        const isClickedNodeSelected = selectedNodes.some((n) => n.id === node.id);
+        if (isClickedNodeSelected) {
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            type: 'multi-node',
+            nodeIds: selectedNodes.map((n) => n.id),
+          });
+        } else {
+          const targetNode = nodesRef.current.find((item) => item.id === node.id);
+          const raw = (targetNode as CanvasNodeData & { raw?: RawDataItem } | undefined)?.raw;
+          if (String(raw?.status ?? '').toLowerCase() === 'init') return;
+          setContextMenu({
+            x: event.clientX,
+            y: event.clientY,
+            type: 'node',
+            nodeId: node.id,
+          });
+        }
         return;
       }
       const targetNode = nodesRef.current.find((item) => item.id === node.id);
@@ -2189,13 +2410,16 @@ export function CollaborativeCanvas({
   const handlePaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
-      // Check if the right-click landed on a node element (React Flow may route
-      // node contextmenu to pane handler depending on panOnDrag config).
       const target = event.target as HTMLElement;
       const nodeEl = target.closest('.react-flow__node');
       if (nodeEl && canEdit && !isLocked && toolMode === 'edit') {
         const nodeId = nodeEl.getAttribute('data-id');
         if (nodeId) {
+          const selectedNodes = nodesRef.current.filter((n) => n.selected);
+          if (selectedNodes.length > 1 && selectedNodes.some((n) => n.id === nodeId)) {
+            setContextMenu({ x: event.clientX, y: event.clientY, type: 'multi-node', nodeIds: selectedNodes.map((n) => n.id) });
+            return;
+          }
           const targetNode = nodesRef.current.find((n) => n.id === nodeId);
           const raw = (targetNode as CanvasNodeData & { raw?: RawDataItem } | undefined)?.raw;
           if (String(raw?.status ?? '').toLowerCase() !== 'init') {
@@ -2268,23 +2492,36 @@ export function CollaborativeCanvas({
         setPpModalState({ open: true, nodeId: placeholderNode.id });
         return;
       }
-      // Inpaint from sidebar → create placeholder node + enter upload step
+      // Inpaint from sidebar → show tutorial modal first
       if (subActionId === 'inpaint') {
-        const placeholderSize = { width: 260, height: 260 };
-        const placeholderNode: CanvasNodeData = {
-          id: generateId(),
-          type: NodeType.IMAGE,
-          position: getNewNodePosition(placeholderSize),
-          size: placeholderSize,
-          url: '',
-          title: 'Image',
-          zIndex: nodes.length,
-          toolId: 'inpaint',
-          toolCategory: 'ai-image',
-          selected: true,
-        } as CanvasNodeData;
-        setNodes((prev) => [...prev.map((n) => ({ ...n, selected: false })), placeholderNode]);
-        setInpaintFocus({ nodeId: placeholderNode.id, prompt: '', maskTool: 'brush', brushSize: 30, step: 'upload' });
+        setInpaintTutorialOpen({ open: true });
+        return;
+      }
+      // Image Upscale from sidebar → show immersive modal
+      if (subActionId === 'image-upscale') {
+        setImageUpscaleOpen(true);
+        return;
+      }
+      // Video Upscale from sidebar → show immersive modal
+      if (subActionId === 'video-upscale') {
+        setVideoUpscaleOpen(true);
+        return;
+      }
+      // Phase 3 Avatar modals from sidebar
+      if (subActionId === 'ai-avatar') {
+        setAiAvatarModal({ open: true });
+        return;
+      }
+      if (subActionId === 'video-lip-sync') {
+        setLipSyncModal({ open: true });
+        return;
+      }
+      if (subActionId === 'design-avatar') {
+        setDesignAvatarOpen(true);
+        return;
+      }
+      if (subActionId === 'product-avatar') {
+        setProductAvatarModal({ open: true });
         return;
       }
       if (actionId === 'upload' || actionId === 'upload-image' || actionId === 'upload-video' || actionId === 'select-from-board') {
@@ -2497,6 +2734,322 @@ export function CollaborativeCanvas({
     setContextMenu(null);
   }, [contextMenu]);
 
+  // --- Multi-select batch action handlers ---
+
+  const handleBatchDelete = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    const nodeIds = selected.map((n) => n.id);
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_DELETE_REQUEST', { nodeIds, nodes: selected }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchGroup = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length < 2) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_GROUP', {
+        nodeIds: selected.map((n) => n.id),
+        nodes: selected,
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchCopy = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_QUICK_ACTION', {
+        nodeIds: selected.map((n) => n.id),
+        actionId: 'copy',
+        actionLabel: 'Copy',
+        nodes: selected,
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchDownload = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_DOWNLOAD', {
+        nodeIds: selected.map((n) => n.id),
+        nodes: selected,
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchLock = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_QUICK_ACTION', {
+        nodeIds: selected.map((n) => n.id),
+        actionId: 'lock',
+        actionLabel: 'Lock All',
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchUnlock = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_QUICK_ACTION', {
+        nodeIds: selected.map((n) => n.id),
+        actionId: 'unlock',
+        actionLabel: 'Unlock All',
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchHide = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_QUICK_ACTION', {
+        nodeIds: selected.map((n) => n.id),
+        actionId: 'hide',
+        actionLabel: 'Hide All',
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchShow = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_QUICK_ACTION', {
+        nodeIds: selected.map((n) => n.id),
+        actionId: 'show',
+        actionLabel: 'Show All',
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleBatchBringToFront = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    const selectedIds = new Set(selected.map((n) => n.id));
+    const sorted = sortNodesByLayer(nodesRef.current);
+    const nonSelected = sorted.filter((n) => !selectedIds.has(n.id));
+    const selectedSorted = sorted.filter((n) => selectedIds.has(n.id));
+    const reordered = [...nonSelected, ...selectedSorted];
+    const updatedNodes = reordered.map((n, i) => ({ ...n, zIndex: i }));
+    setNodes(updatedNodes);
+    const pendingUpdates = updatedNodes.map((n) => ({
+      nodeId: n.id,
+      updates: { zIndex: n.zIndex } as Partial<CanvasNodeData>,
+    }));
+    if (pendingUpdates.length > 0) collab.updateNodes(pendingUpdates, true);
+    setContextMenu(null);
+  }, [collab, sortNodesByLayer]);
+
+  const handleBatchSendToBack = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    const selectedIds = new Set(selected.map((n) => n.id));
+    const sorted = sortNodesByLayer(nodesRef.current);
+    const nonSelected = sorted.filter((n) => !selectedIds.has(n.id));
+    const selectedSorted = sorted.filter((n) => selectedIds.has(n.id));
+    const reordered = [...selectedSorted, ...nonSelected];
+    const updatedNodes = reordered.map((n, i) => ({ ...n, zIndex: i }));
+    setNodes(updatedNodes);
+    const pendingUpdates = updatedNodes.map((n) => ({
+      nodeId: n.id,
+      updates: { zIndex: n.zIndex } as Partial<CanvasNodeData>,
+    }));
+    if (pendingUpdates.length > 0) collab.updateNodes(pendingUpdates, true);
+    setContextMenu(null);
+  }, [collab, sortNodesByLayer]);
+
+  const handleBatchExport = useCallback((format: 'png' | 'jpg' | 'svg') => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length === 0) return;
+    widgetBridge.emit(
+      createWidgetEvent('NODE_BATCH_EXPORT', {
+        nodeIds: selected.map((n) => n.id),
+        format,
+        nodes: selected,
+      }, { source: 'ui' })
+    );
+  }, []);
+
+  const handleAlign = useCallback((direction: AlignDirection) => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length < 2) return;
+
+    let updatedPositions: Array<{ id: string; position: { x: number; y: number } }> = [];
+
+    if (direction === 'left') {
+      const minX = Math.min(...selected.map((n) => n.position.x));
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: minX, y: n.position.y } }));
+    } else if (direction === 'right') {
+      const maxRight = Math.max(...selected.map((n) => n.position.x + n.size.width));
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: maxRight - n.size.width, y: n.position.y } }));
+    } else if (direction === 'center') {
+      const minX = Math.min(...selected.map((n) => n.position.x));
+      const maxRight = Math.max(...selected.map((n) => n.position.x + n.size.width));
+      const centerX = (minX + maxRight) / 2;
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: centerX - n.size.width / 2, y: n.position.y } }));
+    } else if (direction === 'top') {
+      const minY = Math.min(...selected.map((n) => n.position.y));
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: n.position.x, y: minY } }));
+    } else if (direction === 'bottom') {
+      const maxBottom = Math.max(...selected.map((n) => n.position.y + n.size.height));
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: n.position.x, y: maxBottom - n.size.height } }));
+    } else if (direction === 'middle') {
+      const minY = Math.min(...selected.map((n) => n.position.y));
+      const maxBottom = Math.max(...selected.map((n) => n.position.y + n.size.height));
+      const centerY = (minY + maxBottom) / 2;
+      updatedPositions = selected.map((n) => ({ id: n.id, position: { x: n.position.x, y: centerY - n.size.height / 2 } }));
+    }
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        const update = updatedPositions.find((u) => u.id === n.id);
+        return update ? { ...n, position: update.position } : n;
+      })
+    );
+    const pendingUpdates = updatedPositions.map((u) => ({
+      nodeId: u.id,
+      updates: { position: u.position } as Partial<CanvasNodeData>,
+    }));
+    if (pendingUpdates.length > 0) collab.updateNodes(pendingUpdates, true);
+  }, [collab]);
+
+  const handleDistribute = useCallback((axis: 'horizontal' | 'vertical') => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length < 3) return;
+
+    let updatedPositions: Array<{ id: string; position: { x: number; y: number } }> = [];
+
+    if (axis === 'horizontal') {
+      const sorted = [...selected].sort((a, b) => a.position.x - b.position.x);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const totalSpan = (last.position.x + last.size.width) - first.position.x;
+      const totalNodeWidth = sorted.reduce((sum, n) => sum + n.size.width, 0);
+      const gap = (totalSpan - totalNodeWidth) / (sorted.length - 1);
+      let currentX = first.position.x;
+      updatedPositions = sorted.map((n) => {
+        const pos = { id: n.id, position: { x: currentX, y: n.position.y } };
+        currentX += n.size.width + gap;
+        return pos;
+      });
+    } else {
+      const sorted = [...selected].sort((a, b) => a.position.y - b.position.y);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const totalSpan = (last.position.y + last.size.height) - first.position.y;
+      const totalNodeHeight = sorted.reduce((sum, n) => sum + n.size.height, 0);
+      const gap = (totalSpan - totalNodeHeight) / (sorted.length - 1);
+      let currentY = first.position.y;
+      updatedPositions = sorted.map((n) => {
+        const pos = { id: n.id, position: { x: n.position.x, y: currentY } };
+        currentY += n.size.height + gap;
+        return pos;
+      });
+    }
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        const update = updatedPositions.find((u) => u.id === n.id);
+        return update ? { ...n, position: update.position } : n;
+      })
+    );
+    const pendingUpdates = updatedPositions.map((u) => ({
+      nodeId: u.id,
+      updates: { position: u.position } as Partial<CanvasNodeData>,
+    }));
+    if (pendingUpdates.length > 0) collab.updateNodes(pendingUpdates, true);
+  }, [collab]);
+
+  const handleAutoArrange = useCallback(() => {
+    const selected = nodesRef.current.filter((n) => n.selected);
+    if (selected.length < 2) return;
+
+    // Simple grid auto-arrange: sort by original position, lay out in rows
+    const sorted = [...selected].sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+    const cols = Math.ceil(Math.sqrt(sorted.length));
+    const GAP = 24;
+    const minX = Math.min(...sorted.map((n) => n.position.x));
+    const minY = Math.min(...sorted.map((n) => n.position.y));
+
+    // Compute per-column max widths and per-row max heights
+    const colWidths: number[] = Array(cols).fill(0);
+    const rowHeights: number[] = [];
+    sorted.forEach((n, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      colWidths[col] = Math.max(colWidths[col], n.size.width);
+      rowHeights[row] = Math.max(rowHeights[row] ?? 0, n.size.height);
+    });
+
+    const updatedPositions = sorted.map((n, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const x = minX + colWidths.slice(0, col).reduce((s, w) => s + w + GAP, 0);
+      const y = minY + rowHeights.slice(0, row).reduce((s, h) => s + h + GAP, 0);
+      return { id: n.id, position: { x, y } };
+    });
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        const update = updatedPositions.find((u) => u.id === n.id);
+        return update ? { ...n, position: update.position } : n;
+      })
+    );
+    const pendingUpdates = updatedPositions.map((u) => ({
+      nodeId: u.id,
+      updates: { position: u.position } as Partial<CanvasNodeData>,
+    }));
+    if (pendingUpdates.length > 0) collab.updateNodes(pendingUpdates, true);
+  }, [collab]);
+
+  // Multi-select keyboard shortcuts: ⌘C Copy | ⇧H Horizontal Space | ⇧V Vertical Space | ⇧A Auto Arrange
+  useEffect(() => {
+    if (!canEdit) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName && /^(INPUT|TEXTAREA)$/.test(target.tagName ?? '') || target?.isContentEditable) return;
+
+      const key = e.key?.toLowerCase();
+
+      if ((e.metaKey || e.ctrlKey) && key === 'c') {
+        const selected = nodesRef.current.filter((n) => n.selected);
+        if (selected.length > 0) {
+          handleBatchCopy();
+          try {
+            const urls = selected.map((n) => n.url).filter(Boolean);
+            if (urls.length > 0) {
+              navigator.clipboard.writeText(urls.join('\n')).catch(() => {});
+            }
+          } catch {}
+          e.preventDefault();
+        }
+      }
+
+      if ((e.metaKey || e.ctrlKey) && key === 'v') {
+        e.preventDefault();
+        widgetBridge.emit(
+          createWidgetEvent('CANVAS_PASTE', {}, { source: 'ui' })
+        );
+      }
+
+      if (e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        const selected = nodesRef.current.filter((n) => n.selected);
+        if (selected.length < 2) return;
+        if (key === 'h') { e.preventDefault(); handleDistribute('horizontal'); }
+        if (key === 'v') { e.preventDefault(); handleDistribute('vertical'); }
+        if (key === 'a') { e.preventDefault(); handleAutoArrange(); }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canEdit, handleBatchCopy, handleDistribute, handleAutoArrange]);
+
   useEffect(() => {
     if (!isViewer) {
       return;
@@ -2569,10 +3122,47 @@ export function CollaborativeCanvas({
         }, 2000);
       }
     },
+    onVideoSubmit: (tab, state) => {
+      if (!aiCreateMode) return;
+      const targetId = aiCreateMode.nodeId;
+      widgetBridge.emit(
+        createWidgetEvent(
+          'CANVAS_CREATE_ACTION',
+          {
+            actionId: tab,
+            nodeId: targetId,
+            prompt: state.prompt,
+            aspectRatio: state.aspectRatio,
+            resolution: state.resolution,
+            duration: state.duration,
+            firstFrameUrl: state.firstFrameUrl || undefined,
+            endFrameUrl: state.endFrameUrl || undefined,
+            sourceVideoUrl: state.sourceVideoUrl || undefined,
+          },
+          { source: 'ui' }
+        )
+      );
+      setAiCreateMode(null);
+    },
     onDismiss: () => setAiCreateMode(null),
     onUploadReference: (nodeId) => {
       widgetBridge.emit(
         createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-reference', nodeId }, { source: 'ui' })
+      );
+    },
+    onUploadFirstFrame: (nodeId) => {
+      widgetBridge.emit(
+        createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-first-frame', nodeId }, { source: 'ui' })
+      );
+    },
+    onUploadEndFrame: (nodeId) => {
+      widgetBridge.emit(
+        createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-end-frame', nodeId }, { source: 'ui' })
+      );
+    },
+    onUploadMedia: (nodeId) => {
+      widgetBridge.emit(
+        createWidgetEvent('CANVAS_CREATE_ACTION', { actionId: 'upload-media', nodeId }, { source: 'ui' })
       );
     },
     onSelectFromBoard: (nodeId) => {
@@ -2619,8 +3209,8 @@ export function CollaborativeCanvas({
           justifyContent: 'space-between',
           padding: '0 16px',
           background: 'rgba(17,17,19,0.75)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
@@ -2860,7 +3450,13 @@ export function CollaborativeCanvas({
           </div>
         </div>
       </header> */}
-      <div style={{ flex: 1, position: 'relative' }} ref={canvasRef}>
+      <div style={{ flex: 1, position: 'relative', paddingTop: 48 }} ref={canvasRef}>
+        <div
+          className={`tc-canvas-loading-overlay${canvasReady ? ' tc-canvas-loading-overlay--hidden' : ''}`}
+          aria-hidden={canvasReady}
+        >
+          <div className="tc-canvas-loading-spinner" />
+        </div>
         {sessionBlocked && (
           <div
             style={{
@@ -3066,24 +3662,21 @@ export function CollaborativeCanvas({
           })}
         </div>
         {/* ── Full-height sidebar ── */}
-        {/* Hide sidebar only for legacy generic panel tools, not for new Canvas Panel tools */}
-        {(!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit') && (
-          <aside
-            className="tc-sidebar-b"
-            onPointerDown={(e) => e.stopPropagation()}
-            style={{
-              position: 'absolute',
-              left: 0, top: 0, bottom: 0,
-              zIndex: 51,
-              width: 64,
-              display: 'flex',
-              flexDirection: 'column',
-              background: '#232326',
-              borderRight: '1px solid rgba(255,255,255,0.05)',
-              userSelect: 'none',
-              fontFamily: 'Inter, -apple-system, sans-serif',
-            }}
-          >
+        {/* Sidebar always visible (PRD: 侧边栏始终可见) */}
+        <aside
+          className="tc-sidebar-b"
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            left: 0, top: 0, bottom: 0,
+            zIndex: 51,
+            display: 'flex',
+            flexDirection: 'column',
+            background: isImmersiveModalOpen ? '#2D2D30' : undefined,
+            userSelect: 'none',
+            transition: 'background 200ms ease',
+          }}
+        >
             {/* Logo */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 56, flexShrink: 0 }}>
               {topBarLogoUrl ? (
@@ -3095,7 +3688,7 @@ export function CollaborativeCanvas({
               )}
             </div>
 
-            {/* Nav — flex:1, p:8px, gap:4px between items */}
+            {/* Nav — flex:1, p:8px, gap:4px between items (sync with sidebar package) */}
             <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: 8 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
 
@@ -3106,7 +3699,7 @@ export function CollaborativeCanvas({
                     disabled={isLocked}
                     onClick={() => widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'board' }, { source: 'ui' }))}
                   >
-                    <Frame style={{ width: 20, height: 20, flexShrink: 0 }} />
+                    <Frame style={{ width: 20, height: 20, flexShrink: 0, color: '#D4D4D4' }} />
                     <span style={NAV_LABEL_STYLE}>Board</span>
                   </SidebarNavBtn>
                 )}
@@ -3132,10 +3725,10 @@ export function CollaborativeCanvas({
                     items: [
                       { id: 'text-to-image', label: 'Text to Image', Icon: Type, demoDisabled: false },
                       { id: 'image-edit', label: 'Image Edit', Icon: PenTool, demoDisabled: false },
-                      { id: 'inpaint', label: 'Inpaint', Icon: Paintbrush, demoDisabled: true },
+                      { id: 'inpaint', label: 'Inpaint', Icon: Paintbrush, demoDisabled: false },
                       { id: 'image-character-swap', label: 'Image Character Swap', Icon: Repeat, demoDisabled: true },
                       { id: 'image-face-swap', label: 'Image Face Swap', Icon: Smile, demoDisabled: true },
-                      { id: 'image-upscale', label: 'Image Upscale', Icon: Maximize2, demoDisabled: true },
+                      { id: 'image-upscale', label: 'Image Upscale', Icon: Maximize2, demoDisabled: false },
                       { id: 'photo-angle-editor', label: 'Photo Angle Editor', Icon: Rotate3d, demoDisabled: true },
                       { id: 'product-photography', label: 'Product Photography', Icon: Camera, demoDisabled: false },
                     ],
@@ -3144,11 +3737,11 @@ export function CollaborativeCanvas({
                   {
                     key: 'video' as const, title: 'Video', Icon: Video,
                     items: [
-                      { id: 'image-to-video', label: 'Image to Video', Icon: ImagePlay, demoDisabled: true },
-                      { id: 'text-to-video', label: 'Text to Video', Icon: Type, demoDisabled: true },
+                      { id: 'image-to-video', label: 'Image to Video', Icon: ImagePlay, demoDisabled: false },
+                      { id: 'text-to-video', label: 'Text to Video', Icon: Type, demoDisabled: false },
                       { id: 'omni-reference', label: 'Omni Reference', Icon: Wand2, demoDisabled: true },
                       { id: 'video-character-swap', label: 'Video Character Swap', Icon: Repeat, demoDisabled: true },
-                      { id: 'video-upscale', label: 'Video Upscale', Icon: MoveDiagonal, demoDisabled: true },
+                      { id: 'video-upscale', label: 'Video Upscale', Icon: MoveDiagonal, demoDisabled: false },
                       { id: 'motion-control', label: 'Motion Control', Icon: PersonStanding, demoDisabled: true },
                     ],
                     actionType: 'ai-video' as const,
@@ -3156,10 +3749,10 @@ export function CollaborativeCanvas({
                   {
                     key: 'avatar' as const, title: 'Avatar', Icon: User,
                     items: [
-                      { id: 'ai-avatar', label: 'AI Avatar', Icon: CircleUser, demoDisabled: true },
-                      { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: Speech, demoDisabled: true },
-                      { id: 'product-avatar', label: 'Product Avatar', Icon: ShoppingBag, demoDisabled: true },
-                      { id: 'design-avatar', label: 'Design My Avatar', Icon: UserPen, demoDisabled: true },
+                      { id: 'ai-avatar', label: 'AI Avatar', Icon: CircleUser, demoDisabled: false },
+                      { id: 'product-avatar', label: 'Product Avatar', Icon: ShoppingBag, demoDisabled: false },
+                      { id: 'design-avatar', label: 'Design My Avatar', Icon: UserPen, demoDisabled: false },
+                      { id: 'video-lip-sync', label: 'Video Lip Sync', Icon: MicVocal, demoDisabled: false },
                     ],
                     actionType: 'ai-avatar' as const,
                   },
@@ -3178,12 +3771,12 @@ export function CollaborativeCanvas({
                         aria-label={tool.title}
                         disabled={!canEdit || isLocked}
                       >
-                        <tool.Icon style={{ width: 20, height: 20, flexShrink: 0 }} />
+                        <tool.Icon style={{ width: 18, height: 18, flexShrink: 0, color: '#D4D4D4' }} />
                         <span style={NAV_LABEL_STYLE}>{tool.title}</span>
                       </SidebarNavBtn>
                     }
                     menu={
-                      <div style={{ padding: '4px 8px', minWidth: 200 }}>
+                      <div>
                         {tool.items.map((item) => (
                           <ToolbarMenuItem key={item.id} Icon={item.Icon} label={item.label} onClick={item.demoDisabled ? () => {} : () => handlePlusAction(tool.actionType, item.id)} />
                         ))}
@@ -3199,7 +3792,6 @@ export function CollaborativeCanvas({
             <div style={{
               position: 'relative', zIndex: 10, flexShrink: 0,
               padding: 8, display: 'flex', flexDirection: 'column', gap: 4,
-              borderTop: '1px solid rgba(255,255,255,0.05)',
             }}>
               {/* Promotion */}
               <SidebarFooterBtn aria-label="Promotion">
@@ -3253,8 +3845,7 @@ export function CollaborativeCanvas({
                 </button>
               </div>
             </div>
-          </aside>
-        )}
+        </aside>
         <div
           className={[
             inpaintFocus ? 'tc-inpaint-active' : '',
@@ -3313,6 +3904,7 @@ export function CollaborativeCanvas({
                 minHeight={minHeight}
                 onReactFlowInit={(instance) => {
                   reactFlowInstanceRef.current = instance;
+                  setIsFlowReady(true);
                 }}
               />
               </DependencyFocusProvider>
@@ -3322,175 +3914,6 @@ export function CollaborativeCanvas({
         </div>
         {/* Inpaint focus overlay + toolbar */}
         {inpaintFocus && (() => {
-          // ── Upload step (on-canvas node with upload UI) ───────────────────
-          if (inpaintFocus.step === 'upload') {
-            const uploadNode = nodes.find((n) => n.id === inpaintFocus.nodeId);
-            if (!uploadNode) return null;
-            const canvasOffsetX = 64;
-            const ux = uploadNode.position.x * viewport.zoom + viewport.x + canvasOffsetX;
-            const uy = uploadNode.position.y * viewport.zoom + viewport.y;
-            const uw = uploadNode.size.width * viewport.zoom;
-            const uh = uploadNode.size.height * viewport.zoom;
-            return (
-              <>
-                {/* Transparent dismiss overlay — avoids sidebar & bottom toolbar */}
-                <div
-                  onClick={() => {
-                    setInpaintFocus(null);
-                    setNodes((prev) => prev.filter((n) => n.id !== inpaintFocus.nodeId));
-                  }}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 64,
-                    right: 0,
-                    bottom: 64,
-                    zIndex: 39,
-                  }}
-                />
-                {/* Node border highlight — matches other nodes' 2.5px selection outline */}
-                <div
-                  style={{
-                    position: 'absolute',
-                    left: ux - 2.5, top: uy - 2.5,
-                    width: uw + 5, height: uh + 5,
-                    zIndex: 41,
-                    border: '2.5px solid #5857FD',
-                    pointerEvents: 'none',
-                  }}
-                />
-                {/* Corner resize handles */}
-                {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
-                  const handleSize = 12;
-                  const handleOffset = -(handleSize / 2) - 2.5;
-                  const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
-                  return (
-                    <div
-                      key={corner}
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        const startX = e.clientX;
-                        const startY = e.clientY;
-                        const startSize = { ...uploadNode.size };
-                        const startPos = { ...uploadNode.position };
-                        const anchorSX = corner.includes('left') ? ux + uw : ux;
-                        const anchorSY = corner.includes('top') ? uy + uh : uy;
-                        const startDist = Math.hypot(startX - anchorSX, startY - anchorSY);
-                        const onMove = (me: PointerEvent) => {
-                          const curDist = Math.hypot(me.clientX - anchorSX, me.clientY - anchorSY);
-                          const minSz = 80;
-                          const minScale = Math.max(minSz / startSize.width, minSz / startSize.height, 0.1);
-                          const scale = Math.max(curDist / startDist, minScale);
-                          const nw = Math.max(minSz, Math.round(startSize.width * scale));
-                          const nh = Math.max(minSz, Math.round(startSize.height * scale));
-                          let nx = startPos.x, ny = startPos.y;
-                          if (corner.includes('left')) nx = startPos.x + (startSize.width - nw);
-                          if (corner.includes('top')) ny = startPos.y + (startSize.height - nh);
-                          setNodes((prev) => prev.map((n) =>
-                            n.id === inpaintFocus.nodeId ? { ...n, position: { x: nx, y: ny }, size: { width: nw, height: nh } } : n
-                          ));
-                        };
-                        const onUp = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
-                        window.addEventListener('pointermove', onMove);
-                        window.addEventListener('pointerup', onUp);
-                      }}
-                      style={{
-                        position: 'absolute',
-                        width: handleSize,
-                        height: handleSize,
-                        borderRadius: 2,
-                        background: '#fff',
-                        border: '2px solid #5857FD',
-                        cursor: cursorStyle,
-                        zIndex: 42,
-                        left: corner.includes('left') ? ux + handleOffset : ux + uw - handleOffset - handleSize,
-                        top: corner.includes('top') ? uy + handleOffset : uy + uh - handleOffset - handleSize,
-                        pointerEvents: 'auto',
-                      }}
-                    />
-                  );
-                })}
-                {/* Upload UI overlaid on the node — draggable */}
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const startX = e.clientX;
-                    const startY = e.clientY;
-                    const startPos = { ...uploadNode.position };
-                    let moved = false;
-                    const onMove = (me: PointerEvent) => {
-                      const dx = me.clientX - startX;
-                      const dy = me.clientY - startY;
-                      if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-                      moved = true;
-                      setNodes((prev) => prev.map((n) =>
-                        n.id === inpaintFocus.nodeId
-                          ? { ...n, position: { x: startPos.x + dx / viewport.zoom, y: startPos.y + dy / viewport.zoom } }
-                          : n
-                      ));
-                    };
-                    const onUp = () => {
-                      window.removeEventListener('pointermove', onMove);
-                      window.removeEventListener('pointerup', onUp);
-                      if (!moved) {
-                        widgetBridge.emit(createWidgetEvent('INPAINT_UPLOAD_IMAGE', { nodeId: inpaintFocus.nodeId }, { source: 'ui' }));
-                      }
-                    };
-                    window.addEventListener('pointermove', onMove);
-                    window.addEventListener('pointerup', onUp);
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: ux, top: uy, width: uw, height: uh,
-                    zIndex: 41,
-                    background: 'rgba(20,21,24,0.92)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden',
-                    cursor: 'grab',
-                  }}
-                >
-                  {/* Upload click area */}
-                  <div
-                    style={{
-                      flex: 1, display: 'flex', flexDirection: 'column',
-                      alignItems: 'center', justifyContent: 'center', gap: 12,
-                      color: 'rgba(255,255,255,0.5)', pointerEvents: 'none',
-                    }}
-                  >
-                    <ImagePlus size={28} color="rgba(255,255,255,0.35)" />
-                    <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>Click to upload</span>
-                  </div>
-                  {/* Select from Board — pinned to bottom */}
-                  <div style={{ padding: '0 12px 12px', flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        widgetBridge.emit(createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'inpaint', nodeId: inpaintFocus.nodeId }, { source: 'ui' }));
-                      }}
-                      style={{
-                        width: '100%', height: 38, borderRadius: 10,
-                        border: 'none', background: 'rgba(255,255,255,0.08)',
-                        color: 'rgba(255,255,255,0.75)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-                        fontSize: 13, fontWeight: 500,
-                        transition: 'background 120ms ease',
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.13)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
-                    >
-                      <LayoutGrid size={14} />
-                      Select from Board
-                    </button>
-                  </div>
-                </div>
-              </>
-            );
-          }
-
           // ── Edit step ─────────────────────────────────────────────────────
           const focusedNode = nodes.find((n) => n.id === inpaintFocus.nodeId);
           if (!focusedNode) return null;
@@ -3756,10 +4179,12 @@ export function CollaborativeCanvas({
           const screenW = placeholderNode.size.width * viewport.zoom;
           const screenH = placeholderNode.size.height * viewport.zoom;
 
-          const useNewPanel = aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit';
+          const useNewPanel = aiCreateMode.subActionId === 'text-to-image'
+            || aiCreateMode.subActionId === 'image-edit'
+            || aiCreateMode.type === 'ai-video';
 
-          // text-to-image / image-edit panels are now rendered inside ImageNode
-          // via NodeToolbar for proper zoom/pan tracking
+          // text-to-image / image-edit / ai-video panels are now rendered inside
+          // ImageNode / VideoNode via NodeToolbar for proper zoom/pan tracking
           if (useNewPanel) return null;
 
           /* ── Fallback: generic prompt-only panel for other tools ── */
@@ -3881,6 +4306,7 @@ export function CollaborativeCanvas({
                   actionId: 'product-photography',
                   nodeId: ppModalState?.nodeId,
                   productImageUrl: state.productImageUrl,
+                  productMaskDataUrl: state.productMaskDataUrl,
                   backgroundPrompt: state.backgroundPrompt,
                   backgroundImageUrl: state.backgroundImageUrl || undefined,
                   selectedTemplateId: state.selectedTemplateId,
@@ -3987,6 +4413,155 @@ export function CollaborativeCanvas({
           onSelectFromBoard={() => {
             widgetBridge.emit(
               createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'product-photography', nodeId: ppModalState?.nodeId }, { source: 'ui' })
+            );
+          }}
+        />
+        {/* Inpaint tutorial modal */}
+        <InpaintTutorialModal
+          open={inpaintTutorialOpen.open}
+          initialImageUrl={inpaintTutorialOpen.initialImageUrl}
+          onClose={() => setInpaintTutorialOpen({ open: false })}
+          onSelectFromBoard={() => {
+            setInpaintTutorialOpen({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'inpaint' }, { source: 'ui' })
+            );
+          }}
+          onSubmit={(data) => {
+            setInpaintTutorialOpen({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent(
+                'CANVAS_CREATE_ACTION',
+                {
+                  actionId: 'inpaint',
+                  imageUrl: data.imageUrl,
+                  prompt: data.prompt,
+                  maskTool: data.maskTool,
+                  brushSize: data.brushSize,
+                },
+                { source: 'ui' }
+              )
+            );
+          }}
+        />
+        {/* Image Upscale immersive modal */}
+        <ImageUpscaleModal
+          open={imageUpscaleOpen}
+          credits={userCredits ?? 0.8}
+          onClose={() => setImageUpscaleOpen(false)}
+          onSelectFromBoard={() => {
+            setImageUpscaleOpen(false);
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'image-upscale' }, { source: 'ui' })
+            );
+          }}
+          onSubmit={(data) => {
+            setImageUpscaleOpen(false);
+            widgetBridge.emit(
+              createWidgetEvent(
+                'CANVAS_CREATE_ACTION',
+                {
+                  actionId: 'image-upscale',
+                  imageUrl: data.imageUrl,
+                  targetResolution: data.targetResolution,
+                  withWatermark: data.withWatermark,
+                },
+                { source: 'ui' }
+              )
+            );
+          }}
+        />
+        {/* Video Upscale immersive modal */}
+        <VideoUpscaleModal
+          open={videoUpscaleOpen}
+          credits={userCredits ?? 0}
+          onClose={() => setVideoUpscaleOpen(false)}
+          onSelectFromBoard={() => {
+            setVideoUpscaleOpen(false);
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'video-upscale' }, { source: 'ui' })
+            );
+          }}
+          onSubmit={(data) => {
+            setVideoUpscaleOpen(false);
+            widgetBridge.emit(
+              createWidgetEvent(
+                'CANVAS_CREATE_ACTION',
+                {
+                  actionId: 'video-upscale',
+                  videoUrl: data.videoUrl,
+                  targetResolution: data.targetResolution,
+                },
+                { source: 'ui' }
+              )
+            );
+          }}
+        />
+        {/* Phase 3 Avatar modals */}
+        <AIAvatarModal
+          open={aiAvatarModal.open}
+          credits={userCredits ?? 0}
+          initialAvatarUrl={aiAvatarModal.initialAvatarUrl}
+          modelPreviewVideoUrl={modelPreviewVideoUrl}
+          modelPreviewPosterUrl={modelPreviewPosterUrl}
+          onClose={() => setAiAvatarModal({ open: false })}
+          onSubmit={(data) => {
+            setAiAvatarModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_CREATE_ACTION', { ...data }, { source: 'ui' })
+            );
+          }}
+          onSelectFromBoard={() => {
+            setAiAvatarModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'ai-avatar' }, { source: 'ui' })
+            );
+          }}
+        />
+        <VideoLipSyncModal
+          open={lipSyncModal.open}
+          credits={userCredits ?? 0}
+          initialVideoUrl={lipSyncModal.initialVideoUrl}
+          onClose={() => setLipSyncModal({ open: false })}
+          onSubmit={(data) => {
+            setLipSyncModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_CREATE_ACTION', { ...data }, { source: 'ui' })
+            );
+          }}
+          onSelectFromBoard={() => {
+            setLipSyncModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: 'video-lip-sync' }, { source: 'ui' })
+            );
+          }}
+        />
+        <DesignMyAvatarModal
+          open={designAvatarOpen}
+          credits={userCredits ?? 2}
+          onClose={() => setDesignAvatarOpen(false)}
+          onSubmit={(data) => {
+            setDesignAvatarOpen(false);
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_CREATE_ACTION', { ...data }, { source: 'ui' })
+            );
+          }}
+        />
+        <ProductAvatarModal
+          open={productAvatarModal.open}
+          credits={userCredits ?? 0}
+          initialProductImageUrl={productAvatarModal.initialProductImageUrl}
+          onClose={() => setProductAvatarModal({ open: false })}
+          onSubmit={(data) => {
+            setProductAvatarModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_CREATE_ACTION', { ...data }, { source: 'ui' })
+            );
+          }}
+          onSelectFromBoard={(context) => {
+            setProductAvatarModal({ open: false });
+            widgetBridge.emit(
+              createWidgetEvent('CANVAS_NAVIGATE', { target: 'board-select', context: `product-avatar-${context}` }, { source: 'ui' })
             );
           }}
         />
@@ -4196,12 +4771,46 @@ export function CollaborativeCanvas({
                       </div>
                     )}
                   </div>
+                </>
+              );
+            })()}
+            {contextMenu.type === 'multi-node' && contextMenu.nodeIds && (() => {
+              const count = contextMenu.nodeIds.length;
+              return (
+                <>
+                  <div style={{ padding: '6px 12px', fontSize: 11, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+                    {count} items selected
+                  </div>
+                  <div className="ctx-divider" />
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchCopy(); setContextMenu(null); }}>
+                    <span>Copy</span><span className="ctx-shortcut">⌘C</span>
+                  </button>
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchGroup(); setContextMenu(null); }} disabled={count < 2}>
+                    <span>Group</span>
+                  </button>
 
                   <div className="ctx-divider" />
 
-                  {/* Danger zone */}
-                  <button type="button" className="ctx-item danger" onClick={handleDeleteNode}>
-                    <span>Delete</span><span className="ctx-shortcut">⌫</span>
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchBringToFront(); }}>
+                    <span>Bring to Front</span><span className="ctx-shortcut">⌘⇧]</span>
+                  </button>
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchSendToBack(); }}>
+                    <span>Send to Back</span><span className="ctx-shortcut">⌘⇧[</span>
+                  </button>
+
+                  <div className="ctx-divider" />
+
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchLock(); setContextMenu(null); }}>
+                    <span>Lock All</span><span className="ctx-shortcut">⌘⇧L</span>
+                  </button>
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchHide(); setContextMenu(null); }}>
+                    <span>Hide All</span><span className="ctx-shortcut">⌘⇧H</span>
+                  </button>
+
+                  <div className="ctx-divider" />
+
+                  <button type="button" className="ctx-item" onClick={() => { handleBatchDownload(); setContextMenu(null); }}>
+                    <span>Download All</span>
                   </button>
                 </>
               );
@@ -4468,21 +5077,42 @@ export function CollaborativeCanvas({
             </div>
           )}
         </div>
-        {/* Bottom center toolbar + Template picker */}
-        {(!aiCreateMode || aiCreateMode.subActionId === 'text-to-image' || aiCreateMode.subActionId === 'image-edit') && (
-          <BottomToolbar
-            toolMode={effectiveToolMode}
-            onToolModeChange={setToolMode}
-            viewport={viewport}
-            reactFlowInstance={reactFlowInstanceRef.current}
-            layersPanelOpen={layersPanelOpen}
-            onLayersToggle={() => setLayersPanelOpen((prev) => !prev)}
-            canEdit={canEdit}
-            isLocked={isLocked}
-            sidebarOffset={64}
-            onAddAsset={() => handlePlusAction('upload')}
-          />
-        )}
+        {/* Multi-select corner handles — 4 real DOM elements tracking selection rect */}
+        <MultiSelectCornerHandles
+          visible={!!(canEdit && !inpaintFocus && multiSelectInfo && multiSelectInfo.nodes.length >= 2)}
+        />
+        {/* Multi-select toolbar — floats above selection bounding box */}
+        <MultiSelectToolbar
+          info={canEdit && !inpaintFocus ? multiSelectInfo : null}
+          viewport={viewport}
+          onBatchGroup={handleBatchGroup}
+          onBatchCopy={handleBatchCopy}
+          onBatchDownload={handleBatchDownload}
+          onBatchLock={handleBatchLock}
+          onBatchUnlock={handleBatchUnlock}
+          onBatchHide={handleBatchHide}
+          onBatchShow={handleBatchShow}
+          onBatchBringToFront={handleBatchBringToFront}
+          onBatchSendToBack={handleBatchSendToBack}
+          onBatchExport={handleBatchExport}
+          onAlign={handleAlign}
+          onDistribute={handleDistribute}
+          onAutoArrange={handleAutoArrange}
+        />
+        {/* Bottom center toolbar + Template picker — always visible (PRD: 底部工具栏始终可见) */}
+        <BottomToolbar
+          visible={toolbarVisible}
+          toolMode={effectiveToolMode}
+          onToolModeChange={setToolMode}
+          viewport={viewport}
+          reactFlowInstance={reactFlowInstanceRef.current}
+          layersPanelOpen={layersPanelOpen}
+          onLayersToggle={() => setLayersPanelOpen((prev) => !prev)}
+          canEdit={canEdit}
+          isLocked={isLocked}
+          sidebarOffset={64}
+          onAddAsset={() => handlePlusAction('upload')}
+        />
       </div>
       <KeyboardShortcutsModal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </main>

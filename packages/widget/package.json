@@ -34,7 +34,12 @@
   "dependencies": {
     "@tc/infinite-core": "0.0.1",
     "@xyflow/react": "^12.0.0",
-    "lucide-react": "^0.563.0"
+    "immer": "^10.0.0",
+    "konva": "^9.3.0",
+    "lodash": "^4.17.21",
+    "lucide-react": "^0.563.0",
+    "react-konva": "^18.2.10",
+    "recoil-next": "^0.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",

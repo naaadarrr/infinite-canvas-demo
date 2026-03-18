@@ -4,7 +4,7 @@ import { Plus, X, Upload, LayoutGrid } from 'lucide-react';
 interface UploadSlotProps {
   label?: string;
   imageUrl?: string;
-  size?: 'small' | 'large';
+  size?: 'small' | 'large' | 'inline';
   onUpload: () => void;
   onSelectFromBoard?: () => void;
   onClear?: () => void;
@@ -19,8 +19,9 @@ export function UploadSlot({
   onClear,
 }: UploadSlotProps) {
   const isSmall = size === 'small';
-  const w = isSmall ? 72 : '100%';
-  const h = isSmall ? 72 : 160;
+  const isInline = size === 'inline';
+  const w = isInline ? 48 : isSmall ? 72 : '100%';
+  const h = isInline ? 48 : isSmall ? 72 : 160;
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -58,7 +59,7 @@ export function UploadSlot({
     );
   }
 
-  if (isSmall) {
+  if (isSmall || isInline) {
     const hasOptions = !!onSelectFromBoard;
     return (
       <div ref={popoverRef} style={{ position: 'relative', flexShrink: 0 }}>
@@ -72,20 +73,20 @@ export function UploadSlot({
             }
           }}
           style={{
-            width: 72, height: 72, flexShrink: 0,
+            width: w, height: h, flexShrink: 0,
             borderRadius: 8, border: 'none',
             background: 'rgba(255,255,255,0.04)',
             color: 'rgba(255,255,255,0.3)',
             cursor: 'pointer',
             display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 4,
-            fontSize: 10, fontWeight: 500,
+            alignItems: 'center', justifyContent: 'center', gap: isInline ? 2 : 4,
+            fontSize: isInline ? 9 : 10, fontWeight: 500,
             transition: 'background 120ms ease',
           }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
         >
-          <Plus size={18} style={{ opacity: 0.4 }} />
+          <Plus size={isInline ? 14 : 18} style={{ opacity: 0.4 }} />
           {label && <span style={{ color: 'rgba(255,255,255,0.25)' }}>{label}</span>}
         </button>
         {popoverOpen && hasOptions && (

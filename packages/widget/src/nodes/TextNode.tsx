@@ -591,6 +591,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
   const paddingSize = 12;
   const lineHeightPx = Math.round(fontSize * lineHeight);
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const selectedCount = useStore((state) => state.nodes.filter((n) => n.selected).length);
   const showToolbar = useToolbarVisibility(effectiveSelected, dragging);
   const resolvedBackgroundColor = React.useMemo(() => {
     if (!nodeData.backgroundColor || nodeData.backgroundColor === 'transparent') {
@@ -985,10 +986,10 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         padding: `${paddingSize}px`,
         boxSizing: 'border-box',
         border: 'none',
-        outline: effectiveSelected
-          ? `${1 / zoom}px solid #5857FD`
+        outline: effectiveSelected && !dragging
+          ? `${1 / zoom}px solid #7781FF`
           : isHovered
-            ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+            ? `${1 / zoom}px solid rgba(119,129,255,0.7)`
             : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
@@ -1013,7 +1014,7 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
         />
       )}
 
-      {showHighlight && (
+      {showHighlight && selectedCount <= 1 && !dragging && (
         <>
           {/* 左边缘宽度调节区域 */}
           <div
@@ -1022,8 +1023,8 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             style={{
               position: 'absolute',
               left: -4 / zoom,
-              top: 12 / zoom,
-              bottom: 12 / zoom,
+              top: 8 / zoom,
+              bottom: 8 / zoom,
               width: 8 / zoom,
               cursor: 'ew-resize',
               zIndex: 1,
@@ -1036,17 +1037,16 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
             style={{
               position: 'absolute',
               right: -4 / zoom,
-              top: 12 / zoom,
-              bottom: 12 / zoom,
+              top: 8 / zoom,
+              bottom: 8 / zoom,
               width: 8 / zoom,
               cursor: 'ew-resize',
               zIndex: 1,
             }}
           />
-          {/* 四个角的缩放控制点 */}
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
-            const handleSize = 12 / zoom;
+            const handleSize = 8 / zoom;
             const handleOffset = -(handleSize / 2);
             return (
               <div
@@ -1055,19 +1055,28 @@ export function TextNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: handleSize,
-                  height: handleSize,
-                  borderRadius: 2 / zoom,
-                  background: '#fff',
-                  border: `${1 / zoom}px solid #5857FD`,
-                  cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
                   top: corner.includes('top') ? handleOffset : 'auto',
                   bottom: corner.includes('bottom') ? handleOffset : 'auto',
+                  width: handleSize,
+                  height: handleSize,
                   zIndex: 2,
                 }}
-              />
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    background: '#fff',
+                    border: '1px solid #7781FF',
+                    cursor: cursorStyle,
+                    boxSizing: 'border-box',
+                    transform: `scale(${1 / zoom})`,
+                    transformOrigin: '0 0',
+                  }}
+                />
+              </div>
             );
           })}
         </>

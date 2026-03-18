@@ -177,6 +177,12 @@ export function InfiniteCanvas({
   const lastViewportNotifiedRef = React.useRef(viewport);
   const snapPositionRef = React.useRef<Map<string, { x: number; y: number }>>(new Map());
 
+  // Sync zoom to CSS so multi-select rect (outline + corner handles) matches single-select (1/zoom, 12/zoom)
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--tc-flow-zoom', String(viewport.zoom));
+    return () => { document.documentElement.style.removeProperty('--tc-flow-zoom'); };
+  }, [viewport.zoom]);
+
   // 使用 ref 追踪是否已初始化，避免重复设置
   const initializedRef = React.useRef(false);
   const initialNodesSignatureRef = React.useRef<string>('');
@@ -410,6 +416,22 @@ export function InfiniteCanvas({
   }, [confirmDeleteNode]);
 
   React.useEffect(() => {
+    const unsubscribe = widgetBridge.onCommand<{ nodeIds?: string[] }>(
+      'NODE_BATCH_DELETE_CONFIRM',
+      (payload) => {
+        if (!payload?.nodeIds?.length) return;
+        if (isDev()) {
+          console.log('[InfiniteCanvas] received NODE_BATCH_DELETE_CONFIRM', { nodeIds: payload.nodeIds });
+        }
+        for (const nodeId of payload.nodeIds) {
+          confirmDeleteNode(nodeId);
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, [confirmDeleteNode]);
+
+  React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Delete' && event.key !== 'Backspace') {
         return;
@@ -425,8 +447,19 @@ export function InfiniteCanvas({
       if (selectedNodes.length === 0) {
         return;
       }
-      // 多选模式下不允许删除节点（不论选中多少个都不可以）
       if (selectedNodes.length > 1) {
+        const nodeIds = selectedNodes.map((n) => n.id);
+        const nodeSnapshots = selectedNodes.map((n) => {
+          const { onNodeDataChange: _ignore, ...snapshot } = n.data as CanvasNodeData & { onNodeDataChange?: unknown };
+          return snapshot;
+        });
+        widgetBridge.emit(
+          createWidgetEvent(
+            'NODE_BATCH_DELETE_REQUEST',
+            { nodeIds, nodes: nodeSnapshots },
+            { source: 'ui' }
+          )
+        );
         return;
       }
       selectedNodes.forEach((node) => requestDeleteNode(node));
@@ -825,7 +858,7 @@ export function InfiniteCanvas({
   return (
     <div
       ref={containerRef}
-      className={className}
+      className={[className, isNodeDragging && 'tc-nodes-dragging'].filter(Boolean).join(' ')}
       style={containerStyle}
     >
       <style>
@@ -886,6 +919,18 @@ export function InfiniteCanvas({
         onMoveStart={() => {
           setIsPanDragging(true);
         }}
+        onMove={(_, nextViewport) => {
+          setViewport((prevViewport) => {
+            if (
+              prevViewport.x === nextViewport.x &&
+              prevViewport.y === nextViewport.y &&
+              prevViewport.zoom === nextViewport.zoom
+            ) {
+              return prevViewport;
+            }
+            return nextViewport;
+          });
+        }}
         onMoveEnd={(_, nextViewport) => {
           setIsPanDragging(false);
           setViewport((prevViewport) => {
@@ -943,7 +988,8 @@ export function InfiniteCanvas({
         nodeDragThreshold={5}
         selectNodesOnDrag={true}
         selectionOnDrag={selectionOnDrag}
-        selectionMode={SelectionMode.Full}
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode="Shift"
         elevateNodesOnSelect={false}
         panOnDrag={panOnDrag}
         panOnScroll={true}

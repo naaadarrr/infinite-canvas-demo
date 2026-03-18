@@ -32,22 +32,22 @@
 }
 
 .tc-node-toolbar {
-  --tc-node-toolbar-bg: #1c1e22;
-  --tc-node-toolbar-border: rgba(255, 255, 255, 0.08);
-  --tc-node-toolbar-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.4), 0 1px 4px rgba(0,0,0,0.2);
-  --tc-node-toolbar-icon: rgba(255, 255, 255, 0.8);
-  --tc-node-toolbar-hover: rgba(255, 255, 255, 0.1);
-  --tc-node-toolbar-active: rgba(255, 255, 255, 0.15);
-  --tc-node-toolbar-focus: rgba(59, 130, 246, 0.4);
+  --tc-node-toolbar-bg: #252525;
+  --tc-node-toolbar-border: rgba(255, 255, 255, 0.1);
+  --tc-node-toolbar-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --tc-node-toolbar-icon: rgba(255, 255, 255, 0.95);
+  --tc-node-toolbar-hover: rgba(255, 255, 255, 0.05);
+  --tc-node-toolbar-active: rgba(255, 255, 255, 0.12);
+  --tc-node-toolbar-focus: rgba(255, 255, 255, 0.35);
   --tc-node-toolbar-tooltip-bg: #252525;
   --tc-node-toolbar-tooltip-border: rgba(255, 255, 255, 0.1);
   --tc-node-toolbar-tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
   padding: 4px;
-  border-radius: 10px;
+  border-radius: 12px;
   background-color: var(--tc-node-toolbar-bg);
   border: 1px solid var(--tc-node-toolbar-border);
   box-shadow: var(--tc-node-toolbar-shadow);
@@ -65,21 +65,18 @@
   justify-content: center;
   min-width: 30px;
   height: 30px;
-  padding: 7px;
-  border-radius: 7px;
+  padding: 8px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--tc-node-toolbar-icon);
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
+  transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.tc-node-toolbar-button:hover {
-  background: var(--tc-node-toolbar-hover);
-}
-
+.tc-node-toolbar-button:hover,
 .tc-node-toolbar-button[aria-pressed='true'] {
-  background: var(--tc-node-toolbar-active);
+  background: var(--tc-node-toolbar-hover);
 }
 
 .tc-node-toolbar-button:focus-visible {
@@ -104,26 +101,20 @@
 }
 
 .tc-node-toolbar-tooltip-label {
-  padding: 6px 10px;
+  padding: 5px 8px;
   border-radius: 6px;
-  background-color: var(--tc-node-toolbar-tooltip-bg);
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 12px;
+  background-color: #252525;
+  color: #fff;
+  font-size: 11px;
   white-space: nowrap;
-  border: 1px solid var(--tc-node-toolbar-tooltip-border);
-  box-shadow: var(--tc-node-toolbar-tooltip-shadow);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
 }
 
 .tc-node-toolbar-tooltip-arrow {
-  position: absolute;
-  left: 50%;
-  bottom: -4px;
-  width: 8px;
-  height: 8px;
-  transform: translateX(-50%) rotate(45deg);
-  background-color: var(--tc-node-toolbar-tooltip-bg);
-  border-right: 1px solid var(--tc-node-toolbar-tooltip-border);
-  border-bottom: 1px solid var(--tc-node-toolbar-tooltip-border);
+  display: none;
 }
 
 .tc-node-size-badge {
@@ -227,6 +218,93 @@
     transform: scale(1.2);
     opacity: 0;
   }
+}
+
+/* ─── Selection marquee: solid line instead of dashed ─── */
+.react-flow__selection {
+  background: rgba(119, 129, 255, 0.1) !important;
+  border: 1px solid #7781FF !important;
+  border-radius: 2px;
+}
+
+/* ─── Persistent nodes selection rect (multi-select bounding box) ─── */
+/* Outline: 1/zoom in flow space so screen line is 1px (matches single-select). Requires --tc-flow-zoom set by InfiniteCanvas. */
+.react-flow__nodesselection-rect,
+.react-flow__nodesselection-rect:focus,
+.react-flow__nodesselection-rect:focus-visible {
+  background: rgba(119, 129, 255, 0.04) !important;
+  border: none !important;
+  outline: calc(1px / var(--tc-flow-zoom, 1)) solid #7781FF !important;
+  outline-offset: 0px;
+  border-radius: 0 !important;
+  cursor: grab;
+  overflow: visible !important;
+}
+
+.react-flow__nodesselection-rect:active {
+  cursor: grabbing;
+}
+
+/* 多选素材移动过程中不显示多选框轮廓和角把手 */
+.tc-nodes-dragging .react-flow__nodesselection-rect {
+  background: transparent !important;
+  outline-color: transparent !important;
+}
+.tc-nodes-dragging .tc-multiselect-handles {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ─── Zoom rolling number animation ─── */
+@keyframes tc-roll-out {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-100%); opacity: 0; }
+}
+@keyframes tc-roll-in {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+/* ─── Canvas loading overlay ─── */
+
+.tc-canvas-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  opacity: 1;
+  /* Slower fade so the canvas is fully painted well before the overlay disappears */
+  transition: opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: all;
+}
+
+.tc-canvas-loading-overlay--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tc-canvas-loading-spinner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.6);
+  animation: tc-loading-spin 0.7s linear infinite;
+}
+
+@keyframes tc-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Sidebar (sync with packages/sidebar + sidebar-copy-and-style-guide.md) ─── */
+.tc-sidebar-b {
+  width: 64px;
+  background: #232326;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: Inter, -apple-system, sans-serif;
 }
 
 /* ─── Reduced motion ─── */

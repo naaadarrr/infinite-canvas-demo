@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 
 type ShortcutEntry = {
   label: string;
-  keys: string[];
+  keys: string[][];
 };
 
 type ShortcutGroup = {
@@ -15,34 +15,43 @@ const SHORTCUT_GROUPS: ShortcutGroup[] = [
   {
     title: 'View',
     items: [
-      { label: 'Pan Canvas', keys: ['Scroll'] },
-      { label: 'Zoom In', keys: ['⌘', '+'] },
-      { label: 'Zoom Out', keys: ['⌘', '−'] },
-      { label: 'Zoom to Fit', keys: ['⌘', '0'] },
-      { label: 'Zoom to 100%', keys: ['⌘', '1'] },
-      { label: 'Zoom to Selection', keys: ['Z'] },
-      { label: 'Fit to Screen', keys: ['F'] },
+      { label: 'Pan Canvas', keys: [['Scroll']] },
+      { label: 'Zoom', keys: [['⌘', 'Scroll']] },
+      { label: 'Zoom In', keys: [['⌘', '+']] },
+      { label: 'Zoom Out', keys: [['⌘', '−']] },
+      { label: 'Fit to Screen', keys: [['⇧', '1'], ['F']] },
+      { label: 'Zoom to Selection', keys: [['⇧', '2']] },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      { label: 'Select Tool', keys: [['V']] },
+      { label: 'Hand Tool', keys: [['H']] },
+      { label: 'Temporary Hand', keys: [['Space', 'Drag']] },
+    ],
+  },
+  {
+    title: 'Selection',
+    items: [
+      { label: 'Multi-select', keys: [['⇧', 'Click']] },
+      { label: 'Select All', keys: [['⌘', 'A']] },
     ],
   },
   {
     title: 'Edit',
     items: [
-      { label: 'Select All', keys: ['⌘', 'A'] },
-      { label: 'Multi-select', keys: ['⌘', 'Click'] },
-      { label: 'Copy', keys: ['⌘', 'C'] },
-      { label: 'Paste', keys: ['⌘', 'V'] },
-      { label: 'Duplicate', keys: ['⌘', 'D'] },
-      { label: 'Delete', keys: ['⌫'] },
+      { label: 'Copy', keys: [['⌘', 'C']] },
+      { label: 'Paste', keys: [['⌘', 'V']] },
+      { label: 'Delete', keys: [['Delete'], ['⌫']] },
     ],
   },
   {
-    title: 'Actions',
+    title: 'Multi-select (2+)',
     items: [
-      { label: 'Undo', keys: ['⌘', 'Z'] },
-      { label: 'Redo', keys: ['⌘', 'Y'] },
-      { label: 'Hand Tool', keys: ['Space', 'Drag'] },
-      { label: 'Show/Hide Node', keys: ['⌘', '⇧', 'H'] },
-      { label: 'Lock/Unlock Node', keys: ['⌘', '⇧', 'L'] },
+      { label: 'Horizontal Space', keys: [['⇧', 'H']] },
+      { label: 'Vertical Space', keys: [['⇧', 'V']] },
+      { label: 'Auto Arrange', keys: [['⇧', 'A']] },
     ],
   },
 ];
@@ -187,9 +196,18 @@ export function KeyboardShortcutsModal({ open, onClose }: KeyboardShortcutsModal
                 <span style={{ fontSize: 13, fontWeight: 400, color: 'rgba(255,255,255,0.8)' }}>
                   {item.label}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {item.keys.map((key, i) => (
-                    <KeyBadge key={i}>{key}</KeyBadge>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {item.keys.map((combo, ci) => (
+                    <React.Fragment key={ci}>
+                      {ci > 0 && (
+                        <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.3)' }}>/</span>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        {combo.map((key, ki) => (
+                          <KeyBadge key={ki}>{key}</KeyBadge>
+                        ))}
+                      </div>
+                    </React.Fragment>
                   ))}
                 </div>
               </div>

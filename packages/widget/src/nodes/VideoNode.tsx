@@ -1,10 +1,11 @@
 import React from 'react';
-import { Handle, NodeProps, Position, useStore } from '@xyflow/react';
+import { Handle, NodeProps, NodeToolbar, Position, useStore } from '@xyflow/react';
 import type { RawDataItem, VideoNodeData } from '@tc/infinite-core';
-import { ArrowUpRight, Download, MessageSquare, RefreshCw, ScanFace, Play, Pause, Trash2 } from 'lucide-react';
+import { ArrowUpRight, Download, RefreshCw, MicVocal, Play, Pause } from 'lucide-react';
+import { ExpandIcon } from '../icons';
 import { QuickActionToolbar, type QuickAction } from './QuickActionToolbar';
 import { NodeLabelBar } from './NodeLabelBar';
-import { useToolbarVisibility } from './useToolbarVisibility';
+import { useToolbarVisibility, useLabelBarVisibility } from './useToolbarVisibility';
 import { useNodeSelection } from './useNodeSelection';
 import { createWidgetEvent, widgetBridge } from '../bridge';
 import { MediaSkeleton } from './MediaSkeleton';
@@ -12,6 +13,9 @@ import { MediaSkeleton } from './MediaSkeleton';
 import { NodeRatingBadge } from './NodeRatingBadge';
 import { useCanvasRole } from '../CanvasRoleContext';
 import { getToolLabel } from '../utils/toolLabels';
+import { useAiCreate } from '../AiCreateContext';
+import { AIVideoPanel } from '../panels/AIVideoPanel';
+import type { VideoToolTab } from '../panels/AIVideoPanel';
 
 export function VideoNode({ data, selected, dragging }: NodeProps) {
   const role = useCanvasRole();
@@ -26,6 +30,7 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     return node?.position ?? nodeData.position;
   });
   const zoom = useStore((state) => state.transform[2] ?? 1);
+  const selectedCount = useStore((state) => state.nodes.filter((n) => n.selected).length);
   const rawItem = (nodeData as VideoNodeData & { raw?: RawDataItem }).raw;
   const status = String(rawItem?.status ?? '').toLowerCase();
   const rawResult = rawItem?.result ?? undefined;
@@ -35,6 +40,15 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const sizeLabel = `${Math.round(nodeData.size.width)} x ${Math.round(nodeData.size.height)}`;
   const [isPlaying, setIsPlaying] = React.useState(false);
   const [isHovered, setIsHovered] = React.useState(false);
+  const [duration, setDuration] = React.useState<number>(0);
+  // 节点在屏幕上的实际像素尺寸
+  const screenW = nodeData.size.width * zoom;
+  const screenH = nodeData.size.height * zoom;
+  // 统一阈值：确保播放按钮（中心 32px）与时长标签（左下角 8px 边距，高 20px）同时显示时不重叠
+  // 高度方向：播放按钮下边缘在 50%+16px，标签上边缘在 bottom 28px，需要 screenH/2 - 16 > 28 → screenH > 88
+  // 宽度方向：标签约 50px，留足左侧空间，screenW > 120
+  // 取更保守的值确保两者绝不重叠
+  const showVideoOverlays = screenW >= 120 && screenH >= 120;
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const { effectiveSelected, handlePointerDown: handleNodePointerDown } = useNodeSelection(selected, containerRef);
   const [preloadProgress, setPreloadProgress] = React.useState(0);
@@ -42,8 +56,16 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
   const isSkeleton = status === 'init';
   const isFailed = status === 'fail';
   const isSuccess = status === 'success';
-  const showHighlight = effectiveSelected || dragging;
-  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed;
+  const isPlaceholder = !nodeData.url && !rawItem;
+
+  const aiCreate = useAiCreate();
+  const showAiVideoPanel = isPlaceholder && effectiveSelected && !dragging
+    && aiCreate.aiCreateMode?.nodeId === nodeData.id
+    && aiCreate.aiCreateMode?.type === 'ai-video';
+
+  const showHighlight = (effectiveSelected || dragging) && !isPlaceholder;
+  const showToolbar = useToolbarVisibility(effectiveSelected, dragging) && !isSkeleton && !isFailed && !isPlaceholder;
+  const showLabelBar = useLabelBarVisibility(effectiveSelected) && !isSkeleton && !isFailed;
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const handleRatingChange = React.useCallback(
     (nextRating: number) => {
@@ -85,19 +107,50 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     },
     [nodeData]
   );
-  const { quickActions, moreQuickActions } = React.useMemo(() => {
-    const visible: QuickAction[] = [
+  const quickActions = React.useMemo(() => {
+    const videoUrl = nodeData.url || rawItem?.result?.originVideo?.url || '';
+    const resolutions: { value: string; label: string; detail: string; creditPerMin: number }[] = [
+      { value: '1080p', label: '1080p', detail: '1920×1080', creditPerMin: 1 },
+      { value: '2K',    label: '2K',    detail: '2560×1440', creditPerMin: 2 },
+      { value: '4K',    label: '4K',    detail: '3840×2160', creditPerMin: 4 },
+    ];
+    return [
       { id: 'edit', label: 'Re-edit', icon: RefreshCw, onClick: () => handleQuickAction('edit', 'Re-edit') },
-      { id: 'avatar', label: 'AI Avatar', icon: ScanFace, onClick: () => handleQuickAction('avatar', 'AI Avatar') },
-      { id: 'upscale', label: 'Upscale', icon: ArrowUpRight, onClick: () => handleQuickAction('upscale', 'Upscale') },
-      { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true },
+      { id: 'video-lip-sync', label: 'Lip Sync', icon: MicVocal, onClick: () => handleQuickAction('video-lip-sync', 'Lip Sync') },
+      {
+        id: 'upscale',
+        label: 'Upscale',
+        icon: ArrowUpRight,
+        onClick: () => handleQuickAction('upscale', 'Upscale'),
+        dropdownItems: resolutions.map((r) => ({
+          id: r.value,
+          label: r.label,
+          detail: r.detail,
+          creditCost: r.creditPerMin,
+          onClick: () => {
+            const { onNodeDataChange: _ignore, ...nodeSnapshot } = nodeData;
+            widgetBridge.emit(
+              createWidgetEvent(
+                'NODE_QUICK_ACTION',
+                {
+                  nodeId: nodeData.id,
+                  nodeType: nodeData.type,
+                  actionId: 'upscale',
+                  actionLabel: `Upscale ${r.label}`,
+                  resolution: r.value,
+                  videoUrl,
+                  node: nodeSnapshot,
+                },
+                { source: 'ui' }
+              )
+            );
+          },
+        })),
+      },
+    { id: 'download', label: 'Download', icon: Download, onClick: () => handleQuickAction('download', 'Download'), dividerBefore: true, iconOnly: true },
+    { id: 'fullscreen', label: 'Full Screen', icon: ExpandIcon, onClick: () => handleQuickAction('fullscreen', 'Full Screen'), iconOnly: true },
     ];
-    const more: QuickAction[] = [
-      { id: 'feedback', label: 'Feedback', icon: MessageSquare, onClick: () => handleQuickAction('feedback', 'Feedback') },
-      { id: 'delete', label: 'Delete', icon: Trash2, onClick: () => handleQuickAction('delete', 'Delete') },
-    ];
-    return { quickActions: visible, moreQuickActions: more };
-  }, [handleQuickAction]);
+  }, [handleQuickAction, actualWidth, actualHeight, nodeData, rawItem]);
   const handleDelete = React.useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       if (!canDeleteFailed) {
@@ -226,18 +279,28 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
     const handleEnded = () => setIsPlaying(false);
+    const handleLoadedMetadata = () => {
+      if (video.duration && !isNaN(video.duration)) {
+        setDuration(video.duration);
+      }
+    };
 
     // Sync initial state for videos that mount after a task finishes.
     setIsPlaying(!video.paused && !video.ended);
+    if (video.readyState >= 1 && video.duration && !isNaN(video.duration)) {
+      setDuration(video.duration);
+    }
 
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('ended', handleEnded);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
 
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handleEnded);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
   }, [nodeData.url]);
 
@@ -339,7 +402,15 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
       video.pause();
     }
   };
+
+  const formatDuration = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '00:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
   
+  const displayDuration = duration || rawResult?.originVideo?.duration || (rawResult as any)?.duration || 0;
   return (
     <div
       ref={containerRef}
@@ -355,12 +426,14 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
         overflow: 'visible',
         backgroundColor: 'transparent',
         cursor: isSkeleton || isFailed ? 'default' : dragging ? 'grabbing' : 'grab',
-        outline: effectiveSelected
-          ? `${1 / zoom}px solid #5857FD`
-          : isFailed
-            ? `${1 / zoom}px solid #ef4444`
-            : isHovered
-              ? `${1 / zoom}px solid rgba(88,87,253,0.7)`
+        outline: (isPlaceholder && dragging)
+          ? `${2 / zoom}px solid transparent`
+          : effectiveSelected && !dragging
+            ? (isFailed ? `${1 / zoom}px solid #ef4444` : `${1 / zoom}px solid #7781FF`)
+            : isFailed
+              ? `${1 / zoom}px solid #ef4444`
+              : isHovered && !isPlaceholder
+                ? `${1 / zoom}px solid rgba(119,129,255,0.7)`
               : `${1 / zoom}px solid transparent`,
         outlineOffset: 0,
         transition: 'outline-color 150ms ease',
@@ -411,11 +484,11 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           onChange={canEdit ? handleRatingChange : undefined}
         />
       )}
-      {showHighlight && (
+      {showHighlight && selectedCount <= 1 && !dragging && (
         <>
           {(['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const).map((corner) => {
             const cursorStyle = (corner === 'top-left' || corner === 'bottom-right') ? 'nwse-resize' : 'nesw-resize';
-            const handleSize = 12 / zoom;
+            const handleSize = 8 / zoom;
             const handleOffset = -(handleSize / 2);
             return (
               <div
@@ -424,19 +497,28 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 onPointerDown={(e) => handleScaleStart(e, corner)}
                 style={{
                   position: 'absolute',
-                  width: handleSize,
-                  height: handleSize,
-                  borderRadius: 2 / zoom,
-                  background: '#fff',
-                  border: `${1 / zoom}px solid #5857FD`,
-                  cursor: cursorStyle,
                   left: corner.includes('left') ? handleOffset : 'auto',
                   right: corner.includes('right') ? handleOffset : 'auto',
                   top: corner.includes('top') ? handleOffset : 'auto',
                   bottom: corner.includes('bottom') ? handleOffset : 'auto',
+                  width: handleSize,
+                  height: handleSize,
                   zIndex: 2,
                 }}
-              />
+              >
+                <div
+                  style={{
+                    width: 8,
+                    height: 8,
+                    background: '#fff',
+                    border: '1px solid #7781FF',
+                    cursor: cursorStyle,
+                    boxSizing: 'border-box',
+                    transform: `scale(${1 / zoom})`,
+                    transformOrigin: '0 0',
+                  }}
+                />
+              </div>
             );
           })}
         </>
@@ -492,6 +574,28 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
           </div>
         ) : isSkeleton ? (
           <MediaSkeleton />
+        ) : isPlaceholder ? (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#1a1a1a',
+              pointerEvents: 'none',
+            }}
+          >
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="#fff"
+              style={{ opacity: 0.12 }}
+            >
+              <path d="M8 5.14v13.72a1 1 0 0 0 1.5.86l11.04-6.86a1 1 0 0 0 0-1.72L9.5 4.28A1 1 0 0 0 8 5.14z" />
+            </svg>
+          </div>
         ) : nodeData.url ? (
           <>
             <video
@@ -538,49 +642,107 @@ export function VideoNode({ data, selected, dragging }: NodeProps) {
                 />
               </div>
             )}
-            {/* 播放按钮 - 暂停时始终显示，播放时仅悬停显示 */}
-            <button
-              type="button"
-              className="nodrag nopan nowheel"
-              onClick={togglePlayback}
-              onPointerDown={(event) => event.stopPropagation()}
-              onMouseDown={(event) => event.stopPropagation()}
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-                border: '2px solid rgba(255, 255, 255, 0.9)',
-                backgroundColor: 'rgba(0, 0, 0, 0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                cursor: 'pointer',
-                zIndex: 2,
-                opacity: !isPlaying || isHovered ? 1 : 0,
-                transition: 'opacity 0.2s ease',
-                pointerEvents: !isPlaying || isHovered ? 'auto' : 'none',
-              }}
-              aria-label={isPlaying ? 'Pause video' : 'Play video'}
-            >
-              {isPlaying ? <Pause size={24} /> : <Play size={24} />}
-            </button>
+            {/* 播放按钮 & 时长标签 - 统一阈值，同时出现/消失，确保不重叠 */}
+            {showVideoOverlays && (
+              <>
+                <button
+                  type="button"
+                  className="nodrag nopan nowheel"
+                  onClick={togglePlayback}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    border: 'none',
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    backdropFilter: 'blur(4px)',
+                    WebkitBackdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    zIndex: 2,
+                    opacity: !isPlaying || isHovered ? 1 : 0,
+                    transition: 'opacity 0.2s ease',
+                    pointerEvents: !isPlaying || isHovered ? 'auto' : 'none',
+                  }}
+                  aria-label={isPlaying ? 'Pause video' : 'Play video'}
+                >
+                  {isPlaying ? (
+                    <Pause size={16} fill="currentColor" stroke="none" />
+                  ) : (
+                    <Play size={16} fill="currentColor" stroke="none" style={{ marginLeft: 2 }} />
+                  )}
+                </button>
+
+                {displayDuration > 0 && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: 8 / zoom,
+                      bottom: 8 / zoom,
+                      padding: '0 6px',
+                      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                      backdropFilter: 'blur(4px)',
+                      WebkitBackdropFilter: 'blur(4px)',
+                      color: '#fff',
+                      fontSize: 12,
+                      lineHeight: '20px',
+                      fontWeight: 500,
+                      borderRadius: 4,
+                      zIndex: 2,
+                      pointerEvents: 'none',
+                      transform: `scale(${1 / zoom})`,
+                      transformOrigin: 'bottom left',
+                    }}
+                  >
+                    {formatDuration(displayDuration)}
+                  </div>
+                )}
+              </>
+            )}
           </>
         ) : null}
       </div>
       <NodeLabelBar
-        isVisible={showToolbar}
+        isVisible={showLabelBar}
         nodeType={nodeData.type}
         label={rawItem?.title || 'Video'}
         sizeLabel={sizeLabel}
         nodeWidth={nodeData.size.width}
         toolLabel={undefined}
       />
-      <QuickActionToolbar isVisible={showToolbar} actions={quickActions} moreActions={moreQuickActions} />
+      <QuickActionToolbar isVisible={showToolbar} actions={quickActions} />
+      <NodeToolbar
+        isVisible={showAiVideoPanel}
+        position={Position.Bottom}
+        offset={8}
+        align="center"
+      >
+        <AIVideoPanel
+          inline
+          width={480}
+          initialTab={aiCreate.aiCreateMode?.subActionId as VideoToolTab}
+          initialState={{
+            prompt: aiCreate.aiCreateMode?.prompt ?? '',
+            firstFrameUrl: aiCreate.aiCreateMode?.referenceImageUrl ?? '',
+          }}
+          credits={aiCreate.credits}
+          onSubmit={aiCreate.onVideoSubmit}
+          onDismiss={aiCreate.onDismiss}
+          onUploadFirstFrame={() => aiCreate.onUploadFirstFrame?.(nodeData.id)}
+          onUploadEndFrame={() => aiCreate.onUploadEndFrame?.(nodeData.id)}
+          onUploadMedia={() => aiCreate.onUploadMedia?.(nodeData.id)}
+          onSelectFromBoard={() => aiCreate.onSelectFromBoard?.(nodeData.id)}
+        />
+      </NodeToolbar>
     </div>
   );
 }
